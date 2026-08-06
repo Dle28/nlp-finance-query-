@@ -1,2 +1,13 @@
-huggingface_hub
-pandas
+beautifulsoup4>=4.12
+faiss-cpu>=1.8
+huggingface_hub>=0.24
+joblib>=1.4
+lxml>=5.2
+numpy>=1.26
+pandas>=2.2
+pyyaml>=6.0
+scikit-learn>=1.5
+sentence-transformers>=3.0
+torch>=2.2
+tqdm>=4.66
+transformers>=4.43
