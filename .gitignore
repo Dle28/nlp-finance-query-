@@ -49,7 +49,8 @@ datasets_cache/
 
 # ViFinQA corpus: downloaded locally, never committed
 /data/ViFinQA/
-/data/data/ViFinQA/  # legacy path created by the old downloader
+# Legacy path created by the old downloader
+/data/data/ViFinQA/
 
 # Generated audits, indexes, and intermediate data
 /data/process/audit_output/
