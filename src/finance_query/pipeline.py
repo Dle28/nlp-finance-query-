@@ -1,0 +1,59 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from .config import ModelConfig, ProjectPaths
+from .questions import RuleQuestionPlanner
+from .retrieval import AssetStore, DenseIndex, HybridRetriever
+
+
+class ViFinQARetrievalPipeline:
+    """Runnable Phase-2/3 baseline.
+
+    The pipeline currently performs question planning and hierarchical table
+    candidate retrieval. Cell binding and final answer execution are separate
+    later phases and are intentionally not fabricated here.
+    """
+
+    def __init__(
+        self,
+        paths: ProjectPaths | None = None,
+        config: ModelConfig | None = None,
+        use_dense: bool = True,
+    ) -> None:
+        self.paths = paths or ProjectPaths.from_repository()
+        self.config = config or ModelConfig()
+        self.planner = RuleQuestionPlanner(self.paths.dataset_root / "code_stock.csv")
+        self.store = AssetStore(self.paths.lexical_db_path)
+
+        dense_index: DenseIndex | None = None
+        if use_dense:
+            dense_index = DenseIndex(
+                index_path=self.paths.dense_index_path,
+                uids_path=self.paths.dense_uids_path,
+                model_name=self.config.embedding_model,
+                device=self.config.resolved_device(),
+                max_sequence_length=self.config.max_sequence_length,
+            )
+
+        self.retriever = HybridRetriever(
+            store=self.store,
+            config=self.config,
+            dense_index=dense_index,
+        )
+
+    def retrieve(self, question: str, question_id: int | None = None) -> dict:
+        plan = self.planner.plan(question, question_id)
+        candidates = self.retriever.retrieve(question, plan)
+        return {
+            "question_plan": plan.to_dict(),
+            "retrieved_tables": [candidate.to_dict() for candidate in candidates],
+            "status": "retrieval_only",
+            "next_required_stage": "row_column_unit_binding",
+        }
+
+
+def load_config(path: str | Path | None) -> ModelConfig:
+    if path is None:
+        return ModelConfig()
+    return ModelConfig.from_yaml(Path(path))
