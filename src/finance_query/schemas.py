@@ -70,6 +70,7 @@ class TableAsset:
     unit_hint: str | None = None
     context_before: str = ""
     headers: list[str] = field(default_factory=list)
+    rows: list[list[str]] = field(default_factory=list)
     row_paths: list[str] = field(default_factory=list)
     search_text: str = ""
 
@@ -90,6 +91,26 @@ class RetrievedTable:
     reranker_score: float | None = None
     external_table_ref: str | None = None
     preview: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class DirectBinding:
+    internal_table_uid: str
+    document_id: str
+    row_index: int
+    column_index: int
+    row_text: str
+    column_text: str
+    raw_value: str
+    parsed_value: str
+    source_unit: str | None
+    target_unit: str | None
+    converted_value: str
+    binding_score: float
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
