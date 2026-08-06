@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .binding import candidate_bindings
 from .config import ModelConfig, ProjectPaths
 from .questions import RuleQuestionPlanner
 from .retrieval import AssetStore, DenseIndex, HybridRetriever
@@ -9,11 +10,11 @@ from .router_model import ModelBackedQuestionPlanner
 
 
 class ViFinQARetrievalPipeline:
-    """Runnable Phase-2/3 baseline.
+    """Runnable retrieval and conservative direct-lookup baseline.
 
-    The pipeline currently performs question planning and hierarchical table
-    candidate retrieval. Cell binding and final answer execution are separate
-    later phases and are intentionally not fabricated here.
+    Composed questions remain retrieval/planning outputs until their operands
+    are explicitly grounded. Direct lookup may return an answer only when the
+    row/column/value binder produces a sufficiently strong candidate.
     """
 
     def __init__(
@@ -61,6 +62,38 @@ class ViFinQARetrievalPipeline:
             "retrieved_tables": [candidate.to_dict() for candidate in candidates],
             "status": "retrieval_only",
             "next_required_stage": "row_column_unit_binding",
+        }
+
+    def answer_direct(
+        self,
+        question: str,
+        question_id: int | None = None,
+        *,
+        minimum_binding_score: float = 0.48,
+    ) -> dict:
+        plan = self.planner.plan(question, question_id)
+        candidates = self.retriever.retrieve(question, plan)
+
+        if plan.family != "direct_lookup":
+            return {
+                "question_plan": plan.to_dict(),
+                "retrieved_tables": [candidate.to_dict() for candidate in candidates],
+                "status": "requires_composed_reasoning",
+                "answer": None,
+            }
+
+        bindings = candidate_bindings(self.store, plan, candidates)
+        best = bindings[0] if bindings else None
+        accepted = best is not None and best.binding_score >= minimum_binding_score
+
+        return {
+            "question_plan": plan.to_dict(),
+            "retrieved_tables": [candidate.to_dict() for candidate in candidates],
+            "binding_candidates": [binding.to_dict() for binding in bindings[:5]],
+            "status": "answered_direct_baseline" if accepted else "abstained_low_confidence",
+            "answer": best.converted_value if accepted and best is not None else None,
+            "answer_unit": plan.requested_unit if accepted else None,
+            "selected_binding": best.to_dict() if accepted and best is not None else None,
         }
 
 
