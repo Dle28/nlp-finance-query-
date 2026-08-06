@@ -6,6 +6,13 @@ from pathlib import Path
 import yaml
 
 
+def _dataset_complete(path: Path) -> bool:
+    return (
+        (path / "questions" / "questions.jsonl").is_file()
+        and (path / "financial_statements").is_dir()
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectPaths:
     repository_root: Path
@@ -25,7 +32,15 @@ class ProjectPaths:
             if repository_root is not None
             else Path(__file__).resolve().parents[2]
         )
-        dataset = root / "data" / "ViFinQA"
+        canonical = root / "data" / "ViFinQA"
+        legacy = root / "data" / "data" / "ViFinQA"
+        if _dataset_complete(canonical):
+            dataset = canonical
+        elif _dataset_complete(legacy):
+            dataset = legacy
+        else:
+            dataset = canonical
+
         artifacts = root / "artifacts"
         return cls(
             repository_root=root,
