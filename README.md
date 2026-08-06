@@ -1,25 +1,25 @@
 # ViFinQA Adaptive Hierarchical RAG
 
-This repository develops an auditable Vietnamese financial question-answering system for the public ViFinQA corpus.
+This repository implements an auditable Vietnamese financial question-answering pipeline for the public ViFinQA corpus.
 
-The target is not a generic “embed chunks and ask an LLM” pipeline. ViFinQA combines OCR reports, hierarchical financial tables, multiple report scopes, multi-period questions, cross-company comparisons, filtering, aggregation, ratios, and executable numerical reasoning.
+The target is not generic flat-vector RAG. ViFinQA contains OCR reports, hierarchical financial tables, separate/consolidated scopes, direct lookups, temporal changes, ratios, cross-company comparisons, filtering, ranking, aggregation, and scenario calculations.
 
-The selected design is therefore:
+The selected design is:
 
 > **Adaptive hierarchical retrieval + structure-aware evidence binding + constrained symbolic execution.**
 
-The model resolves semantic ambiguity. Deterministic code preserves source identity, binds evidence, parses numbers, performs arithmetic, and compiles the final Pandas program.
+Learned models resolve semantic ambiguity. Deterministic code preserves provenance, parses finance numbers, converts units, executes operations, and validates output.
 
-## Verified dataset facts
+## Verified public-data contract
 
-The public release currently provides:
+The public release provides:
 
 - `1,012` Vietnamese questions;
-- OCR financial reports under `financial_statements/`;
+- OCR reports under `data/ViFinQA/financial_statements/`;
 - company/ticker metadata in `code_stock.csv`;
-- question rows containing only `id` and `question`.
+- question records containing only `id` and `question`.
 
-The public question file does **not** provide:
+It does not publicly provide:
 
 ```text
 answer
@@ -32,202 +32,120 @@ difficulty
 
 Consequences:
 
-- retrieval cannot be honestly scored against public gold labels alone;
-- the external table-reference mapping cannot be proved corpus-wide from the public question file;
-- a manually verified development set or a richer organizer release is required;
-- table identifiers must be stored as metadata, not learned as semantic classes.
+- the repository can build a zero-shot retrieval baseline immediately;
+- supervised retriever/reranker training requires manually verified labels;
+- weak question-family labels must not be presented as organizer gold labels;
+- external numeric table IDs are metadata, never model targets.
 
-## Question audit
+## Question-family audit
 
-Sequential inspection of all `1,012` public questions reveals six clear template blocks. These ranges are an observed organization of the public file, **not official difficulty labels**.
+Sequential inspection of the complete public question file reveals six observable template blocks. These are research labels inferred from file organization, not official difficulty labels.
 
-| IDs | Count | Observable question family | Typical reasoning |
+| IDs | Count | Observable family | Typical reasoning |
 |---:|---:|---|---|
-| `1–361` | `361` | Single-value lookup | one entity, one period, one metric, unit conversion |
-| `362–577` | `216` | Conditional analytical / scenario | multiple entities or years, filtering, median/ranking, financial formulas, stress scenarios |
-| `578–655` | `78` | Temporal change | two periods, difference or growth rate for one entity |
-| `656–732` | `77` | Ratio / derived metric | two or more operands, margin, leverage, coverage, turnover, net values |
-| `733–812` | `80` | Cross-entity comparison | retrieve the same or related metric for multiple companies and subtract/compare |
-| `813–1012` | `200` | Multi-period / multi-entity aggregation | average, sum, maximum, minimum, count, threshold filtering |
+| `1–361` | `361` | Direct lookup | one entity, period, metric, unit conversion |
+| `362–577` | `216` | Conditional analytical / scenario | filtering, median/ranking, financial formulas, hypothetical adjustments |
+| `578–655` | `78` | Temporal change | two periods, difference or growth |
+| `656–732` | `77` | Ratio / derived metric | numerator/denominator and finance formulas |
+| `733–812` | `80` | Cross-entity comparison | comparable evidence from several companies |
+| `813–1012` | `200` | Multi-period / multi-entity aggregation | sum, average, max/min, count, thresholds |
 
-This distribution rejects two simplistic architectures:
+The architecture therefore has a fast route for direct lookups and a decomposition/evidence-set route for composed questions.
 
-1. A lookup-only system cannot solve the analytical and aggregation blocks.
-2. A full agentic workflow for every question wastes latency and increases error risk on direct lookups.
+## Implemented baseline
 
-The system must route questions adaptively.
+The current code implements the first runnable model stack:
 
-## Target architecture
+```text
+Question
+→ rule-based metadata extraction and family routing
+→ confidence-aware document filters
+→ byte-preserving table-asset builder
+→ SQLite FTS lexical retrieval
+→ sentence-transformer dense retrieval
+→ Reciprocal Rank Fusion
+→ optional cross-encoder reranking
+→ retrieved table candidates with provenance
+```
+
+It also implements:
+
+- strict UTF-8 reading and raw character/byte spans;
+- stable internal table UIDs;
+- hierarchical row-path retrieval text;
+- locale-aware `Decimal` parsing;
+- typed deterministic operations;
+- weakly supervised question-router training;
+- supervised dense-retriever and reranker training scripts that require verified labels.
+
+The system intentionally stops before final answers when row/cell evidence has not been grounded. It does not fabricate bindings.
+
+## Architecture graph
 
 ```mermaid
 flowchart LR
-    Q[Question] --> R[Question-family router]
+    Q[Question] --> ROUTER[Question router and metadata parser]
+    ROUTER --> PLAN[QuestionPlan]
+    PLAN --> DOC[Document routing]
+    DOC --> RET[Multi-view retrieval]
 
-    R -->|direct| P1[Deterministic slot parser]
-    R -->|composed| P2[Operand decomposer and typed planner]
+    RET --> LEX[SQLite FTS / sparse]
+    RET --> DEN[Dense embeddings]
+    LEX --> RRF[Reciprocal Rank Fusion]
+    DEN --> RRF
+    RRF --> RR[Optional cross-encoder reranker]
+    RR --> CAND[Table candidates with provenance]
 
-    P1 --> PLAN[QuestionPlan]
-    P2 --> PLAN
-
-    PLAN --> DR[Confidence-aware document retrieval]
-    DR --> TR[Multi-view table and row retrieval]
-
-    TR --> BM25[BM25 / sparse]
-    TR --> DENSE[Multilingual dense retrieval]
-    TR --> LATE[Optional late interaction]
-
-    BM25 --> FUSE[RRF / candidate fusion]
-    DENSE --> FUSE
-    LATE --> FUSE
-
-    FUSE --> RR[Cross-encoder reranker]
-    RR --> EG[Evidence graph and operand coverage]
-    EG --> BIND[Row, column, period and unit binding]
+    CAND --> BIND[Future row/column/unit binding]
     BIND --> AST[Typed operation AST]
-    AST --> EXEC[Deterministic Decimal executor]
-    EXEC --> OUT[Pandas/evidence compiler and validator]
+    AST --> EXEC[Decimal executor]
+    EXEC --> OUT[Evidence and Pandas compiler]
 ```
 
-The complete graph, schemas, routing logic, recovery edges, metrics, and implementation phases are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
-
-## Why hierarchical RAG
-
-A report is not an unordered collection of text chunks. Evidence has structure:
-
-```text
-company
-└── report year and scope
-    └── document section / page
-        └── table
-            ├── hierarchical row path
-            ├── hierarchical column path
-            ├── unit scope
-            ├── note reference
-            └── cell value
-```
-
-Flattening every table into arbitrary token chunks can destroy row-column relations, duplicate labels, unit scope, and header hierarchy. The primary representation is therefore a table/cell graph. CSV or DataFrame form is a derived execution view.
-
-## Retrieval design
-
-The first-stage retriever is evaluated as an ablation ladder:
-
-```text
-R0: metadata routing + normalized exact matching
-R1: BM25 over document/table/row views
-R2: BM25 + multilingual dense retrieval
-R3: Reciprocal Rank Fusion
-R4: cross-encoder reranking
-R5: optional token-level late interaction
-R6: evidence-set graph selection for multi-hop questions
-```
-
-Candidate models include:
-
-- embeddings: `BAAI/bge-m3` or a suitable `Qwen3-Embedding` checkpoint;
-- reranking: `BAAI/bge-reranker-v2-m3` or a suitable `Qwen3-Reranker` checkpoint;
-- late interaction: a multilingual ColBERT-style retriever, added only after simpler baselines are measured.
-
-Model size is not assumed to imply better performance on Vietnamese OCR tables. Every layer must justify itself through retrieval and end-to-end ablations.
-
-## MRR, RRF, and RAG
-
-These terms are different:
-
-- **RAG** is the retrieval-and-reasoning architecture.
-- **MRR** is an evaluation metric measuring the rank of the first relevant item.
-- **RRF** is a rank-fusion method used to merge lexical, dense, or multi-view rankings.
-
-MRR alone is insufficient for questions needing multiple evidence items. The evaluation must also measure set recall, F2, and operand coverage.
+The full offline/online graph, recovery edges, schemas, metrics, and phases are in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Table identity
 
-Three identities are kept separate:
+The system separates:
 
 ```text
 external_table_ref
-    Organizer/upstream reference, for example document|table_350 or document|350.
+    Organizer/upstream compatibility ID, such as document|table_350.
 
 internal_table_uid
-    Stable system identity derived from document identity and table content/provenance.
+    Stable SHA-256-derived identity used by this repository.
 
 source_span
-    Raw byte and decoded-character positions in the OCR source file.
+    Raw byte and decoded-character provenance.
+
+df1
+    Local execution alias for the first selected evidence DataFrame.
 ```
 
-The earlier hypothesis that `350` was the raw opening `<table>` character offset is refuted for the exact VJC 2018 separate report: the first raw table begins at character offset `205` and UTF-8 byte offset `235`.
+For the exact VJC 2018 separate report, the first raw table begins at character offset `205` and UTF-8 byte offset `235`, so external suffix `350` is not that raw offset. Companion code consumes `table_N.csv` assets, supporting the interpretation of `N` as an upstream normalized-table identifier. The model never predicts it.
 
-Companion ViFinQA code consumes assets named `table_N.csv` and references shaped as `document|table_N`, which strongly supports interpreting `N` as an upstream normalized-table identifier. The original algorithm that assigned `N` is not present in the public raw release.
-
-The model must never regress or classify the numeric suffix. It retrieves a table asset and emits the stored external reference when that mapping is available.
-
-## Meaning of `df1`
-
-`df1` is an execution-time alias for the first selected evidence DataFrame in one question.
-
-```json
-{
-  "variable": "df1",
-  "csv_path": "data/generated/question_1_table_1.csv"
-}
-```
-
-It is not:
-
-- an external table ID;
-- an internal table UID;
-- the first table in the corpus;
-- a financial concept.
-
-With several evidence tables, aliases are assigned deterministically as `df1`, `df2`, and so on.
-
-## Current implementation status
-
-Implemented:
-
-- explicit download of `questions/questions.jsonl`;
-- explicit download of `code_stock.csv`;
-- download of OCR financial reports;
-- centralized path configuration;
-- question-file validation;
-- report, page, raw-table, character-offset, byte-offset, and line statistics;
-- table-ID hypothesis auditing when labeled `relevant_tables` are supplied.
-
-Not implemented yet:
-
-- immutable source manifest and strict byte-preserving corpus builder;
-- hierarchy-aware table/cell graph;
-- question-family router;
-- operand planner and typed operation AST;
-- document, table, row, and cell retrievers;
-- hybrid fusion and reranker;
-- evidence graph and operand coverage selector;
-- deterministic numerical executor;
-- Pandas compiler, restricted sandbox, and final submission builder.
-
-## Local paths
-
-All processing paths are centralized in:
+## Repository structure
 
 ```text
-data/process/project_paths.py
+src/finance_query/
+├── config.py          # paths and model configuration
+├── corpus.py          # byte-preserving table assets
+├── questions.py       # family routing and deterministic slots
+├── retrieval.py       # SQLite FTS, FAISS, RRF, reranking
+├── execution.py       # Decimal parser and typed operations
+├── pipeline.py        # retrieval orchestration
+├── schemas.py         # typed records
+└── cli.py             # command-line interface
+
+scripts/
+├── train_question_router.py
+├── train_dense_retriever.py
+└── train_reranker.py
+
+configs/
+├── baseline.yaml
+└── research_bge_m3.yaml
 ```
-
-Canonical layout:
-
-```text
-<repository>/
-└── data/
-    ├── ViFinQA/
-    │   ├── code_stock.csv
-    │   ├── questions/
-    │   │   └── questions.jsonl
-    │   └── financial_statements/
-    └── process/
-        └── audit_output/
-```
-
-The resolver temporarily supports the earlier `data/data/ViFinQA` layout, but new downloads use `data/ViFinQA`.
 
 ## Installation
 
@@ -237,49 +155,190 @@ Python 3.11 or 3.12 is recommended.
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -e .
 ```
 
-## Download and validate the public release
+## Download data
 
 ```bash
 python data/process/extract_data.py
 ```
 
-The downloader validates that the question file contains usable `id` and `question` records and confirms that OCR report files exist.
-
-## Audit the corpus
-
-```bash
-python data/process/audit_dataset.py
-```
-
-Generated files:
+The downloader explicitly retrieves and validates:
 
 ```text
-data/process/audit_output/
-├── statistics_report.md
-├── dataset_summary.csv
-├── document_statistics.csv
-├── table_inventory.csv
-├── question_records.csv
-├── question_statistics.csv
-├── reference_audit.csv
-├── table_id_hypothesis_summary.csv
-└── anomalies.csv
+data/ViFinQA/questions/questions.jsonl
+data/ViFinQA/code_stock.csv
+data/ViFinQA/financial_statements/
 ```
 
-With the public question file, the correct table-ID conclusion is “not testable from gold references” because `relevant_tables` is absent.
+## Build the retrieval assets
 
-## Development order
+### 1. Extract table assets
 
-1. Freeze a source manifest and reproduce corpus counts.
-2. Build a stratified labeled development set covering all six observed question families.
-3. Resolve or explicitly isolate the external table-reference mapping.
-4. Build the hierarchy-aware table/cell asset layer.
-5. Establish metadata + BM25 baselines.
-6. Add dense retrieval, RRF, and reranking only through measured ablations.
-7. Implement question routing, operand decomposition, and evidence coverage.
-8. Implement typed symbolic execution with `Decimal`.
-9. Compile selected evidence and operation AST into Pandas-compatible output.
-10. Add confidence calibration, recovery, and abstention.
+```bash
+finance-query build-assets
+```
+
+Output:
+
+```text
+artifacts/table_assets.jsonl
+```
+
+Each asset stores document metadata, raw source spans, page, local ordinal, internal UID, headers, row paths, context, unit hint, and retrieval text.
+
+### 2. Build lexical index
+
+```bash
+finance-query build-lexical
+```
+
+Output:
+
+```text
+artifacts/lexical_index.sqlite3
+```
+
+### 3. Build fast dense index
+
+```bash
+finance-query build-dense --config configs/baseline.yaml
+```
+
+The laptop baseline uses:
+
+```text
+intfloat/multilingual-e5-small
+```
+
+### 4. Build research dense index
+
+```bash
+finance-query build-dense --config configs/research_bge_m3.yaml
+```
+
+The research configuration uses:
+
+```text
+BAAI/bge-m3
+BAAI/bge-reranker-v2-m3
+```
+
+BGE-M3 indexing is substantially slower and is best run on an NVIDIA GPU.
+
+## Retrieve candidates
+
+Lexical-only test:
+
+```bash
+finance-query retrieve \
+  --no-dense \
+  --question-id 1 \
+  --question "Lãi tiền gửi năm 2018 của công ty mẹ VJC là bao nhiêu triệu đồng?"
+```
+
+Hybrid retrieval:
+
+```bash
+finance-query retrieve \
+  --config configs/baseline.yaml \
+  --question-id 1 \
+  --question "Lãi tiền gửi năm 2018 của công ty mẹ VJC là bao nhiêu triệu đồng?"
+```
+
+Output contains:
+
+```json
+{
+  "question_plan": {},
+  "retrieved_tables": [],
+  "status": "retrieval_only",
+  "next_required_stage": "row_column_unit_binding"
+}
+```
+
+## Analyze question routing
+
+```bash
+finance-query analyze-questions \
+  --output artifacts/question_routing.jsonl
+```
+
+This compares the observed ID-range family with the immediate rule router. It is an audit, not official task evaluation.
+
+## Training
+
+### Weak router baseline
+
+```bash
+python scripts/train_question_router.py \
+  --questions data/ViFinQA/questions/questions.jsonl \
+  --model intfloat/multilingual-e5-small \
+  --output-dir artifacts/question_router
+```
+
+### Dense retriever
+
+Requires verified rows such as:
+
+```json
+{"question":"...","positive_table_uids":["internal_uid"]}
+```
+
+```bash
+python scripts/train_dense_retriever.py \
+  --train-jsonl data/labels/retriever_train.jsonl \
+  --asset-db artifacts/lexical_index.sqlite3 \
+  --model BAAI/bge-m3 \
+  --epochs 3 \
+  --batch-size 8
+```
+
+### Reranker
+
+Requires labeled positive and hard-negative pairs:
+
+```json
+{"question":"...","table_uid":"internal_uid","label":1.0}
+```
+
+```bash
+python scripts/train_reranker.py \
+  --train-jsonl data/labels/reranker_train.jsonl \
+  --asset-db artifacts/lexical_index.sqlite3 \
+  --model BAAI/bge-reranker-v2-m3 \
+  --epochs 3 \
+  --batch-size 8
+```
+
+Detailed runtime assumptions and hardware estimates are in [`TRAINING.md`](TRAINING.md).
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+## Current boundary
+
+Implemented now:
+
+- corpus table assets;
+- lexical and dense indexes;
+- RRF hybrid retrieval;
+- optional pretrained reranking;
+- question routing and deterministic metadata;
+- numerical parser and operation executor;
+- training entry points.
+
+Still required for full answers:
+
+- semantic operand decomposition for analytical questions;
+- evidence graph and operand coverage;
+- hierarchical row/column/cell binding;
+- unit provenance resolver;
+- evidence CSV materializer;
+- Pandas compiler and sandbox;
+- final submission builder;
+- stratified manually verified development labels.
