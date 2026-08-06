@@ -1,41 +1,26 @@
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 
 from huggingface_hub import snapshot_download
 
+from project_paths import FINANCIAL_STATEMENTS_DIR, QUESTIONS_PATH, VIFINQA_DIR
+
 
 REPO_ID = "AIGuruTinix/ViFinQA"
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data" / "ViFinQA"
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Download the public ViFinQA corpus from Hugging Face."
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=DEFAULT_OUTPUT_DIR,
-        help="Dataset destination. Default: <repository>/data/ViFinQA",
-    )
-    return parser.parse_args()
-
-
-def download_vifinqa(output_dir: Path) -> Path:
-    """Download questions, stock metadata, and OCR financial reports."""
-    output_dir = output_dir.expanduser().resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+def download_vifinqa() -> Path:
+    """Download the public ViFinQA corpus to the configured source path."""
+    VIFINQA_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"Dataset: {REPO_ID}")
-    print(f"Output directory: {output_dir}")
+    print(f"Output directory: {VIFINQA_DIR}")
 
     downloaded_path = snapshot_download(
         repo_id=REPO_ID,
         repo_type="dataset",
-        local_dir=str(output_dir),
+        local_dir=str(VIFINQA_DIR),
         allow_patterns=[
             "questions/questions.jsonl",
             "code_stock.csv",
@@ -45,28 +30,27 @@ def download_vifinqa(output_dir: Path) -> Path:
     return Path(downloaded_path)
 
 
-def inspect_downloaded_data(data_root: Path) -> None:
+def inspect_downloaded_data() -> None:
     """Print a compact integrity summary after download."""
-    question_path = data_root / "questions" / "questions.jsonl"
-    report_root = data_root / "financial_statements"
-    report_paths = sorted(report_root.rglob("*_extracted.txt"))
+    report_paths = sorted(FINANCIAL_STATEMENTS_DIR.rglob("*_extracted.txt"))
     if not report_paths:
-        report_paths = sorted(report_root.rglob("*.txt"))
+        report_paths = sorted(FINANCIAL_STATEMENTS_DIR.rglob("*.txt"))
 
     print("\nDownload summary")
-    print(f"Questions file exists: {question_path.is_file()}")
+    print(f"Questions path: {QUESTIONS_PATH}")
+    print(f"Questions file exists: {QUESTIONS_PATH.is_file()}")
+    print(f"Financial statements path: {FINANCIAL_STATEMENTS_DIR}")
     print(f"Financial reports found: {len(report_paths):,}")
 
     if report_paths:
         print(f"First report: {report_paths[0]}")
     else:
-        print(f"Warning: no report text files found under {report_root}")
+        print("Warning: no financial-report text files were found.")
 
 
 def main() -> None:
-    config = parse_args()
-    dataset_path = download_vifinqa(config.output_dir)
-    inspect_downloaded_data(dataset_path)
+    download_vifinqa()
+    inspect_downloaded_data()
 
 
 if __name__ == "__main__":
