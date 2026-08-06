@@ -97,6 +97,7 @@ def main() -> None:
         1,
         int(len(train_loader) * args.epochs * args.warmup_ratio),
     )
+    use_amp = str(model.device).startswith("cuda")
 
     model.fit(
         train_objectives=[(train_loader, train_loss)],
@@ -104,7 +105,7 @@ def main() -> None:
         warmup_steps=warmup_steps,
         output_path=str(args.output_dir),
         show_progress_bar=True,
-        use_amp=True,
+        use_amp=use_amp,
     )
 
     metadata = {
@@ -113,6 +114,7 @@ def main() -> None:
         "epochs": args.epochs,
         "batch_size": args.batch_size,
         "loss": "MultipleNegativesRankingLoss",
+        "mixed_precision": use_amp,
         "label_requirement": "manually verified positive_table_uids",
     }
     (args.output_dir / "training_metadata.json").write_text(
