@@ -1,0 +1,12 @@
+model:
+  # Fast laptop baseline. Replace with BAAI/bge-m3 for the research run.
+  embedding_model: intfloat/multilingual-e5-small
+  reranker_model: null
+  embedding_batch_size: 32
+  max_sequence_length: 512
+  lexical_top_k: 100
+  dense_top_k: 100
+  fused_top_k: 50
+  rerank_top_k: 20
+  rrf_k: 60
+  device: auto
