@@ -24,7 +24,8 @@ def _fts_query(text: str) -> str:
     tokens = [token for token in TOKEN_RE.findall(text.casefold()) if len(token) > 1]
     if not tokens:
         return '"__empty_query__"'
-    return " OR ".join(f'"{token.replace(chr(34), "")}"' for token in tokens)
+    quoted = [f'"{token.replace(chr(34), "")}"' for token in tokens]
+    return " OR ".join(quoted)
 
 
 def _model_text(model_name: str, text: str, *, query: bool) -> str:
@@ -63,6 +64,9 @@ class AssetStore:
                     local_ordinal INTEGER,
                     unit_hint TEXT,
                     source_path TEXT,
+                    headers_json TEXT NOT NULL,
+                    rows_json TEXT NOT NULL,
+                    context_before TEXT,
                     search_text TEXT NOT NULL
                 );
                 CREATE INDEX idx_assets_ticker_year_scope
@@ -92,6 +96,9 @@ class AssetStore:
                         asset.get("local_ordinal"),
                         asset.get("unit_hint"),
                         asset.get("source_path"),
+                        json.dumps(asset.get("headers") or [], ensure_ascii=False),
+                        json.dumps(asset.get("rows") or [], ensure_ascii=False),
+                        asset.get("context_before", ""),
                         asset.get("search_text", ""),
                     )
                 )
@@ -100,7 +107,7 @@ class AssetStore:
 
                 if len(asset_rows) >= 2000:
                     connection.executemany(
-                        "INSERT INTO assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         asset_rows,
                     )
                     connection.executemany(
@@ -112,7 +119,7 @@ class AssetStore:
 
             if asset_rows:
                 connection.executemany(
-                    "INSERT INTO assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     asset_rows,
                 )
                 connection.executemany(
@@ -158,7 +165,6 @@ class AssetStore:
 
         with self.connect() as connection:
             rows = connection.execute(sql, parameters).fetchall()
-        # SQLite FTS5 BM25 is lower-is-better; negate for a conventional score.
         return [(row["uid"], -float(row["bm25_score"])) for row in rows]
 
     def get_assets(self, uids: Iterable[str]) -> dict[str, dict]:
@@ -177,6 +183,14 @@ class AssetStore:
                 for row in rows:
                     output[row["uid"]] = dict(row)
         return output
+
+    def get_asset(self, uid: str) -> dict | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM assets WHERE uid = ?",
+                (uid,),
+            ).fetchone()
+        return dict(row) if row is not None else None
 
 
 class DenseIndex:
@@ -329,7 +343,6 @@ class HybridRetriever:
 
         dense: list[tuple[str, float]] = []
         if self.dense_index is not None and self.dense_index.index_path.is_file():
-            # Fetch more dense candidates because metadata filters are applied after FAISS.
             raw_dense = self.dense_index.search(
                 question,
                 max(self.config.dense_top_k * 10, self.config.dense_top_k),
@@ -372,15 +385,17 @@ class HybridRetriever:
 
         reranker_scores: dict[str, float] = {}
         if self.reranker is not None and ranked_uids:
+            pair_uids = [uid for uid in ranked_uids if uid in assets]
             pairs = [
                 (question, assets[uid]["search_text"][:5000])
-                for uid in ranked_uids
-                if uid in assets
+                for uid in pair_uids
             ]
-            pair_uids = [uid for uid in ranked_uids if uid in assets]
-            scores = self.reranker.predict(pairs, show_progress_bar=False)
+            scores = np.asarray(
+                self.reranker.predict(pairs, show_progress_bar=False)
+            ).reshape(-1)
             reranker_scores = {
-                uid: float(score) for uid, score in zip(pair_uids, scores, strict=True)
+                uid: float(score)
+                for uid, score in zip(pair_uids, scores, strict=True)
             }
             ranked_uids = sorted(
                 pair_uids,
