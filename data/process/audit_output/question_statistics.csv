@@ -1,8 +1,0 @@
-﻿statistic,count,min,median,mean,max
-relevant_tables_per_question,1012,0,0.0,0,0
-relevant_docs_per_question,1012,0,0.0,0,0
-evidence_items_per_question,1012,0,0.0,0,0
-query_length,1012,0,0.0,0,0
-field_presence::id,1012,,,,
-field_presence::question,1012,,,,
-query_pattern::missing_query,1012,,,,
