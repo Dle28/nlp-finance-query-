@@ -33,6 +33,16 @@ def parse_args() -> argparse.Namespace:
     retrieve.add_argument("--config", type=Path, default=None)
     retrieve.add_argument("--no-dense", action="store_true")
 
+    answer = subparsers.add_parser(
+        "answer-direct",
+        help="Run the conservative direct-lookup binding baseline.",
+    )
+    answer.add_argument("--question", required=True)
+    answer.add_argument("--question-id", type=int, default=None)
+    answer.add_argument("--config", type=Path, default=None)
+    answer.add_argument("--no-dense", action="store_true")
+    answer.add_argument("--minimum-binding-score", type=float, default=0.48)
+
     analyze = subparsers.add_parser("analyze-questions", help="Summarize public question routing.")
     analyze.add_argument("--output", type=Path, default=None)
 
@@ -92,6 +102,18 @@ def command_build_dense(paths: ProjectPaths, config: ModelConfig) -> None:
     )
 
 
+def create_pipeline(
+    paths: ProjectPaths,
+    config: ModelConfig,
+    no_dense: bool,
+) -> ViFinQARetrievalPipeline:
+    if not paths.lexical_db_path.is_file():
+        raise FileNotFoundError(
+            f"Lexical index not found: {paths.lexical_db_path}. Run build-lexical first."
+        )
+    return ViFinQARetrievalPipeline(paths, config, use_dense=not no_dense)
+
+
 def command_retrieve(
     paths: ProjectPaths,
     config: ModelConfig,
@@ -99,12 +121,25 @@ def command_retrieve(
     question_id: int | None,
     no_dense: bool,
 ) -> None:
-    if not paths.lexical_db_path.is_file():
-        raise FileNotFoundError(
-            f"Lexical index not found: {paths.lexical_db_path}. Run build-lexical first."
-        )
-    pipeline = ViFinQARetrievalPipeline(paths, config, use_dense=not no_dense)
+    pipeline = create_pipeline(paths, config, no_dense)
     print(json.dumps(pipeline.retrieve(question, question_id), ensure_ascii=False, indent=2))
+
+
+def command_answer_direct(
+    paths: ProjectPaths,
+    config: ModelConfig,
+    question: str,
+    question_id: int | None,
+    no_dense: bool,
+    minimum_binding_score: float,
+) -> None:
+    pipeline = create_pipeline(paths, config, no_dense)
+    result = pipeline.answer_direct(
+        question,
+        question_id,
+        minimum_binding_score=minimum_binding_score,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 def command_analyze_questions(paths: ProjectPaths, output: Path | None) -> None:
@@ -169,6 +204,15 @@ def main() -> None:
             args.question,
             args.question_id,
             args.no_dense,
+        )
+    elif args.command == "answer-direct":
+        command_answer_direct(
+            paths,
+            load_config(args.config),
+            args.question,
+            args.question_id,
+            args.no_dense,
+            args.minimum_binding_score,
         )
     elif args.command == "analyze-questions":
         command_analyze_questions(paths, args.output)
