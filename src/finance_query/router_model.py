@@ -7,8 +7,8 @@ import joblib
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from .questions import RuleQuestionPlanner, infer_operation_ast
-from .schemas import QuestionFamily, QuestionPlan
+from .questions import RuleQuestionPlanner, infer_operation_ast, metric_hint
+from .schemas import OperandSpec, QuestionFamily, QuestionPlan
 
 
 class EmbeddingQuestionRouter:
@@ -58,9 +58,39 @@ class ModelBackedQuestionPlanner:
         plan.family = family
         plan.family_confidence = confidence
         plan.operation_ast = infer_operation_ast(family, question)
+        plan.operands = []
 
-        if family != "direct_lookup" and not plan.operands:
+        hint = metric_hint(question)
+        if family == "direct_lookup":
+            plan.operands.append(
+                OperandSpec(
+                    operand_id="x0",
+                    metric=hint,
+                    ticker=plan.tickers[0] if len(plan.tickers) == 1 else None,
+                    period=plan.years[0] if len(plan.years) == 1 else None,
+                    scope=plan.scope,
+                )
+            )
+        elif family == "temporal_change" and len(plan.years) >= 2:
+            plan.operands.extend(
+                [
+                    OperandSpec(
+                        operand_id="x_old",
+                        metric=hint,
+                        period=plan.years[0],
+                        scope=plan.scope,
+                    ),
+                    OperandSpec(
+                        operand_id="x_new",
+                        metric=hint,
+                        period=plan.years[-1],
+                        scope=plan.scope,
+                    ),
+                ]
+            )
+        else:
             warning = "Model router selected a composed family; semantic operand decomposition is required."
             if warning not in plan.warnings:
                 plan.warnings.append(warning)
+
         return plan
