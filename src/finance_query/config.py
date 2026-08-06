@@ -44,6 +44,7 @@ class ProjectPaths:
 class ModelConfig:
     embedding_model: str = "intfloat/multilingual-e5-small"
     reranker_model: str | None = None
+    router_model_dir: str | None = None
     embedding_batch_size: int = 32
     max_sequence_length: int = 512
     lexical_top_k: int = 100
@@ -72,3 +73,9 @@ class ModelConfig:
         except ImportError:
             pass
         return "cpu"
+
+    def resolved_router_dir(self, repository_root: Path) -> Path | None:
+        if self.router_model_dir is None:
+            return None
+        path = Path(self.router_model_dir)
+        return path if path.is_absolute() else repository_root / path
