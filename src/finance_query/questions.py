@@ -134,15 +134,22 @@ def load_ticker_aliases(code_stock_path: Path) -> dict[str, str]:
 def extract_tickers(question: str, aliases: dict[str, str]) -> list[str]:
     found: list[tuple[int, str]] = []
     lowered = normalize_text(question).casefold()
+    known_tickers = set(aliases.values())
 
-    # Explicit ticker tokens are high precision.
+    # Corporate abbreviations such as CTCP/TMCP must not become fake tickers.
     for match in re.finditer(r"\(([A-Z]{2,6})\)|\b([A-Z]{2,6})\b", question):
-        ticker = next(group for group in match.groups() if group)
-        found.append((match.start(), ticker.upper()))
+        ticker = next(group for group in match.groups() if group).upper()
+        if known_tickers and ticker not in known_tickers:
+            continue
+        found.append((match.start(), ticker))
 
-    # Company aliases provide recall when no ticker is written.
+    # Company aliases provide recall when no ticker is explicitly written.
     for alias, ticker in aliases.items():
-        position = lowered.find(alias)
+        if alias == ticker.casefold():
+            match = re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", lowered)
+            position = match.start() if match else -1
+        else:
+            position = lowered.find(alias)
         if position >= 0:
             found.append((position, ticker))
 
