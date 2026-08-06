@@ -1,46 +1,219 @@
-# Vietnamese Financial Question-to-Pandas System
+# ViFinQA Adaptive Hierarchical RAG
 
-This repository develops an auditable pipeline for ViFinQA financial-table retrieval and Text-to-Pandas execution.
+This repository develops an auditable Vietnamese financial question-answering system for the public ViFinQA corpus.
+
+The target is not a generic “embed chunks and ask an LLM” pipeline. ViFinQA combines OCR reports, hierarchical financial tables, multiple report scopes, multi-period questions, cross-company comparisons, filtering, aggregation, ratios, and executable numerical reasoning.
+
+The selected design is therefore:
+
+> **Adaptive hierarchical retrieval + structure-aware evidence binding + constrained symbolic execution.**
+
+The model resolves semantic ambiguity. Deterministic code preserves source identity, binds evidence, parses numbers, performs arithmetic, and compiles the final Pandas program.
+
+## Verified dataset facts
+
+The public release currently provides:
+
+- `1,012` Vietnamese questions;
+- OCR financial reports under `financial_statements/`;
+- company/ticker metadata in `code_stock.csv`;
+- question rows containing only `id` and `question`.
+
+The public question file does **not** provide:
 
 ```text
-Vietnamese question
-    -> question parsing
-    -> document retrieval
-    -> table extraction and retrieval
-    -> row/column binding
-    -> execution plan
-    -> Pandas query generation
-    -> safe execution
-    -> validated submission record
+answer
+relevant_docs
+relevant_tables
+evidence
+pandas_query
+difficulty
 ```
 
-## Current status
+Consequences:
+
+- retrieval cannot be honestly scored against public gold labels alone;
+- the external table-reference mapping cannot be proved corpus-wide from the public question file;
+- a manually verified development set or a richer organizer release is required;
+- table identifiers must be stored as metadata, not learned as semantic classes.
+
+## Question audit
+
+Sequential inspection of all `1,012` public questions reveals six clear template blocks. These ranges are an observed organization of the public file, **not official difficulty labels**.
+
+| IDs | Count | Observable question family | Typical reasoning |
+|---:|---:|---|---|
+| `1–361` | `361` | Single-value lookup | one entity, one period, one metric, unit conversion |
+| `362–577` | `216` | Conditional analytical / scenario | multiple entities or years, filtering, median/ranking, financial formulas, stress scenarios |
+| `578–655` | `78` | Temporal change | two periods, difference or growth rate for one entity |
+| `656–732` | `77` | Ratio / derived metric | two or more operands, margin, leverage, coverage, turnover, net values |
+| `733–812` | `80` | Cross-entity comparison | retrieve the same or related metric for multiple companies and subtract/compare |
+| `813–1012` | `200` | Multi-period / multi-entity aggregation | average, sum, maximum, minimum, count, threshold filtering |
+
+This distribution rejects two simplistic architectures:
+
+1. A lookup-only system cannot solve the analytical and aggregation blocks.
+2. A full agentic workflow for every question wastes latency and increases error risk on direct lookups.
+
+The system must route questions adaptively.
+
+## Target architecture
+
+```mermaid
+flowchart LR
+    Q[Question] --> R[Question-family router]
+
+    R -->|direct| P1[Deterministic slot parser]
+    R -->|composed| P2[Operand decomposer and typed planner]
+
+    P1 --> PLAN[QuestionPlan]
+    P2 --> PLAN
+
+    PLAN --> DR[Confidence-aware document retrieval]
+    DR --> TR[Multi-view table and row retrieval]
+
+    TR --> BM25[BM25 / sparse]
+    TR --> DENSE[Multilingual dense retrieval]
+    TR --> LATE[Optional late interaction]
+
+    BM25 --> FUSE[RRF / candidate fusion]
+    DENSE --> FUSE
+    LATE --> FUSE
+
+    FUSE --> RR[Cross-encoder reranker]
+    RR --> EG[Evidence graph and operand coverage]
+    EG --> BIND[Row, column, period and unit binding]
+    BIND --> AST[Typed operation AST]
+    AST --> EXEC[Deterministic Decimal executor]
+    EXEC --> OUT[Pandas/evidence compiler and validator]
+```
+
+The complete graph, schemas, routing logic, recovery edges, metrics, and implementation phases are documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+## Why hierarchical RAG
+
+A report is not an unordered collection of text chunks. Evidence has structure:
+
+```text
+company
+└── report year and scope
+    └── document section / page
+        └── table
+            ├── hierarchical row path
+            ├── hierarchical column path
+            ├── unit scope
+            ├── note reference
+            └── cell value
+```
+
+Flattening every table into arbitrary token chunks can destroy row-column relations, duplicate labels, unit scope, and header hierarchy. The primary representation is therefore a table/cell graph. CSV or DataFrame form is a derived execution view.
+
+## Retrieval design
+
+The first-stage retriever is evaluated as an ablation ladder:
+
+```text
+R0: metadata routing + normalized exact matching
+R1: BM25 over document/table/row views
+R2: BM25 + multilingual dense retrieval
+R3: Reciprocal Rank Fusion
+R4: cross-encoder reranking
+R5: optional token-level late interaction
+R6: evidence-set graph selection for multi-hop questions
+```
+
+Candidate models include:
+
+- embeddings: `BAAI/bge-m3` or a suitable `Qwen3-Embedding` checkpoint;
+- reranking: `BAAI/bge-reranker-v2-m3` or a suitable `Qwen3-Reranker` checkpoint;
+- late interaction: a multilingual ColBERT-style retriever, added only after simpler baselines are measured.
+
+Model size is not assumed to imply better performance on Vietnamese OCR tables. Every layer must justify itself through retrieval and end-to-end ablations.
+
+## MRR, RRF, and RAG
+
+These terms are different:
+
+- **RAG** is the retrieval-and-reasoning architecture.
+- **MRR** is an evaluation metric measuring the rank of the first relevant item.
+- **RRF** is a rank-fusion method used to merge lexical, dense, or multi-view rankings.
+
+MRR alone is insufficient for questions needing multiple evidence items. The evaluation must also measure set recall, F2, and operand coverage.
+
+## Table identity
+
+Three identities are kept separate:
+
+```text
+external_table_ref
+    Organizer/upstream reference, for example document|table_350 or document|350.
+
+internal_table_uid
+    Stable system identity derived from document identity and table content/provenance.
+
+source_span
+    Raw byte and decoded-character positions in the OCR source file.
+```
+
+The earlier hypothesis that `350` was the raw opening `<table>` character offset is refuted for the exact VJC 2018 separate report: the first raw table begins at character offset `205` and UTF-8 byte offset `235`.
+
+Companion ViFinQA code consumes assets named `table_N.csv` and references shaped as `document|table_N`, which strongly supports interpreting `N` as an upstream normalized-table identifier. The original algorithm that assigned `N` is not present in the public raw release.
+
+The model must never regress or classify the numeric suffix. It retrieves a table asset and emits the stored external reference when that mapping is available.
+
+## Meaning of `df1`
+
+`df1` is an execution-time alias for the first selected evidence DataFrame in one question.
+
+```json
+{
+  "variable": "df1",
+  "csv_path": "data/generated/question_1_table_1.csv"
+}
+```
+
+It is not:
+
+- an external table ID;
+- an internal table UID;
+- the first table in the corpus;
+- a financial concept.
+
+With several evidence tables, aliases are assigned deterministically as `df1`, `df2`, and so on.
+
+## Current implementation status
 
 Implemented:
 
-- download of the public `AIGuruTinix/ViFinQA` corpus;
-- centralized source-code path configuration;
-- report, page, table, character-offset, byte-offset, and line statistics;
-- table-ID hypothesis auditing when a labeled question file contains `relevant_tables`.
+- explicit download of `questions/questions.jsonl`;
+- explicit download of `code_stock.csv`;
+- download of OCR financial reports;
+- centralized path configuration;
+- question-file validation;
+- report, page, raw-table, character-offset, byte-offset, and line statistics;
+- table-ID hypothesis auditing when labeled `relevant_tables` are supplied.
 
 Not implemented yet:
 
-- production question parser;
-- document and table retrievers;
-- row/column binding;
-- execution planner;
-- Pandas generator and sandbox;
-- final submission builder.
+- immutable source manifest and strict byte-preserving corpus builder;
+- hierarchy-aware table/cell graph;
+- question-family router;
+- operand planner and typed operation AST;
+- document, table, row, and cell retrievers;
+- hybrid fusion and reranker;
+- evidence graph and operand coverage selector;
+- deterministic numerical executor;
+- Pandas compiler, restricted sandbox, and final submission builder.
 
-## Direct path configuration
+## Local paths
 
-All processing paths are defined in one source file:
+All processing paths are centralized in:
 
 ```text
 data/process/project_paths.py
 ```
 
-Default layout:
+Canonical layout:
 
 ```text
 <repository>/
@@ -54,19 +227,7 @@ Default layout:
         └── audit_output/
 ```
 
-The key constants are:
-
-```python
-PROJECT_ROOT
-VIFINQA_DIR
-FINANCIAL_STATEMENTS_DIR
-QUESTIONS_PATH
-AUDIT_OUTPUT_DIR
-```
-
-The code also detects the former local path `data/data/ViFinQA` as a temporary fallback. New downloads always use `data/ViFinQA`.
-
-Because paths are configured in source code, the scripts do not require path arguments.
+The resolver temporarily supports the earlier `data/data/ViFinQA` layout, but new downloads use `data/ViFinQA`.
 
 ## Installation
 
@@ -79,29 +240,21 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## Download the dataset
-
-Run from any working directory:
+## Download and validate the public release
 
 ```bash
 python data/process/extract_data.py
 ```
 
-The downloader resolves the repository root from its own file location and writes to:
+The downloader validates that the question file contains usable `id` and `question` records and confirms that OCR report files exist.
 
-```text
-data/ViFinQA/
-```
-
-## Audit the dataset
-
-Run directly without CLI path arguments:
+## Audit the corpus
 
 ```bash
 python data/process/audit_dataset.py
 ```
 
-Output is written to:
+Generated files:
 
 ```text
 data/process/audit_output/
@@ -116,150 +269,17 @@ data/process/audit_output/
 └── anomalies.csv
 ```
 
-To use an enriched labeled question file, change `QUESTIONS_PATH` or the resolution logic in:
+With the public question file, the correct table-ID conclusion is “not testable from gold references” because `relevant_tables` is absent.
 
-```text
-data/process/project_paths.py
-```
+## Development order
 
-## Public dataset limitation
-
-The public `questions/questions.jsonl` contains records such as:
-
-```json
-{"id": 1, "question": "..."}
-```
-
-It does not provide public gold values for:
-
-```text
-relevant_docs
-relevant_tables
-evidence
-pandas_query
-answer
-```
-
-Therefore, the origin of a numeric reference such as:
-
-```text
-VJC_financial_statements_2018_separate|350
-```
-
-cannot be verified across the public question set alone.
-
-A single inspected report showed that `350` matched the 0-based character offset of an opening `<table>` tag. That remains a hypothesis until verified on multiple labeled records.
-
-The audit compares labeled IDs against:
-
-- local table order, 0-based and 1-based;
-- character offset, 0-based and 1-based;
-- UTF-8 byte offset, 0-based and 1-based;
-- source line number;
-- page number;
-- order within a page;
-- deterministic global order.
-
-Suggested lock criteria:
-
-```text
-exact_match_rate  >= 99.9%
-unique_match_rate >= 99.5%
-collision_rate    == 0%
-```
-
-## Model responsibility
-
-The model should not predict the raw numeric table ID.
-
-Correct design:
-
-```text
-question
-    -> retrieve/segment correct table candidate
-    -> deterministic table-ID mapping
-    -> convert table to DataFrame
-    -> execute Pandas query
-```
-
-If `table_id == start_char_0` is verified, compute the offset on the original extracted text before:
-
-- trimming;
-- whitespace normalization;
-- newline conversion;
-- OCR correction;
-- HTML reserialization;
-- deletion of blank lines.
-
-Changing one character before a table changes the offsets of that table and all later tables.
-
-## Meaning of `df1`
-
-`df1` is only a local alias for the first evidence DataFrame used by one question.
-
-```json
-{
-  "evidence": [
-    {
-      "variable": "df1",
-      "csv_path": "data/generated/question_1_table_1.csv"
-    }
-  ]
-}
-```
-
-Conceptually:
-
-```python
-import pandas as pd
-
-df1 = pd.read_csv(
-    "data/generated/question_1_table_1.csv",
-    dtype=str,
-    keep_default_na=False,
-)
-```
-
-`df1` is not:
-
-- a table ID;
-- a financial label;
-- the first table in the complete corpus;
-- a global variable shared across questions.
-
-With multiple evidence tables, aliases are assigned sequentially as `df1`, `df2`, and so on.
-
-Example query:
-
-```python
-rows = df1[
-    df1["Chỉ tiêu"].str.contains(
-        "Doanh thu thuần",
-        case=False,
-        na=False,
-    )
-]
-raw_value = rows["2023"].iloc[0]
-answer = float(raw_value.replace(".", "").replace(",", "."))
-```
-
-The exact query must use the real extracted CSV schema and must not hard-code the final answer.
-
-## Repository layout
-
-```text
-nlp-finance-query-/
-├── README.md
-├── ARCHITECTURE.md
-├── requirements.txt
-├── data/
-│   ├── README.md
-│   └── process/
-│       ├── project_paths.py
-│       ├── extract_data.py
-│       └── audit_dataset.py
-└── documents_contest/
-    └── ViFinQA_competition_rules.md
-```
-
-Downloaded data and generated audits are ignored by Git.
+1. Freeze a source manifest and reproduce corpus counts.
+2. Build a stratified labeled development set covering all six observed question families.
+3. Resolve or explicitly isolate the external table-reference mapping.
+4. Build the hierarchy-aware table/cell asset layer.
+5. Establish metadata + BM25 baselines.
+6. Add dense retrieval, RRF, and reranking only through measured ablations.
+7. Implement question routing, operand decomposition, and evidence coverage.
+8. Implement typed symbolic execution with `Decimal`.
+9. Compile selected evidence and operation AST into Pandas-compatible output.
+10. Add confidence calibration, recovery, and abstention.
