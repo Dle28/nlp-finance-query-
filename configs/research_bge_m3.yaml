@@ -1,6 +1,7 @@
 model:
   embedding_model: BAAI/bge-m3
   reranker_model: BAAI/bge-reranker-v2-m3
+  router_model_dir: artifacts/question_router
   embedding_batch_size: 8
   max_sequence_length: 1024
   lexical_top_k: 300
