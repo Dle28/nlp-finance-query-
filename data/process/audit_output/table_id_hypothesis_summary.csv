@@ -1,0 +1,14 @@
+﻿hypothesis,total_references,exact_match_references,exact_match_rate,unique_match_references,unique_match_rate,pass_exact_99_9,pass_unique_99_5
+local_order_0,0,0,0.0,0,0.0,False,False
+local_order_1,0,0,0.0,0,0.0,False,False
+start_char_0,0,0,0.0,0,0.0,False,False
+start_char_1,0,0,0.0,0,0.0,False,False
+start_byte_0,0,0,0.0,0,0.0,False,False
+start_byte_1,0,0,0.0,0,0.0,False,False
+start_line_0,0,0,0.0,0,0.0,False,False
+start_line_1,0,0,0.0,0,0.0,False,False
+page_no,0,0,0.0,0,0.0,False,False
+page_order_0,0,0,0.0,0,0.0,False,False
+page_order_1,0,0,0.0,0,0.0,False,False
+global_order_0,0,0,0.0,0,0.0,False,False
+global_order_1,0,0,0.0,0,0.0,False,False

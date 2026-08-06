@@ -1,0 +1,12 @@
+﻿metric,value
+ticker_count,100
+year_count,11
+document_count,1973
+separate_document_count,942
+consolidated_document_count,945
+unknown_scope_document_count,86
+total_pages,121756
+total_html_tables,146246
+question_count,1012
+relevant_table_reference_count,0
+anomaly_count,0
