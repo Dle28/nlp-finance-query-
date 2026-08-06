@@ -1,0 +1,514 @@
+# ============================================================
+# Python
+# ============================================================
+
+# Byte-compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Compiled extensions
+*.so
+*.pyd
+*.dll
+
+# Python build artifacts
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Python package manager logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+
+# ============================================================
+# Virtual environments
+# ============================================================
+
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# Conda
+.conda/
+conda-meta/
+
+
+# ============================================================
+# Environment variables and secrets
+# ============================================================
+
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+credentials.json
+secrets.json
+secret.json
+tokens.json
+token.json
+
+# API keys or local authentication files
+*.secret
+*.secrets
+.auth/
+credentials/
+secrets/
+
+
+# ============================================================
+# Project datasets
+# ============================================================
+
+# Full downloaded ViFinQA dataset
+data/ViFinQA/
+
+# Raw and generated data
+data/raw/
+data/interim/
+data/processed/
+data/generated/
+data/cache/
+data/tmp/
+data/temp/
+
+# Large local corpus directories
+datasets/
+dataset/
+corpus/
+ocr_data/
+financial_statements/
+
+# Keep small examples and metadata
+!data/samples/
+!data/samples/**
+!data/examples/
+!data/examples/**
+!data/README.md
+
+# Temporary downloaded files
+*.part
+*.download
+*.tmp
+
+
+# ============================================================
+# Hugging Face
+# ============================================================
+
+.cache/huggingface/
+huggingface/
+hf_cache/
+transformers_cache/
+datasets_cache/
+
+# Dataset cache files
+*.arrow
+*.lock
+
+
+# ============================================================
+# Machine learning models and checkpoints
+# ============================================================
+
+models/
+model/
+checkpoints/
+checkpoint/
+weights/
+pretrained_models/
+saved_models/
+
+checkpoint-*/
+**/checkpoint-*/
+
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.onnx
+*.tflite
+*.pb
+*.h5
+*.keras
+*.joblib
+*.pkl
+*.pickle
+*.safetensors
+
+# Tokenizer/model generated files
+tokenizer.json
+tokenizer_config.json
+special_tokens_map.json
+added_tokens.json
+vocab.json
+merges.txt
+
+# Keep explicitly documented configuration files if needed
+!configs/
+!configs/**
+
+
+# ============================================================
+# Training outputs and experiment tracking
+# ============================================================
+
+runs/
+outputs/
+output/
+results/
+predictions/
+artifacts/
+experiments/
+
+wandb/
+.wandb/
+mlruns/
+mlflow/
+lightning_logs/
+tensorboard/
+tb_logs/
+
+events.out.tfevents.*
+*.tfevents.*
+
+
+# ============================================================
+# Generated indexes and retrieval artifacts
+# ============================================================
+
+# Report and table indexes generated locally
+data/processed/report_index.csv
+data/processed/table_index.csv
+data/processed/table_index.parquet
+data/processed/*.parquet
+data/processed/*.feather
+
+# Search indexes
+indexes/
+index/
+faiss_index/
+vector_store/
+vector_db/
+chroma/
+chroma_db/
+.qdrant/
+elasticsearch_data/
+
+*.faiss
+*.index
+
+
+# ============================================================
+# Generated annotations and intermediate pipeline files
+# ============================================================
+
+annotations/generated/
+annotations/weak_labels/
+annotations/predictions/
+
+question_ir.jsonl
+retrieval_results.jsonl
+execution_plans.jsonl
+execution_logs.jsonl
+final_results.json
+
+*_predictions.json
+*_predictions.jsonl
+*_results.json
+*_results.jsonl
+
+
+# ============================================================
+# Submission files
+# ============================================================
+
+submission/
+submissions/
+submission.zip
+submission_*.zip
+
+# Generated submission data
+submission.json
+submission/data/
+
+# Other archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# Keep explicitly required sample archives if any
+!data/samples/*.zip
+
+
+# ============================================================
+# Logs and temporary runtime files
+# ============================================================
+
+logs/
+log/
+*.log
+*.out
+*.err
+
+tmp/
+temp/
+.cache/
+cache/
+
+*.tmp
+*.temp
+*.bak
+*.backup
+*.swp
+*.swo
+*~
+.nfs*
+
+
+# ============================================================
+# Testing and code coverage
+# ============================================================
+
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+coverage.json
+*.cover
+*.py,cover
+.hypothesis/
+.tox/
+.nox/
+
+test-results/
+pytest-report.html
+
+
+# ============================================================
+# Static analysis and type-checking caches
+# ============================================================
+
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+.pyre/
+.pytype/
+.ruff_cache/
+.pyright/
+.pylint.d/
+
+bandit-report.json
+
+
+# ============================================================
+# Jupyter Notebook
+# ============================================================
+
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+
+# Optional generated notebook outputs
+notebooks/output/
+notebooks/outputs/
+notebooks/generated/
+
+
+# ============================================================
+# IDE and editor files
+# ============================================================
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# JetBrains
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Vim
+*.swp
+*.swo
+*.swn
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+
+# ============================================================
+# Operating system files
+# ============================================================
+
+# Linux
+.directory
+.Trash-*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+
+# ============================================================
+# Documentation build outputs
+# ============================================================
+
+docs/_build/
+site/
+.mkdocs_cache/
+
+
+# ============================================================
+# Database files
+# ============================================================
+
+*.db
+*.sqlite
+*.sqlite3
+
+# Keep intentionally versioned small databases only by exception
+# !data/samples/example.sqlite
+
+
+# ============================================================
+# Profiling and debugging
+# ============================================================
+
+*.prof
+*.lprof
+*.trace
+*.dump
+core
+core.*
+
+
+# ============================================================
+# Local configuration
+# ============================================================
+
+config.local.*
+*.local.yaml
+*.local.yml
+*.local.json
+local_settings.py
+
+# Keep project configuration templates
+!configs/*.yaml
+!configs/*.yml
+!configs/*.json
+
+
+# ============================================================
+# Dependency manager artifacts
+# ============================================================
+
+# Poetry local environment
+poetry.toml
+
+# PDM
+.pdm-python
+.pdm-build/
+__pypackages__/
+
+# Hatch
+.hatch/
+
+# Rye
+.rye/
+
+# uv cache
+.uv/
+uv-cache/
+
+
+# ============================================================
+# Generated C/Cython files
+# ============================================================
+
+*.c
+*.cpp
+
+# Remove these two rules if C/C++ source is intentionally maintained
+
+
+# ============================================================
+# Project-specific exclusions
+# ============================================================
+
+# Full competition dataset should be downloaded by script
+data/ViFinQA/
+
+# Generated report/table data
+data/processed/
+data/generated_tables/
+data/normalized_tables/
+data/submission_data/
+
+# Local trained parser models
+models/phobert/
+models/reranker/
+models/embeddings/
+
+# Generated submission outputs
+submission/
+submissions/
+
+# Local execution sandbox
+sandbox/
+execution_workspace/
+
+# Generated research reports
+reports/generated/
