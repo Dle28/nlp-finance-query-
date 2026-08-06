@@ -1,0 +1,11 @@
+model:
+  embedding_model: BAAI/bge-m3
+  reranker_model: BAAI/bge-reranker-v2-m3
+  embedding_batch_size: 8
+  max_sequence_length: 1024
+  lexical_top_k: 300
+  dense_top_k: 300
+  fused_top_k: 200
+  rerank_top_k: 30
+  rrf_k: 60
+  device: auto
