@@ -2,6 +2,8 @@ model:
   # Fast laptop baseline. Replace with BAAI/bge-m3 for the research run.
   embedding_model: intfloat/multilingual-e5-small
   reranker_model: null
+  # Set to artifacts/question_router after running train_question_router.py.
+  router_model_dir: null
   embedding_batch_size: 32
   max_sequence_length: 512
   lexical_top_k: 100
