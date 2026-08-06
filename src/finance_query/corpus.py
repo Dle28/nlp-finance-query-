@@ -58,17 +58,22 @@ def page_for_position(page_starts: list[int], page_numbers: list[int], position:
     return page_numbers[index] if index >= 0 else None
 
 
-def parse_table_structure(table_html: str) -> tuple[list[str], list[str], str]:
-    """Return header cells, row paths, and flattened retrieval text.
+def parse_table_structure(
+    table_html: str,
+) -> tuple[list[str], list[list[str]], list[str], str]:
+    """Return header cells, structured rows, row paths, and retrieval text.
 
-    The first three non-empty rows are treated as header candidates. All rows
-    are retained as hierarchical row-path strings. This is a baseline parser;
-    later phases can replace it with explicit rowspan/colspan graph recovery.
+    This baseline preserves each parsed row and cell. It does not claim perfect
+    rowspan/colspan recovery; later hierarchy reconstruction can replace this
+    parser without changing source identity.
     """
     soup = BeautifulSoup(table_html, "lxml")
     rows: list[list[str]] = []
     for row in soup.find_all("tr"):
-        cells = [normalize_space(cell.get_text(" ", strip=True)) for cell in row.find_all(["th", "td"])]
+        cells = [
+            normalize_space(cell.get_text(" ", strip=True))
+            for cell in row.find_all(["th", "td"])
+        ]
         cells = [cell for cell in cells if cell]
         if cells:
             rows.append(cells)
@@ -79,7 +84,7 @@ def parse_table_structure(table_html: str) -> tuple[list[str], list[str], str]:
 
     row_paths = [" > ".join(row) for row in rows]
     flattened = "\n".join(row_paths)
-    return headers, row_paths, flattened
+    return headers, rows, row_paths, flattened
 
 
 def infer_unit(context: str, table_text: str) -> str | None:
@@ -133,7 +138,7 @@ def extract_assets_from_report(path: Path, reports_root: Path) -> list[TableAsse
         table_sha256 = sha256_bytes(table_html.encode("utf-8"))
         context_start = max(0, char_match.start() - 1000)
         context = normalize_space(text[context_start : char_match.start()])[-800:]
-        headers, row_paths, flattened = parse_table_structure(table_html)
+        headers, rows, row_paths, flattened = parse_table_structure(table_html)
         unit = infer_unit(context, flattened)
 
         uid_payload = (
@@ -175,6 +180,7 @@ def extract_assets_from_report(path: Path, reports_root: Path) -> list[TableAsse
                 unit_hint=unit,
                 context_before=context,
                 headers=headers,
+                rows=rows,
                 row_paths=row_paths,
                 search_text=search_text,
             )
@@ -189,8 +195,9 @@ def build_table_assets(reports_root: Path, output_path: Path) -> dict[str, int]:
 
     report_count = 0
     table_count = 0
+    report_paths = list(iter_report_paths(reports_root))
     with output_path.open("w", encoding="utf-8") as output:
-        for path in tqdm(list(iter_report_paths(reports_root)), desc="Building table assets"):
+        for path in tqdm(report_paths, desc="Building table assets"):
             report_count += 1
             for asset in extract_assets_from_report(path, reports_root):
                 output.write(json.dumps(asset.to_dict(), ensure_ascii=False) + "\n")
