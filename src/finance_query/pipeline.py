@@ -5,6 +5,7 @@ from pathlib import Path
 from .config import ModelConfig, ProjectPaths
 from .questions import RuleQuestionPlanner
 from .retrieval import AssetStore, DenseIndex, HybridRetriever
+from .router_model import ModelBackedQuestionPlanner
 
 
 class ViFinQARetrievalPipeline:
@@ -23,7 +24,17 @@ class ViFinQARetrievalPipeline:
     ) -> None:
         self.paths = paths or ProjectPaths.from_repository()
         self.config = config or ModelConfig()
-        self.planner = RuleQuestionPlanner(self.paths.dataset_root / "code_stock.csv")
+
+        router_dir = self.config.resolved_router_dir(self.paths.repository_root)
+        if router_dir is not None and router_dir.is_dir():
+            self.planner = ModelBackedQuestionPlanner(
+                code_stock_path=self.paths.dataset_root / "code_stock.csv",
+                router_dir=router_dir,
+                device=self.config.resolved_device(),
+            )
+        else:
+            self.planner = RuleQuestionPlanner(self.paths.dataset_root / "code_stock.csv")
+
         self.store = AssetStore(self.paths.lexical_db_path)
 
         dense_index: DenseIndex | None = None
