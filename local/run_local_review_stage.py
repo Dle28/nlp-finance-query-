@@ -4,7 +4,7 @@
 Modes:
 - diagnose: verify/analyze a review bundle, write no labels;
 - baseline: source-aware deterministic multi-agent review + small human seed queue;
-- calibrate: train from human seed, rerun V3 agents with learned calibrator;
+- calibrate: train from human seed, rerun V3.1 agents with learned calibrator;
 - final: merge human labels + calibrated machine pseudo-labels with provenance.
 """
 from __future__ import annotations
@@ -37,10 +37,10 @@ def reviewer_script(root: Path, bundle: Path) -> Path:
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     version = int(manifest.get("schema_version") or 0)
     if version >= 3:
-        script = root / "scripts/auto_review_bundle_v3.py"
+        script = root / "scripts/auto_review_bundle_v31.py"
         if not script.is_file():
             raise FileNotFoundError(script)
-        print(f"Using source-aware V3 reviewer for bundle schema {version}")
+        print(f"Using source-aware V3.1 reviewer for bundle schema {version}")
         return script
     print(f"Using legacy reviewer for bundle schema {version}")
     return root / "scripts/auto_review_bundle.py"
