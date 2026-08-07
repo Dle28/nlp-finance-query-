@@ -47,6 +47,10 @@ datasets_cache/
 *.arrow
 *.lock
 
+# Local ViFinQA downloads
+/data/ViFinQA/
+/data/data/ViFinQA/
+
 # Generated audits, indexes, and intermediate data
 /data/process/audit_output/
 /data/raw/
@@ -79,6 +83,9 @@ lightning_logs/
 *.pkl
 *.pickle
 *.joblib
+
+# Kaggle transfer bundles generated locally
+kaggle_upload/
 
 # Search indexes
 indexes/
