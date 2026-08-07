@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Convenience runner for the lightweight local review stages.
+"""Convenience runner for the local ViFinQA review stages.
 
 Modes:
-- baseline: run deterministic multi-agent review + create a small human seed queue;
+- diagnose: verify/analyze a review bundle, write no labels;
+- baseline: deterministic multi-agent review + small human seed queue;
 - calibrate: train from human seed, rerun agents with learned calibrator;
 - final: merge human labels + calibrated machine pseudo-labels with provenance.
 """
@@ -17,10 +18,17 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=["baseline", "calibrate", "final"])
-    parser.add_argument("--bundle-dir", type=Path, required=True)
+    parser.add_argument("mode", choices=["diagnose", "baseline", "calibrate", "final"])
+    parser.add_argument("--bundle-dir", type=Path, default=None)
+    parser.add_argument("--bundle-archive", type=Path, default=None)
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     parser.add_argument("--seed-size", type=int, default=12)
+    parser.add_argument("--audit-size", type=int, default=12)
+    parser.add_argument(
+        "--diagnostic-output",
+        type=Path,
+        default=Path("data/diagnostics/run_001"),
+    )
     parser.add_argument(
         "--human-labels",
         type=Path,
@@ -37,8 +45,35 @@ def run(command: list[str], cwd: Path) -> None:
 def main() -> None:
     args = parse_args()
     root = args.repo_root.resolve()
-    bundle = args.bundle_dir.resolve()
 
+    if args.mode == "diagnose":
+        if bool(args.bundle_dir) == bool(args.bundle_archive):
+            raise ValueError("diagnose requires exactly one of --bundle-dir or --bundle-archive")
+        output = args.diagnostic_output
+        output = output if output.is_absolute() else root / output
+        command = [
+            sys.executable,
+            str(root / "local/diagnose_review_bundle.py"),
+            "--output-dir", str(output),
+            "--audit-size", str(args.audit_size),
+            "--force",
+        ]
+        if args.bundle_dir:
+            command += ["--bundle-dir", str(args.bundle_dir.resolve())]
+        else:
+            command += ["--bundle-archive", str(args.bundle_archive.resolve())]
+        run(command, root)
+        print("\nNEXT — inspect these files before baseline auto-review:")
+        print(output / "diagnostic_summary.json")
+        print(output / "review_bundle_summary.csv")
+        print(output / "manual_audit_queue.jsonl")
+        print("\nIf the audit shows systematic retrieval/evidence errors, fix those first. Do not run baseline blindly.")
+        return
+
+    if args.bundle_dir is None:
+        raise ValueError(f"{args.mode} requires --bundle-dir with an extracted review bundle")
+
+    bundle = args.bundle_dir.resolve()
     labels = root / "data/labels"
     artifacts = root / "artifacts"
     labels.mkdir(parents=True, exist_ok=True)
