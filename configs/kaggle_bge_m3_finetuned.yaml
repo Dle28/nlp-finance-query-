@@ -1,0 +1,14 @@
+model:
+  embedding_model: artifacts/retriever_bge_m3
+  reranker_model: artifacts/reranker_finetuned
+  router_model_dir: artifacts/question_router
+  dense_index_path: artifacts/dense_bge_m3_finetuned.index
+  dense_uids_path: artifacts/dense_bge_m3_finetuned_uids.jsonl
+  embedding_batch_size: 4
+  max_sequence_length: 512
+  lexical_top_k: 300
+  dense_top_k: 300
+  fused_top_k: 150
+  rerank_top_k: 30
+  rrf_k: 60
+  device: cuda
