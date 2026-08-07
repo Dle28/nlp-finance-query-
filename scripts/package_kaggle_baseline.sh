@@ -38,6 +38,19 @@ for name in "${required[@]}"; do
   fi
 done
 
+# The lexical database is built in WAL mode. Force a checkpoint before copying
+# so the standalone .sqlite3 file contains all committed rows.
+python - "${ARTIFACTS}/lexical_index.sqlite3" <<'PY'
+import sqlite3
+import sys
+
+path = sys.argv[1]
+with sqlite3.connect(path) as connection:
+    result = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    count = connection.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
+print(f"SQLite checkpoint: {result}; assets={count:,}")
+PY
+
 mkdir -p "${OUT}"
 rm -f "${ARCHIVE}" "${OUT}/sha256sums.txt"
 
