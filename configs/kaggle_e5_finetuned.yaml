@@ -1,0 +1,14 @@
+model:
+  embedding_model: artifacts/retriever_e5_finetuned
+  reranker_model: null
+  router_model_dir: artifacts/question_router
+  dense_index_path: artifacts/dense_e5_finetuned.index
+  dense_uids_path: artifacts/dense_e5_finetuned_uids.jsonl
+  embedding_batch_size: 64
+  max_sequence_length: 512
+  lexical_top_k: 150
+  dense_top_k: 150
+  fused_top_k: 80
+  rerank_top_k: 30
+  rrf_k: 60
+  device: cuda
