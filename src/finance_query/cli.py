@@ -81,9 +81,10 @@ def command_build_dense(paths: ProjectPaths, config: ModelConfig) -> None:
         raise FileNotFoundError(
             f"Table assets not found: {paths.table_assets_path}. Run build-assets first."
         )
+    dense_index_path, dense_uids_path = config.resolved_dense_paths(paths)
     index = DenseIndex(
-        index_path=paths.dense_index_path,
-        uids_path=paths.dense_uids_path,
+        index_path=dense_index_path,
+        uids_path=dense_uids_path,
         model_name=config.embedding_model,
         device=config.resolved_device(),
         max_sequence_length=config.max_sequence_length,
@@ -95,7 +96,8 @@ def command_build_dense(paths: ProjectPaths, config: ModelConfig) -> None:
                 "indexed_tables": count,
                 "model": config.embedding_model,
                 "device": config.resolved_device(),
-                "index": str(paths.dense_index_path),
+                "index": str(dense_index_path),
+                "uids": str(dense_uids_path),
             },
             indent=2,
         )
