@@ -46,14 +46,16 @@ extra=()
 [[ -d "${ARTIFACTS}/question_router" ]] && extra+=("question_router")
 
 files=("${required[@]}" "${extra[@]}")
+archive_paths=()
+for name in "${files[@]}"; do
+  archive_paths+=("artifacts/${name}")
+done
 
 printf 'Packaging baseline artifacts:\n'
-printf '  %s\n' "${files[@]}"
+printf '  %s\n' "${archive_paths[@]}"
 
 # Store paths relative to repository root so extraction recreates artifacts/.
-tar -czf "${ARCHIVE}" \
-  -C "${ROOT}" \
-  $(printf 'artifacts/%q ' "${files[@]}")
+tar -czf "${ARCHIVE}" -C "${ROOT}" "${archive_paths[@]}"
 
 (
   cd "${OUT}"
