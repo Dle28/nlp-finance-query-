@@ -40,9 +40,10 @@ class ViFinQARetrievalPipeline:
 
         dense_index: DenseIndex | None = None
         if use_dense:
+            dense_index_path, dense_uids_path = self.config.resolved_dense_paths(self.paths)
             dense_index = DenseIndex(
-                index_path=self.paths.dense_index_path,
-                uids_path=self.paths.dense_uids_path,
+                index_path=dense_index_path,
+                uids_path=dense_uids_path,
                 model_name=self.config.embedding_model,
                 device=self.config.resolved_device(),
                 max_sequence_length=self.config.max_sequence_length,
