@@ -1,0 +1,52 @@
+{
+  "bundle_git_commit": "53a106334647f443b1a9bb2e3ec404415e8b3599",
+  "question_count": 60,
+  "diagnosis_counts": {
+    "ADJACENT_CONTEXT_HIT": 1,
+    "EVIDENCE_RISK": 12,
+    "AMBIGUOUS_TOPK": 2,
+    "PLANNER_RISK": 4,
+    "LOOKS_REVIEWABLE": 3,
+    "RETRIEVAL_RISK": 1,
+    "COMPLEX_FAMILY_REVIEW": 37
+  },
+  "risk_counts": {
+    "HIGH": 2,
+    "MEDIUM": 55,
+    "LOW": 3
+  },
+  "family_diagnosis_counts": {
+    "direct_lookup": {
+      "ADJACENT_CONTEXT_HIT": 1,
+      "EVIDENCE_RISK": 3,
+      "AMBIGUOUS_TOPK": 1,
+      "PLANNER_RISK": 3,
+      "LOOKS_REVIEWABLE": 1,
+      "RETRIEVAL_RISK": 1
+    },
+    "conditional_analytical": {
+      "COMPLEX_FAMILY_REVIEW": 10
+    },
+    "temporal_change": {
+      "PLANNER_RISK": 1,
+      "COMPLEX_FAMILY_REVIEW": 8,
+      "LOOKS_REVIEWABLE": 1
+    },
+    "ratio_or_derived": {
+      "EVIDENCE_RISK": 5,
+      "COMPLEX_FAMILY_REVIEW": 5
+    },
+    "cross_entity_comparison": {
+      "EVIDENCE_RISK": 3,
+      "COMPLEX_FAMILY_REVIEW": 7
+    },
+    "multi_entity_or_period_aggregation": {
+      "LOOKS_REVIEWABLE": 1,
+      "COMPLEX_FAMILY_REVIEW": 7,
+      "AMBIGUOUS_TOPK": 1,
+      "EVIDENCE_RISK": 1
+    }
+  },
+  "audit_size": 12,
+  "note": "Generated from the first exported review bundle. Full per-question diagnostics can be regenerated with local/run_local_review_stage.py diagnose."
+}
