@@ -60,6 +60,8 @@ class ModelConfig:
     embedding_model: str = "intfloat/multilingual-e5-small"
     reranker_model: str | None = None
     router_model_dir: str | None = None
+    dense_index_path: str | None = None
+    dense_uids_path: str | None = None
     embedding_batch_size: int = 32
     max_sequence_length: int = 512
     lexical_top_k: int = 100
@@ -94,3 +96,20 @@ class ModelConfig:
             return None
         path = Path(self.router_model_dir)
         return path if path.is_absolute() else repository_root / path
+
+    def resolved_dense_paths(self, paths: ProjectPaths) -> tuple[Path, Path]:
+        index_path = (
+            Path(self.dense_index_path)
+            if self.dense_index_path is not None
+            else paths.dense_index_path
+        )
+        uids_path = (
+            Path(self.dense_uids_path)
+            if self.dense_uids_path is not None
+            else paths.dense_uids_path
+        )
+        if not index_path.is_absolute():
+            index_path = paths.repository_root / index_path
+        if not uids_path.is_absolute():
+            uids_path = paths.repository_root / uids_path
+        return index_path, uids_path
