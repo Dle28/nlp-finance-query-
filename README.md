@@ -1,25 +1,87 @@
-# ViFinQA Adaptive Hierarchical RAG
+# ViFinQA — Retrieval, Evidence Grounding và Human-in-the-loop Review
 
-This repository implements an auditable Vietnamese financial question-answering pipeline for the public ViFinQA corpus.
+Repository này xây dựng pipeline QA tài chính tiếng Việt trên ViFinQA theo hướng:
 
-The target is not generic flat-vector RAG. ViFinQA contains OCR reports, hierarchical financial tables, separate/consolidated scopes, direct lookups, temporal changes, ratios, cross-company comparisons, filtering, ranking, aggregation, and scenario calculations.
+> **retrieve đúng bảng → trích đúng bằng chứng trong bảng → review có kiểm chứng → học từ một phần human label → mới tự động hóa phần còn lại.**
 
-The selected design is:
+Mục tiêu hiện tại chưa phải sinh answer cuối bằng LLM. Mục tiêu trước mắt là tạo được **retrieval labels đáng tin cậy** để huấn luyện/evaluate retriever, reranker và các bước reasoning phía sau.
 
-> **Adaptive hierarchical retrieval + structure-aware evidence binding + constrained symbolic execution.**
+---
 
-Learned models resolve semantic ambiguity. Deterministic code preserves provenance, parses finance numbers, converts units, executes operations, and validates output.
+## 1. Kiến trúc hiện tại
 
-## Verified public-data contract
+```text
+                    KAGGLE / GPU
+                        │
+                        ▼
+                raw financial reports
+                        │
+                        ▼
+                 table_assets.jsonl
+                        │
+              ┌─────────┴─────────┐
+              ▼                   ▼
+        lexical index          dense index
+          SQLite FTS             FAISS
+              └─────────┬─────────┘
+                        ▼
+                 hybrid retrieval
+                        │
+                        ▼
+                Top-K table candidates
+                        │
+                        ▼
+           V3 evidence projection / repair
+              - effective_metric
+              - adjacent-table recovery
+              - period-aware value row
+              - exact direct_evidence
+                        │
+                        ▼
+             vifinqa_review_bundle_v3
+                        │
+                    DOWNLOAD
+                        │
+                        ▼
+                      LOCAL
+                        │
+                        ▼
+                  diagnostic gate
+                        │
+                        ▼
+             source-aware multi-agent review
+                        │
+                 human seed ~12 câu
+                        │
+                        ▼
+                 review calibrator
+                        │
+                        ▼
+             rerun machine review toàn bộ
+                        │
+            ┌───────────┴───────────┐
+            ▼                       ▼
+     machine_calibrated         needs_human
+            │                       │
+            └───────────┬───────────┘
+                        ▼
+                final retrieval labels
+```
 
-The public release provides:
+Chi tiết kiến trúc nằm trong [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-- `1,012` Vietnamese questions;
-- OCR reports under `data/ViFinQA/financial_statements/`;
-- company/ticker metadata in `code_stock.csv`;
-- question records containing only `id` and `question`.
+---
 
-It does not publicly provide:
+## 2. Data contract
+
+Public ViFinQA hiện có:
+
+- `1,012` câu hỏi;
+- OCR financial reports;
+- `code_stock.csv`;
+- question records chủ yếu gồm `id` và `question`.
+
+Public question file không cung cấp đầy đủ gold retrieval fields như:
 
 ```text
 answer
@@ -27,318 +89,435 @@ relevant_docs
 relevant_tables
 evidence
 pandas_query
-difficulty
 ```
 
-Consequences:
+Do đó repository này phải tự xây **verified retrieval labels** thay vì giả định public data đã có gold.
 
-- the repository can build a zero-shot retrieval baseline immediately;
-- supervised retriever/reranker training requires manually verified labels;
-- weak question-family labels must not be presented as organizer gold labels;
-- external numeric table IDs are metadata, never model targets.
+---
 
-## Question-family audit
+## 3. Các question family đang dùng
 
-Sequential inspection of the complete public question file reveals six observable template blocks. These are research labels inferred from file organization, not official difficulty labels.
+Đây là weak/research labels, không phải official gold labels.
 
-| IDs | Count | Observable family | Typical reasoning |
-|---:|---:|---|---|
-| `1–361` | `361` | Direct lookup | one entity, period, metric, unit conversion |
-| `362–577` | `216` | Conditional analytical / scenario | filtering, median/ranking, financial formulas, hypothetical adjustments |
-| `578–655` | `78` | Temporal change | two periods, difference or growth |
-| `656–732` | `77` | Ratio / derived metric | numerator/denominator and finance formulas |
-| `733–812` | `80` | Cross-entity comparison | comparable evidence from several companies |
-| `813–1012` | `200` | Multi-period / multi-entity aggregation | sum, average, max/min, count, thresholds |
+| ID | Family | Count |
+|---:|---|---:|
+| `1–361` | direct lookup | 361 |
+| `362–577` | conditional / analytical | 216 |
+| `578–655` | temporal change | 78 |
+| `656–732` | ratio / derived | 77 |
+| `733–812` | cross-entity comparison | 80 |
+| `813–1012` | multi-entity / multi-period aggregation | 200 |
 
-The architecture therefore has a fast route for direct lookups and a decomposition/evidence-set route for composed questions.
+---
 
-## Implemented baseline
-
-The current code implements the first runnable model stack:
-
-```text
-Question
-→ rule-based metadata extraction and family routing
-→ confidence-aware document filters
-→ byte-preserving table-asset builder
-→ SQLite FTS lexical retrieval
-→ sentence-transformer dense retrieval
-→ Reciprocal Rank Fusion
-→ optional cross-encoder reranking
-→ retrieved table candidates with provenance
-```
-
-It also implements:
-
-- strict UTF-8 reading and raw character/byte spans;
-- stable internal table UIDs;
-- hierarchical row-path retrieval text;
-- locale-aware `Decimal` parsing;
-- typed deterministic operations;
-- weakly supervised question-router training;
-- supervised dense-retriever and reranker training scripts that require verified labels.
-
-The system intentionally stops before final answers when row/cell evidence has not been grounded. It does not fabricate bindings.
-
-## Architecture graph
-
-```mermaid
-flowchart LR
-    Q[Question] --> ROUTER[Question router and metadata parser]
-    ROUTER --> PLAN[QuestionPlan]
-    PLAN --> DOC[Document routing]
-    DOC --> RET[Multi-view retrieval]
-
-    RET --> LEX[SQLite FTS / sparse]
-    RET --> DEN[Dense embeddings]
-    LEX --> RRF[Reciprocal Rank Fusion]
-    DEN --> RRF
-    RRF --> RR[Optional cross-encoder reranker]
-    RR --> CAND[Table candidates with provenance]
-
-    CAND --> BIND[Future row/column/unit binding]
-    BIND --> AST[Typed operation AST]
-    AST --> EXEC[Decimal executor]
-    EXEC --> OUT[Evidence and Pandas compiler]
-```
-
-The full offline/online graph, recovery edges, schemas, metrics, and phases are in [`ARCHITECTURE.md`](ARCHITECTURE.md).
-
-## Table identity
-
-The system separates:
-
-```text
-external_table_ref
-    Organizer/upstream compatibility ID, such as document|table_350.
-
-internal_table_uid
-    Stable SHA-256-derived identity used by this repository.
-
-source_span
-    Raw byte and decoded-character provenance.
-
-df1
-    Local execution alias for the first selected evidence DataFrame.
-```
-
-For the exact VJC 2018 separate report, the first raw table begins at character offset `205` and UTF-8 byte offset `235`, so external suffix `350` is not that raw offset. Companion code consumes `table_N.csv` assets, supporting the interpretation of `N` as an upstream normalized-table identifier. The model never predicts it.
-
-## Repository structure
-
-```text
-src/finance_query/
-├── config.py          # paths and model configuration
-├── corpus.py          # byte-preserving table assets
-├── questions.py       # family routing and deterministic slots
-├── retrieval.py       # SQLite FTS, FAISS, RRF, reranking
-├── execution.py       # Decimal parser and typed operations
-├── pipeline.py        # retrieval orchestration
-├── schemas.py         # typed records
-└── cli.py             # command-line interface
-
-scripts/
-├── train_question_router.py
-├── train_dense_retriever.py
-└── train_reranker.py
-
-configs/
-├── baseline.yaml
-└── research_bge_m3.yaml
-```
-
-## Installation
-
-Python 3.11 or 3.12 is recommended.
+# 4. Cài đặt local
 
 ```bash
+cd ~/Documents/AI_guru
+
 python -m venv .venv
 source .venv/bin/activate
+
 python -m pip install --upgrade pip
 pip install -e .
 ```
 
-## Download data
+Pull code mới:
 
 ```bash
-python data/process/extract_data.py
+git pull --ff-only origin main
 ```
 
-The downloader explicitly retrieves and validates:
-
-```text
-data/ViFinQA/questions/questions.jsonl
-data/ViFinQA/code_stock.csv
-data/ViFinQA/financial_statements/
-```
-
-## Build the retrieval assets
-
-### 1. Extract table assets
-
-```bash
-finance-query build-assets
-```
-
-Output:
-
-```text
-artifacts/table_assets.jsonl
-```
-
-Each asset stores document metadata, raw source spans, page, local ordinal, internal UID, headers, row paths, context, unit hint, and retrieval text.
-
-### 2. Build lexical index
-
-```bash
-finance-query build-lexical
-```
-
-Output:
-
-```text
-artifacts/lexical_index.sqlite3
-```
-
-### 3. Build fast dense index
-
-```bash
-finance-query build-dense --config configs/baseline.yaml
-```
-
-The laptop baseline uses:
-
-```text
-intfloat/multilingual-e5-small
-```
-
-### 4. Build research dense index
-
-```bash
-finance-query build-dense --config configs/research_bge_m3.yaml
-```
-
-The research configuration uses:
-
-```text
-BAAI/bge-m3
-BAAI/bge-reranker-v2-m3
-```
-
-BGE-M3 indexing is substantially slower and is best run on an NVIDIA GPU.
-
-## Retrieve candidates
-
-Lexical-only test:
-
-```bash
-finance-query retrieve \
-  --no-dense \
-  --question-id 1 \
-  --question "Lãi tiền gửi năm 2018 của công ty mẹ VJC là bao nhiêu triệu đồng?"
-```
-
-Hybrid retrieval:
-
-```bash
-finance-query retrieve \
-  --config configs/baseline.yaml \
-  --question-id 1 \
-  --question "Lãi tiền gửi năm 2018 của công ty mẹ VJC là bao nhiêu triệu đồng?"
-```
-
-Output contains:
-
-```json
-{
-  "question_plan": {},
-  "retrieved_tables": [],
-  "status": "retrieval_only",
-  "next_required_stage": "row_column_unit_binding"
-}
-```
-
-## Analyze question routing
-
-```bash
-finance-query analyze-questions \
-  --output artifacts/question_routing.jsonl
-```
-
-This compares the observed ID-range family with the immediate rule router. It is an audit, not official task evaluation.
-
-## Training
-
-### Weak router baseline
-
-```bash
-python scripts/train_question_router.py \
-  --questions data/ViFinQA/questions/questions.jsonl \
-  --model intfloat/multilingual-e5-small \
-  --output-dir artifacts/question_router
-```
-
-### Dense retriever
-
-Requires verified rows such as:
-
-```json
-{"question":"...","positive_table_uids":["internal_uid"]}
-```
-
-```bash
-python scripts/train_dense_retriever.py \
-  --train-jsonl data/labels/retriever_train.jsonl \
-  --asset-db artifacts/lexical_index.sqlite3 \
-  --model BAAI/bge-m3 \
-  --epochs 3 \
-  --batch-size 8
-```
-
-### Reranker
-
-Requires labeled positive and hard-negative pairs:
-
-```json
-{"question":"...","table_uid":"internal_uid","label":1.0}
-```
-
-```bash
-python scripts/train_reranker.py \
-  --train-jsonl data/labels/reranker_train.jsonl \
-  --asset-db artifacts/lexical_index.sqlite3 \
-  --model BAAI/bge-reranker-v2-m3 \
-  --epochs 3 \
-  --batch-size 8
-```
-
-Detailed runtime assumptions and hardware estimates are in [`TRAINING.md`](TRAINING.md).
-
-## Tests
+Run tests:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-## Current boundary
+---
 
-Implemented now:
+# 5. Kaggle: build/index/export
 
-- corpus table assets;
-- lexical and dense indexes;
-- RRF hybrid retrieval;
-- optional pretrained reranking;
-- question routing and deterministic metadata;
-- numerical parser and operation executor;
-- training entry points.
+Kaggle chịu phần nặng:
 
-Still required for full answers:
+```text
+raw reports
+→ table assets
+→ lexical index
+→ dense index
+→ hybrid retrieval
+→ V3 review bundle
+```
 
-- semantic operand decomposition for analytical questions;
-- evidence graph and operand coverage;
-- hierarchical row/column/cell binding;
-- unit provenance resolver;
-- evidence CSV materializer;
-- Pandas compiler and sandbox;
-- final submission builder;
-- stratified manually verified development labels.
+Nếu session mới hoàn toàn và chưa có artifacts, dùng notebook/script build-from-scratch.
+
+Nếu artifacts đã tồn tại, export V3 bằng:
+
+```python
+%cd /kaggle/working/AI_guru
+
+%run kaggle/export_review_bundle_v3.py \
+    --top-k 20 \
+    --max-review-candidates 40 \
+    --neighbor-radius 1 \
+    --force
+```
+
+Output:
+
+```text
+/kaggle/working/vifinqa_review_bundle_v3.tar.gz
+/kaggle/working/vifinqa_review_bundle_v3.tar.gz.sha256
+/kaggle/working/vifinqa_review_handoff_v3.json
+```
+
+Tải cả 3 file về local.
+
+Xem thêm:
+
+- [`docs/KAGGLE_TO_LOCAL_REVIEW.md`](docs/KAGGLE_TO_LOCAL_REVIEW.md)
+- [`docs/REVIEW_FIX_V3.md`](docs/REVIEW_FIX_V3.md)
+
+---
+
+# 6. Local: chuẩn bị bundle
+
+Ví dụ:
+
+```bash
+mkdir -p ~/ViFinQA_review/run_002
+
+tar -xzf ~/Downloads/vifinqa_review_bundle_v3.tar.gz \
+    -C ~/ViFinQA_review/run_002
+```
+
+Thư mục sau extract phải có:
+
+```text
+manifest.json
+review_items.jsonl
+tables.jsonl
+errors.jsonl
+SHA256SUMS
+```
+
+Verify archive trước khi dùng:
+
+```bash
+cd ~/Downloads
+sha256sum -c vifinqa_review_bundle_v3.tar.gz.sha256
+```
+
+---
+
+# 7. Diagnostic trước khi review
+
+Diagnostic không tạo gold label.
+
+```bash
+cd ~/Documents/AI_guru
+
+python local/run_local_review_stage.py diagnose \
+    --bundle-archive ~/Downloads/vifinqa_review_bundle_v3.tar.gz \
+    --diagnostic-output data/diagnostics/run_002 \
+    --audit-size 12
+```
+
+Output:
+
+```text
+data/diagnostics/run_002/
+├── diagnostic_summary.json
+├── review_bundle_summary.csv
+├── review_bundle_diagnostics.jsonl
+└── manual_audit_queue.jsonl
+```
+
+Các lỗi chính:
+
+```text
+ADJACENT_CONTEXT_HIT
+RETRIEVAL_RISK
+EVIDENCE_RISK
+PLANNER_RISK
+AMBIGUOUS_TOPK
+COMPLEX_FAMILY_REVIEW
+```
+
+Không coi `NO_CANDIDATE_IN_TOPK` là `NO_GOLD_IN_CORPUS`.
+
+---
+
+# 8. Machine review baseline
+
+Sau khi diagnostic chấp nhận được:
+
+```bash
+cd ~/Documents/AI_guru
+
+python local/run_local_review_stage.py baseline \
+    --bundle-dir ~/ViFinQA_review/run_002 \
+    --seed-size 12
+```
+
+Output:
+
+```text
+data/labels/machine_reviews_60.jsonl
+data/labels/human_seed_queue_12.jsonl
+```
+
+Với bundle schema V3, runner tự dùng reviewer mới:
+
+```text
+scripts/auto_review_bundle_v31.py
+```
+
+Reviewer này có grounding guard để recovered adjacent table không được thắng chỉ vì context leak.
+
+---
+
+# 9. Human review: lưu ý rất quan trọng
+
+`local/review_bundle_widget.py` là **Jupyter/IPython widget**.
+
+Do đó lệnh:
+
+```python
+%run local/review_bundle_widget.py ...
+```
+
+**chỉ chạy trong Jupyter Notebook/JupyterLab/IPython notebook cell.**
+
+Không chạy `%run` trực tiếp trong Bash terminal.
+
+Nếu chạy trong terminal như:
+
+```bash
+%run local/review_bundle_widget.py
+```
+
+Bash sẽ báo:
+
+```text
+bash: fg: %run: no such job
+```
+
+## Cách đúng
+
+Từ terminal:
+
+```bash
+cd ~/Documents/AI_guru
+source .venv/bin/activate
+jupyter lab
+```
+
+Hoặc:
+
+```bash
+jupyter notebook
+```
+
+Sau đó tạo/open một notebook trong repo và chạy cell:
+
+```python
+%run local/review_bundle_widget.py \
+    --bundle-dir ~/ViFinQA_review/run_002 \
+    --machine-reviews data/labels/machine_reviews_60.jsonl \
+    --queue data/labels/human_seed_queue_12.jsonl \
+    --output data/labels/retriever_verified_60.jsonl
+```
+
+Bạn chỉ review seed queue, không review toàn bộ 60 câu.
+
+UI ưu tiên hiển thị:
+
+```text
+Question
+Machine recommendation
+One-line table summary
+Exact direct evidence
+Agent votes
+Aligned source rows khi cần
+```
+
+---
+
+# 10. Calibration
+
+Sau khi review đủ seed:
+
+```bash
+python local/run_local_review_stage.py calibrate \
+    --bundle-dir ~/ViFinQA_review/run_002
+```
+
+Pipeline:
+
+```text
+human seed
+→ candidate features
+→ LogisticRegression calibrator
+→ rerun source-aware reviewers
+→ calibrated probabilities
+```
+
+Output:
+
+```text
+artifacts/review_calibrator.joblib
+data/labels/machine_reviews_60_calibrated.jsonl
+data/labels/needs_human_after_calibration.jsonl
+```
+
+Bạn chỉ review `needs_human_after_calibration.jsonl` nếu còn case bất định.
+
+---
+
+# 11. Final labels
+
+```bash
+python local/run_local_review_stage.py final \
+    --bundle-dir ~/ViFinQA_review/run_002
+```
+
+Output:
+
+```text
+data/labels/retriever_labels_v2.jsonl
+```
+
+Provenance được giữ riêng:
+
+```text
+human_verified
+machine_calibrated
+machine_high_confidence
+machine_provisional
+needs_human
+retrieval_failure
+```
+
+Machine label không được giả mạo thành human gold.
+
+---
+
+# 12. V3 evidence projection
+
+V3 không chỉ lấy một row có text gần query.
+
+Nó cố tạo evidence dạng:
+
+```text
+TABLE: 10. Bất động sản đầu tư
+||
+COLUMNS: Nguyên giá | Hao mòn lũy kế | Giá trị còn lại
+||
+VALUE: Số cuối năm | 417.860.288.970 | 39.303.347.137 | 378.556.941.833
+```
+
+Các field chính:
+
+```text
+effective_metric
+context_heading
+table_topic
+direct_evidence
+anchor_row_index
+value_row_index
+period_intent
+period_match
+evidence_features
+```
+
+`direct_evidence` phải được tạo từ source table/context, không phải LLM tưởng tượng.
+
+---
+
+# 13. Source-aware multi-agent review
+
+Hiện tại các reviewer là deterministic Python reviewers + optional learned calibrator, không phải nhiều ChatGPT độc lập.
+
+Các view chính:
+
+```text
+lexical_agent
+ dense_agent
+ metadata_agent
+ evidence_agent
+ challenger_agent
+ grounding_agent
+ calibrator_agent  # chỉ có sau human calibration
+ verifier
+```
+
+Consensus chỉ mạnh khi candidate vừa có retrieval support vừa có grounded evidence.
+
+Recovered adjacent candidate phải qua strict grounding guard trước khi được vote.
+
+---
+
+# 14. Repository structure hiện tại
+
+```text
+src/finance_query/
+├── config.py
+├── corpus.py
+├── questions.py
+├── retrieval.py
+├── binding.py
+├── execution.py
+├── pipeline.py
+├── schemas.py
+└── cli.py
+
+kaggle/
+├── export_review_bundle.py
+├── export_review_bundle_v3.py
+└── run_kaggle_retrieval_export.py
+
+scripts/
+├── build_review_bundle.py
+├── build_review_bundle_v3.py
+├── auto_review_bundle.py
+├── auto_review_bundle_v3.py
+├── auto_review_bundle_v31.py
+├── train_review_calibrator.py
+├── export_review_labels.py
+├── train_question_router.py
+├── train_dense_retriever.py
+└── train_reranker.py
+
+local/
+├── diagnose_review_bundle.py
+├── review_bundle_widget.py
+└── run_local_review_stage.py
+
+docs/
+├── KAGGLE_TO_LOCAL_REVIEW.md
+├── REVIEW_PIPELINE_V2.md
+├── REVIEW_FIX_V3.md
+├── LOCAL_DIAGNOSTIC.md
+└── V3_BUNDLE_VALIDATION_AND_NEXT.md
+```
+
+---
+
+# 15. Current development priority
+
+Thứ tự hiện tại:
+
+```text
+1. reliable table retrieval
+2. source-grounded evidence projection
+3. verified retrieval labels
+4. calibrate multi-agent reviewer
+5. retriever/reranker evaluation
+6. improve table/row/cell binding
+7. operand-level reasoning
+8. deterministic execution
+9. final answer/submission generation
+```
+
+Không tối ưu answer generation trước khi retrieval/evidence labels đủ đáng tin.
