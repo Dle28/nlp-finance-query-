@@ -122,6 +122,12 @@ python -m pip install --upgrade pip
 pip install -e .
 ```
 
+Cài UI review local:
+
+```bash
+python -m pip install jupyterlab ipywidgets
+```
+
 Pull code mới:
 
 ```bash
@@ -277,24 +283,16 @@ Reviewer này có grounding guard để recovered adjacent table không được
 
 ---
 
-# 9. Human review: lưu ý rất quan trọng
+# 9. Human review: Bash và Jupyter là hai môi trường khác nhau
 
-`local/review_bundle_widget.py` là **Jupyter/IPython widget**.
+`local/review_bundle_widget.py` dùng `ipywidgets`, vì vậy UI phải chạy trong **Jupyter Notebook/JupyterLab**.
 
-Do đó lệnh:
+`%run` là **IPython/Jupyter magic command**, không phải Bash command.
 
-```python
-%run local/review_bundle_widget.py ...
-```
-
-**chỉ chạy trong Jupyter Notebook/JupyterLab/IPython notebook cell.**
-
-Không chạy `%run` trực tiếp trong Bash terminal.
-
-Nếu chạy trong terminal như:
+Do đó lệnh này sai nếu gõ trực tiếp trong terminal:
 
 ```bash
-%run local/review_bundle_widget.py
+%run local/review_bundle_widget.py ...
 ```
 
 Bash sẽ báo:
@@ -303,25 +301,27 @@ Bash sẽ báo:
 bash: fg: %run: no such job
 ```
 
-## Cách đúng
-
-Từ terminal:
+## 9.1 Terminal: chỉ launch Jupyter
 
 ```bash
 cd ~/Documents/AI_guru
 source .venv/bin/activate
+
+python -m pip install jupyterlab ipywidgets
 jupyter lab
 ```
 
-Hoặc:
+Nếu không muốn JupyterLab:
 
 ```bash
 jupyter notebook
 ```
 
-Sau đó tạo/open một notebook trong repo và chạy cell:
+## 9.2 Trong một Jupyter code cell: chạy widget
 
 ```python
+%cd ~/Documents/AI_guru
+
 %run local/review_bundle_widget.py \
     --bundle-dir ~/ViFinQA_review/run_002 \
     --machine-reviews data/labels/machine_reviews_60.jsonl \
@@ -443,13 +443,13 @@ Các view chính:
 
 ```text
 lexical_agent
- dense_agent
- metadata_agent
- evidence_agent
- challenger_agent
- grounding_agent
- calibrator_agent  # chỉ có sau human calibration
- verifier
+dense_agent
+metadata_agent
+evidence_agent
+challenger_agent
+grounding_agent
+calibrator_agent  # chỉ có sau human calibration
+verifier
 ```
 
 Consensus chỉ mạnh khi candidate vừa có retrieval support vừa có grounded evidence.
@@ -505,8 +505,6 @@ docs/
 ---
 
 # 15. Current development priority
-
-Thứ tự hiện tại:
 
 ```text
 1. reliable table retrieval
