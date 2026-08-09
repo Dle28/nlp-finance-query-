@@ -18,6 +18,22 @@ Ngày kiểm tra: 2026-08-08.
   `raw_v2_canonical_context_v3`. V1/V2 tiếp tục được giữ cho audit lịch sử,
   không được đưa vào autonomous training.
 
+Full-bundle checkpoint `run_full_001` (1.012 câu, 2026-08-10) đã chạy lại
+toàn bộ local, không rebuild Kaggle/FTS/FAISS:
+
+- Context V3: 29.428 bảng, 25.709 `review_ready`, 3.719
+  `needs_processing`; 315 bảng được recovery inline header theo policy V3.
+- Autonomous review: 29 `machine_calibrated`, 396
+  `machine_provisional`, 587 `needs_human`; 29 machine-silver export đều có
+  protocol V3, exact raw metric identity và `human_verified=false`.
+- Execution ledger: 28 `grounded`; hai silver còn lại dừng ở
+  `source_monetary_unit_unresolved`, nên không tạo answer.
+- `autotrain` trả `deferred`: 29/200 machine-silver pairs. Không có model hay
+  index nào được ghi.
+- Formula audit: 134 EvidenceSet (1 complete, 133 partial). 69 là
+  `multi_stage_selection_unresolved`; 13 câu đã phủ operand nhưng vẫn được
+  giữ không execute vì formula/stage semantics chưa có controlled rule.
+
 - Dựng grid V2 từ raw HTML, giữ ô trống, mở rộng `rowspan`/`colspan` và giữ
   cell provenance.
 - Thêm context schema V2: exact source title, nearest numbered topic, period,
