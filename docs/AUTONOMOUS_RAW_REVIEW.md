@@ -251,6 +251,9 @@ numeric binding because they did not parse as exactly one reliable number.
 The corresponding autonomous V4 run produced 57 `machine_calibrated`, 363
 `machine_provisional`, and 592 `needs_human` records. The exact-cell execution
 ledger made 47 direct-lookups `grounded`; the other 965 are explicitly
-`not_executable`. Formula EvidenceSets remained `partial` for all 134 formula
-questions, so none supplied a computed answer. This is the current evidence
-boundary, not an error to be solved by lowering the promotion threshold.
+`not_executable`. Formula source discovery joined 33,069 metadata-bound
+candidates and audited 350 exact operand bindings: 10 of 134 questions now
+have complete operand coverage, but all 134 remain `partial` for execution
+because formula definition/stage/entity gates still apply. None supplied a
+computed answer. This is the current evidence boundary, not an error to be
+solved by lowering the promotion threshold.
