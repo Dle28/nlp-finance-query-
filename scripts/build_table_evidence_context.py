@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from finance_query.evidence_context import (  # noqa: E402
+    EVIDENCE_CONTEXT_VERSION,
     build_evidence_context,
     evidence_context_manifest_path,
     recover_continuation_headers,
@@ -92,7 +93,7 @@ def build_context_sidecar(
     atomic_write_jsonl(output_path, rows)
     quality_counts = Counter(str((row.get("quality") or {}).get("status")) for row in rows)
     manifest = {
-        "evidence_context_version": 1,
+        "evidence_context_version": EVIDENCE_CONTEXT_VERSION,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "input_bundle_tables_sha256": sha256_file(bundle_dir / "tables.jsonl"),
         "input_structure_path": str(structure_path),
@@ -101,6 +102,7 @@ def build_context_sidecar(
         "context_count": len(rows),
         "error_count": len(errors),
         "quality_status_counts": dict(sorted(quality_counts.items())),
+        "numeric_binding_policy": "one_reliable_raw_v2_number_per_cell",
         "continuation_header_recovery": continuation_recovery,
         "sidecar_sha256": sha256_file(output_path),
         "errors": errors,
@@ -113,7 +115,7 @@ def main() -> None:
     args = parse_args()
     bundle = args.bundle_dir.resolve()
     structure = args.structure or bundle / "tables_structured_v2.jsonl"
-    output = args.output or bundle / "tables_evidence_context_v1.jsonl"
+    output = args.output or bundle / "tables_evidence_context_v2.jsonl"
     manifest = build_context_sidecar(bundle, structure, output, force=args.force)
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
     print("No Kaggle corpus, lexical index, dense embeddings, or FAISS index was rebuilt.")

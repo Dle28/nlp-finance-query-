@@ -57,6 +57,13 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def evidence_context_path(bundle: Path, manifest: dict[str, Any]) -> Path:
+    name = str(manifest.get("evidence_context_file") or "tables_evidence_context_v1.jsonl")
+    if Path(name).name != name:
+        raise ValueError("Formula evidence context filename must be local to the bundle")
+    return bundle / name
+
+
 def validate_manifest(bundle: Path, sidecar: Path) -> dict[str, Any]:
     manifest_path = sidecar.with_suffix(".manifest.json")
     if not manifest_path.is_file():
@@ -67,7 +74,7 @@ def validate_manifest(bundle: Path, sidecar: Path) -> dict[str, Any]:
     expected = {
         "bundle_review_items_sha256": bundle / "review_items.jsonl",
         "structured_tables_sha256": bundle / "tables_structured_v2.jsonl",
-        "evidence_context_sha256": bundle / "tables_evidence_context_v1.jsonl",
+        "evidence_context_sha256": evidence_context_path(bundle, manifest),
     }
     for key, path in expected.items():
         if str(manifest.get(key) or "") != sha256_file(path):
@@ -126,12 +133,18 @@ def canonical_column_label(context: dict[str, Any], column_index: int) -> str:
     )
 
 
-def validate_operand_matches(rows: list[dict[str, Any]], bundle: Path) -> int:
+def validate_operand_matches(
+    rows: list[dict[str, Any]],
+    bundle: Path,
+    context_path: Path | None = None,
+) -> int:
     uids = _needed_uids(rows)
     if not uids:
         return 0
     tables = load_referenced_jsonl(bundle / "tables_structured_v2.jsonl", uids)
-    contexts = load_referenced_jsonl(bundle / "tables_evidence_context_v1.jsonl", uids)
+    contexts = load_referenced_jsonl(
+        context_path or bundle / "tables_evidence_context_v1.jsonl", uids
+    )
     checked = 0
     for qid, operand_id, match in operand_matches(rows):
         uid = str(match.get("internal_table_uid") or "")
@@ -194,7 +207,7 @@ def main() -> None:
     bundle, sidecar = args.bundle_dir.resolve(), args.formula_evidence.resolve()
     manifest = validate_manifest(bundle, sidecar)
     rows = load_jsonl(sidecar)
-    checked = validate_operand_matches(rows, bundle)
+    checked = validate_operand_matches(rows, bundle, evidence_context_path(bundle, manifest))
     output = {
         "formula_evidence_manifest": manifest,
         "operand_binding_count_checked": checked,

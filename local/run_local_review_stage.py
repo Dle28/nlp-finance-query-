@@ -174,7 +174,7 @@ def main() -> None:
     final_labels = labels / f"retriever_labels_v2_{run_tag}.jsonl"
     review_ledger = labels / f"review_ledger_{run_tag}.jsonl"
     human_check_queue = labels / f"human_check_queue_{run_tag}.jsonl"
-    evidence_context = bundle / "tables_evidence_context_v1.jsonl"
+    evidence_context = bundle / "tables_evidence_context_v2.jsonl"
     overrides = (
         args.question_plan_overrides.resolve()
         if args.question_plan_overrides is not None
@@ -216,6 +216,8 @@ def main() -> None:
                 str(bundle),
                 "--output",
                 str(formula_evidence),
+                "--evidence-context",
+                str(evidence_context),
             ],
             root,
         )
@@ -268,6 +270,8 @@ def main() -> None:
                 str(bundle),
                 "--machine-reviews",
                 str(autonomous_reviews),
+                "--evidence-context",
+                str(evidence_context),
                 "--output",
                 str(execution_ledger),
             ],

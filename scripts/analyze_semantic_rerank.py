@@ -69,6 +69,19 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def evidence_context_path(bundle: Path, manifest: dict[str, Any]) -> Path:
+    """Resolve the sidecar named by a rerank manifest without path traversal.
+
+    Semantic V2 sidecars made before canonical-context V2 default to the V1
+    filename. New sidecars carry their context filename explicitly, preserving
+    auditability across the source-preserving preprocessing migration.
+    """
+    name = str(manifest.get("evidence_context_file") or "tables_evidence_context_v1.jsonl")
+    if Path(name).name != name:
+        raise ValueError("Semantic-rerank context filename must be local to the bundle")
+    return bundle / name
+
+
 def validate_sidecar(bundle: Path, sidecar: Path) -> dict[str, Any]:
     manifest_path = sidecar.with_suffix(".manifest.json")
     if not manifest_path.is_file():
@@ -79,7 +92,7 @@ def validate_sidecar(bundle: Path, sidecar: Path) -> dict[str, Any]:
     expected = {
         "bundle_review_items_sha256": bundle / "review_items.jsonl",
         "structured_tables_sha256": bundle / "tables_structured_v2.jsonl",
-        "evidence_context_sha256": bundle / "tables_evidence_context_v1.jsonl",
+        "evidence_context_sha256": evidence_context_path(bundle, manifest),
     }
     for key, path in expected.items():
         if str(manifest.get(key) or "") != sha256_file(path):
@@ -111,7 +124,7 @@ def validate_v2_source_inputs(
     }
     contexts = {
         str(row["internal_table_uid"]): row
-        for row in load_jsonl(bundle / "tables_evidence_context_v1.jsonl")
+        for row in load_jsonl(evidence_context_path(bundle, manifest))
     }
     for qid, score_row in score_rows.items():
         item = items.get(qid)

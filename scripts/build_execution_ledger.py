@@ -36,6 +36,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bundle-dir", type=Path, required=True)
     parser.add_argument("--machine-reviews", type=Path, required=True)
+    parser.add_argument(
+        "--evidence-context",
+        type=Path,
+        default=None,
+        help="Canonical context sidecar; defaults to tables_evidence_context_v2.jsonl in the bundle.",
+    )
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
@@ -83,9 +89,8 @@ def load_v2_tables(bundle: Path) -> dict[str, dict[str, Any]]:
     return tables
 
 
-def load_evidence_contexts(bundle: Path) -> dict[str, dict[str, Any]]:
+def load_evidence_contexts(bundle: Path, context_path: Path) -> dict[str, dict[str, Any]]:
     structured = bundle / "tables_structured_v2.jsonl"
-    context_path = bundle / "tables_evidence_context_v1.jsonl"
     validate_evidence_context_sidecar(bundle, structured, context_path)
     contexts = {
         str(row["internal_table_uid"]): row for row in load_jsonl(context_path)
@@ -251,7 +256,10 @@ def main() -> None:
     if unexpected:
         raise ValueError(f"Machine reviews contain IDs outside bundle: {unexpected[:10]}")
     tables = load_v2_tables(bundle)
-    contexts = load_evidence_contexts(bundle)
+    context_path = (args.evidence_context or bundle / "tables_evidence_context_v2.jsonl").resolve()
+    if context_path.parent != bundle:
+        raise ValueError("Execution context sidecar must reside in the review bundle")
+    contexts = load_evidence_contexts(bundle, context_path)
     rows = [
         direct_execution_row(item, reviews.get(int(item["id"])), tables, contexts)
         for item in items

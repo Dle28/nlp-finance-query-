@@ -23,6 +23,19 @@ spec.loader.exec_module(mod)
 
 
 class AnalyzeSemanticRerankTests(unittest.TestCase):
+    def test_context_filename_uses_manifest_or_legacy_v1_fallback(self) -> None:
+        bundle = Path("/tmp/bundle")
+        self.assertEqual(
+            mod.evidence_context_path(bundle, {"evidence_context_file": "tables_evidence_context_v2.jsonl"}),
+            bundle / "tables_evidence_context_v2.jsonl",
+        )
+        self.assertEqual(
+            mod.evidence_context_path(bundle, {}),
+            bundle / "tables_evidence_context_v1.jsonl",
+        )
+        with self.assertRaises(ValueError):
+            mod.evidence_context_path(bundle, {"evidence_context_file": "../outside.jsonl"})
+
     def test_percentile_uses_bounded_observed_values(self) -> None:
         self.assertIsNone(mod.percentile([], 0.5))
         self.assertEqual(mod.percentile([0.1, 0.2, 0.3], 0.5), 0.2)

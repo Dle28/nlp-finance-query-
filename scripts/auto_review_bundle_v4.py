@@ -486,7 +486,7 @@ def autonomous_review_item(
             "consensus_status": status,
             "review_reason": reason,
             "machine_self_review": {
-                "protocol": "raw_v2_canonical_context_v1",
+                "protocol": "raw_v2_canonical_context_v2",
                 "training_eligible": status == "machine_calibrated",
                 "critic_accepts": critic_accepts,
                 "alternative_uid": None if alternative is None else alternative["uid"],
@@ -506,7 +506,7 @@ def main() -> None:
     if int(manifest.get("error_count") or 0) != 0:
         raise RuntimeError("Refuse autonomous review: bundle contains retrieval errors.")
     structure_path = bundle / "tables_structured_v2.jsonl"
-    context_path = args.evidence_context or bundle / "tables_evidence_context_v1.jsonl"
+    context_path = args.evidence_context or bundle / "tables_evidence_context_v2.jsonl"
     validate_structure_sidecar(bundle, structure_path)
     validate_evidence_context_sidecar(bundle, structure_path, context_path)
     source_items = v3.load_jsonl(bundle / "review_items.jsonl")

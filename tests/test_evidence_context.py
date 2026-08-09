@@ -1,9 +1,26 @@
 import unittest
+from pathlib import Path
 
-from finance_query.evidence_context import build_evidence_context, recover_continuation_headers
+from finance_query.evidence_context import (
+    EVIDENCE_CONTEXT_VERSION,
+    build_evidence_context,
+    evidence_context_manifest_path,
+    recover_continuation_headers,
+)
 
 
 class EvidenceContextTests(unittest.TestCase):
+    def test_context_version_and_manifest_names_are_sidecar_specific(self):
+        self.assertEqual(EVIDENCE_CONTEXT_VERSION, 2)
+        self.assertEqual(
+            evidence_context_manifest_path(Path("tables_evidence_context_v1.jsonl")),
+            Path("table_evidence_context_v1.manifest.json"),
+        )
+        self.assertEqual(
+            evidence_context_manifest_path(Path("tables_evidence_context_v2.jsonl")),
+            Path("table_evidence_context_v2.manifest.json"),
+        )
+
     def test_span_parent_header_is_recovered_without_changing_grid_cells(self):
         table = {
             "internal_table_uid": "u1",

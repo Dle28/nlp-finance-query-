@@ -17,6 +17,19 @@ spec.loader.exec_module(mod)
 
 
 class AnalyzeFormulaEvidenceTests(unittest.TestCase):
+    def test_context_filename_uses_manifest_or_legacy_v1_fallback(self) -> None:
+        bundle = Path("/tmp/bundle")
+        self.assertEqual(
+            mod.evidence_context_path(bundle, {"evidence_context_file": "tables_evidence_context_v2.jsonl"}),
+            bundle / "tables_evidence_context_v2.jsonl",
+        )
+        self.assertEqual(
+            mod.evidence_context_path(bundle, {}),
+            bundle / "tables_evidence_context_v1.jsonl",
+        )
+        with self.assertRaises(ValueError):
+            mod.evidence_context_path(bundle, {"evidence_context_file": "../outside.jsonl"})
+
     def test_operand_match_must_match_raw_cell_header_and_parser(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             bundle = Path(directory)

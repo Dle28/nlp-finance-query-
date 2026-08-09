@@ -27,6 +27,7 @@ from .table_structure import normalize_space, sha256_file
 
 
 NUMERIC_CELL_RE = re.compile(r"^[\s()\-+\d.,%/]+$")
+EVIDENCE_CONTEXT_VERSION = 2
 PERIOD_RE = re.compile(
     r"(?:31\s*[/.-]\s*12\s*[/.-]\s*(?:19|20)\d{2}|"
     r"0?1\s*[/.-]\s*0?1\s*[/.-]\s*(?:19|20)\d{2}|"
@@ -365,7 +366,7 @@ def build_evidence_context(table: dict[str, Any]) -> dict[str, Any]:
         "internal_table_uid": str(table["internal_table_uid"]),
         "document_id": table.get("document_id"),
         "local_ordinal": table.get("local_ordinal"),
-        "evidence_context_version": 1,
+        "evidence_context_version": EVIDENCE_CONTEXT_VERSION,
         "source_provenance": {
             "source_path": provenance.get("source_path"),
             "source_sha256": provenance.get("source_sha256"),
@@ -475,7 +476,10 @@ def recover_continuation_headers(
 
 
 def evidence_context_manifest_path(path: Path) -> Path:
-    return path.with_name("table_evidence_context_v1.manifest.json")
+    match = re.fullmatch(r"tables_evidence_context_v(\d+)\.jsonl", path.name)
+    if match:
+        return path.with_name(f"table_evidence_context_v{match.group(1)}.manifest.json")
+    return path.with_suffix(".manifest.json")
 
 
 def validate_evidence_context_sidecar(
@@ -491,8 +495,11 @@ def validate_evidence_context_sidecar(
     if not context_path.is_file() or not manifest_path.is_file():
         raise FileNotFoundError("Evidence-context sidecar or manifest is missing")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if int(manifest.get("evidence_context_version") or 0) != 1:
+    version = int(manifest.get("evidence_context_version") or 0)
+    if version not in {1, EVIDENCE_CONTEXT_VERSION}:
         raise ValueError("Unsupported evidence-context sidecar version")
+    if version >= 2 and str(manifest.get("numeric_binding_policy") or "") != "one_reliable_raw_v2_number_per_cell":
+        raise ValueError("Evidence-context V2 lacks its numeric binding policy")
     if int(manifest.get("error_count") or 0) != 0:
         raise ValueError("Evidence-context sidecar contains build errors")
     if str(manifest.get("input_structure_sha256") or "") != sha256_file(structure_path):
