@@ -131,6 +131,26 @@ effective plan and its provenance; the execution ledger refuses an override
 that does not match the original bundle. The sidecar changes neither source
 tables nor any `human_verified`/machine provenance state.
 
+### Formula EvidenceSets are coverage, not answers
+
+For controlled ratio/temporal formula templates, create a separate exact-row
+coverage sidecar:
+
+```bash
+python scripts/build_formula_evidence_sets.py \
+  --bundle-dir ~/ViFinQA_review/run_002 \
+  --output ~/ViFinQA_review/run_002/formula_evidence_sets_v1.jsonl
+```
+
+An operand is recorded only when its metric has an exact V2 data row and a
+unique raw canonical year/period cell. The collector rejects unmatched ticker
+or scope metadata and requires one coherent entity/scope combination plus one
+unambiguous binding per required operand. `complete` therefore means that the
+controlled input EvidenceSet is source-complete; it still cannot execute when
+the formula is ambiguous, needs a stage selection, or the question family is a
+group/comparison/conditional program. The collector never changes a review
+status or produces an answer.
+
 ## Current run on `run_002`
 
 The context sidecar covered all 1,211 bundle tables without source errors:

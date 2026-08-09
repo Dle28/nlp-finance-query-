@@ -462,6 +462,20 @@ replan. Override mang hash câu hỏi + plan gốc và được ghi lại trong 
 nó không thay đổi raw table, không giả mạo `human_verified` và vẫn phải qua
 exact-row/exact-column gate.
 
+Với câu ratio/temporal có controlled formula, có thể tạo `EvidenceSet` exact
+row riêng để biết operand nào đã đủ hoặc còn thiếu; lệnh này không tính answer
+và không thay đổi label:
+
+```bash
+python scripts/build_formula_evidence_sets.py \
+  --bundle-dir ~/ViFinQA_review/run_002 \
+  --output ~/ViFinQA_review/run_002/formula_evidence_sets_v1.jsonl
+```
+
+`complete` chỉ có nghĩa tất cả operand của formula đã có exact raw row/cell,
+cùng entity/scope và không mơ hồ; câu có lọc nhóm, xếp hạng hoặc công thức
+ambiguous vẫn giữ `partial` cho đến khi có executor theo stage.
+
 Sau khi tích luỹ đủ 200 machine-silver pairs, chạy:
 
 ```bash
