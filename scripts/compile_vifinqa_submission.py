@@ -145,6 +145,11 @@ def validate_ledger_row(row: dict[str, Any]) -> None:
         raise ValueError(f"Q{qid}: grounding_status must be {REQUIRED_GROUNDING_STATUS!r}")
     if str(row.get("formula_definition_status") or "confirmed") == "ambiguous":
         raise ValueError(f"Q{qid}: ambiguous formula cannot enter a submission")
+    # A controlled executor can produce a shadow evaluation which is grounded
+    # but deliberately outside the contest-submission contract. Older records
+    # omit this field; when it is present, only a literal True is admissible.
+    if "submission_eligible" in row and row["submission_eligible"] is not True:
+        raise ValueError(f"Q{qid}: ledger record is explicitly not submission-eligible")
 
 
 def operand_pairs(

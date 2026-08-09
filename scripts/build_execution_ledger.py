@@ -28,6 +28,7 @@ if str(ROOT / "src") not in sys.path:
 from finance_query.binding import row_label  # noqa: E402
 from finance_query.corpus import infer_unit  # noqa: E402
 from finance_query.execution import convert_unit, execute_ast, parse_decimal  # noqa: E402
+from finance_query.financial_metrics import fold_text  # noqa: E402
 from finance_query.evidence_context import (  # noqa: E402
     AUTONOMOUS_REVIEW_PROTOCOL,
     validate_evidence_context_sidecar,
@@ -58,8 +59,9 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help=(
-            "Audited Formula EvidenceSet V3. Only complete, defined percentage-change "
-            "sets may add exact_formula execution records."
+            "Audited Formula EvidenceSet V3. Only complete, defined allow-listed "
+            "sets may add exact_formula execution records; the controlled CFO period "
+            "argmax record is shadow-only and cannot enter a submission."
         ),
     )
     parser.add_argument("--output", type=Path, required=True)
@@ -448,6 +450,118 @@ def _formula_binding(
     )
 
 
+def _operating_cash_flow_argmax_period_execution(
+    item: dict[str, Any],
+    evidence: dict[str, Any],
+    formula: dict[str, Any],
+    tables: dict[str, dict[str, Any]],
+    contexts: dict[str, dict[str, Any]],
+    *,
+    manifest: dict[str, Any],
+    confidence: float,
+    review: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Execute one declared single-entity CFO argmax only after all raw gates.
+
+    This is not a generic ranking executor. It accepts exactly the controlled
+    formula emitted for questions such as "which listed year had the highest
+    operating cash flow", and keeps the review state unchanged. The result is
+    an auditable execution-ledger value, not a training label.
+    """
+    entity = str(formula.get("entity") or "")
+    operands = list(formula.get("operands") or [])
+    selected = evidence.get("selected_operand_matches") or {}
+    if not entity or len(operands) < 2 or set(selected) != {
+        str(operand.get("operand_id") or "") for operand in operands
+    }:
+        return None
+    years: set[int] = set()
+    bindings: dict[str, DirectBinding] = {}
+    scopes: set[str] = set()
+    for operand in operands:
+        operand_id = str(operand.get("operand_id") or "")
+        operand_years = [value for value in operand.get("years") or [] if isinstance(value, int)]
+        if (
+            not operand_id
+            or operand.get("role") != "period_argmax_value"
+            or str(operand.get("entity") or "") != entity
+            or operand.get("allowed_table_functions") != ["cash_flow_statement"]
+            or len(operand_years) != 1
+            or operand_years[0] in years
+        ):
+            return None
+        year = operand_years[0]
+        years.add(year)
+        match = selected.get(operand_id) or {}
+        uid = str(match.get("internal_table_uid") or "")
+        table, context = tables.get(uid), contexts.get(uid)
+        if table is None or context is None:
+            return None
+        if (
+            str(table.get("ticker") or "") != entity
+            or int(table.get("report_year") or 0) != year
+            or str((context.get("table_function") or {}).get("kind") or "")
+            != "cash_flow_statement"
+        ):
+            return None
+        scope = str(table.get("scope") or "")
+        if not scope or scope != str(match.get("scope") or ""):
+            return None
+        scopes.add(scope)
+        binding = _formula_binding(match, table, context, confidence=confidence)
+        if binding is None or str(year) not in binding.column_text:
+            return None
+        if "luu chuyen tien thuan tu hoat dong kinh doanh" not in fold_text(binding.row_text):
+            return None
+        bindings[operand_id] = binding
+    if len(scopes) != 1 or len({binding.source_unit for binding in bindings.values()}) != 1:
+        return None
+    values = {
+        operand_id: Decimal(binding.parsed_value)
+        for operand_id, binding in bindings.items()
+    }
+    maximum = max(values.values())
+    winners = [operand_id for operand_id, value in values.items() if value == maximum]
+    if len(winners) != 1:
+        return None
+    winner = winners[0]
+    winner_year = next(
+        int(operand["years"][0]) for operand in operands if operand["operand_id"] == winner
+    )
+    operation_ast = {"op": "argmax_year", "args": [str(operand["operand_id"]) for operand in operands]}
+    return {
+        "id": int(item["id"]),
+        "provenance_status": "machine_calibrated",
+        "execution_status": "grounded",
+        "grounding_status": "exact_rows_validated",
+        "execution_mode": "exact_formula_period_argmax",
+        "formula_definition_status": "defined",
+        "operation_ast": operation_ast,
+        "normalize_operands_to_vnd": False,
+        "submission_eligible": False,
+        "operand_bindings": [
+            {
+                "operand_id": operand_id,
+                "internal_table_uid": binding.internal_table_uid,
+                "binding": binding.to_dict(),
+            }
+            for operand_id, binding in bindings.items()
+        ],
+        "formula_provenance": {
+            "protocol": "formula_evidence_v3_exact_operating_cash_flow_argmax_period",
+            "formula_id": formula["formula_id"],
+            "formula_confidence": confidence,
+            "scope": next(iter(scopes)),
+            "review_consensus_status": str((review or {}).get("consensus_status") or "not_used"),
+            "review_status_promoted": False,
+            "formula_evidence_sha256": manifest["sidecar_sha256"],
+            "evidence_context_file": manifest["evidence_context_file"],
+            "source_discovery": evidence.get("source_discovery") or {},
+        },
+        "computed_answer": str(winner_year),
+    }
+
+
 def exact_formula_execution_row(
     item: dict[str, Any],
     evidence: dict[str, Any] | None,
@@ -457,12 +571,13 @@ def exact_formula_execution_row(
     manifest: dict[str, Any],
     review: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    """Materialize the one safe formula family currently eligible for execution.
+    """Materialize a controlled exact Formula EvidenceSet execution.
 
     This is intentionally narrower than Formula EvidenceSet collection. It
     requires complete evidence, a defined formula, no outstanding reason code,
-    one exact V2 number per operand and identical known source units.  Complex
-    selection/ranking and every unsupported formula remain evidence-only.
+    one exact V2 number per operand and identical known source units. Only an
+    explicitly enumerated formula implementation can proceed; all generic
+    selection/ranking programs remain evidence-only.
     """
     if not evidence or int(evidence.get("id") or -1) != int(item["id"]):
         return None
@@ -475,9 +590,22 @@ def exact_formula_execution_row(
         str(evidence.get("evidence_completeness") or "") != "complete"
         or str(formula.get("definition_status") or "") != "defined"
         or evidence.get("reason_codes")
-        or str(formula.get("formula_id") or "") != "percentage_change"
         or not 0.95 <= confidence <= 1.0
     ):
+        return None
+    formula_id = str(formula.get("formula_id") or "")
+    if formula_id == "operating_cash_flow_argmax_period":
+        return _operating_cash_flow_argmax_period_execution(
+            item,
+            evidence,
+            formula,
+            tables,
+            contexts,
+            manifest=manifest,
+            confidence=confidence,
+            review=review,
+        )
+    if formula_id != "percentage_change":
         return None
     selected = evidence.get("selected_operand_matches") or {}
     if set(selected) != {"x_old", "x_new"}:

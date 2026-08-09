@@ -487,6 +487,82 @@ def _cfo_positive_multiyear_max_net_margin_plan(
     return spec
 
 
+def _operating_cash_flow_argmax_period_plan(
+    question: str,
+    folded_question: str,
+    years: list[int],
+) -> dict[str, Any] | None:
+    """Recognise one single-entity multi-period CFO maximum question.
+
+    This plan is intentionally limited to an explicit list of years, a single
+    ticker, the exact operating-cash-flow metric, and an explicit "highest"
+    request. It produces per-year exact-cell operands only. A later executor
+    must still prove a unique scope, source unit, maximum, and period before it
+    can materialize an answer.
+    """
+    required_phrases = (
+        "nam nao trong cac nam",
+        "luu chuyen tien thuan tu hoat dong kinh doanh",
+        "cao nhat",
+    )
+    if not all(phrase in folded_question for phrase in required_phrases):
+        return None
+    if len(years) < 2:
+        return None
+    excluded_upper_tokens = {"CFO", "VND"}
+    entities: list[str] = []
+    for match in re.finditer(r"\b[A-Z]{2,6}\b", question):
+        ticker = match.group(0)
+        if ticker in excluded_upper_tokens or ticker in entities:
+            continue
+        entities.append(ticker)
+    if len(entities) != 1:
+        return None
+    entity = entities[0]
+    operands = [
+        _operand(
+            f"{entity.casefold()}_operating_cash_flow_{year}",
+            f"{entity} — Lưu chuyển tiền thuần từ hoạt động kinh doanh {year}",
+            ["lưu chuyển tiền thuần từ hoạt động kinh doanh"],
+            [year],
+            "period_argmax_value",
+            entity=entity,
+            stage_id="operating_cash_flow_argmax",
+            allowed_table_functions=["cash_flow_statement"],
+        )
+        for year in years
+    ]
+    spec = _spec(
+        "operating_cash_flow_argmax_period",
+        "Chọn năm có lưu chuyển tiền thuần từ hoạt động kinh doanh cao nhất",
+        "argmax_year(Lưu chuyển tiền thuần từ hoạt động kinh doanh_year)",
+        operands,
+        confidence=0.995,
+        definition_status="defined",
+        notes=[
+            "Chỉ so sánh đúng các năm được liệt kê trong câu hỏi.",
+            "Tất cả operand phải là exact raw-row/cell của cùng entity, scope và source unit.",
+            "Nếu giá trị lớn nhất bằng nhau hoặc bất kỳ kỳ nào chưa bind được, phải fail-closed.",
+        ],
+    )
+    spec.update(
+        {
+            "output_unit": "year",
+            "entity": entity,
+            "execution_status": "period_argmax_required",
+            "stages": [
+                {
+                    "stage_id": "operating_cash_flow_argmax",
+                    "label": "So sánh CFO của đúng các năm đã nêu",
+                    "expression": "argmax_year(CFO_year)",
+                    "decision": "Trả năm có CFO lớn nhất duy nhất; tie hoặc thiếu evidence thì không trả lời.",
+                }
+            ],
+        }
+    )
+    return spec
+
+
 def infer_formula_spec(question: str) -> dict[str, Any] | None:
     """Infer a review formula only when a controlled rule matches."""
     text = fold_text(question)
@@ -501,6 +577,10 @@ def infer_formula_spec(question: str) -> dict[str, Any] | None:
     )
     if cfo_net_margin_plan:
         return cfo_net_margin_plan
+
+    cfo_argmax_plan = _operating_cash_flow_argmax_period_plan(question, text, years)
+    if cfo_argmax_plan:
+        return cfo_argmax_plan
 
     # Do not collapse a screening/ranking program into whichever ratio keyword
     # appears first.  These questions need entity-wise EvidenceSets and a later

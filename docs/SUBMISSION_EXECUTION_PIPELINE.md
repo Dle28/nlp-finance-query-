@@ -66,11 +66,19 @@ before and after creating the ZIP.
 ## Current executor coverage
 
 `scripts/build_execution_ledger.py` produces direct lookup records when the
-V4-selected exact cell passes all gates. It additionally accepts only a
-complete, defined, confidence ≥0.95 `percentage_change` EvidenceSet whose
-`x_old` and `x_new` cells pass a second exact V2 row/header/provenance/parse
-check and have identical resolved units. The record carries its FormulaSet hash
-and original review consensus; it does not modify a review label or create a
-silver training example. Temporal formulas outside this one allow-list, ratio,
-comparison, aggregation, filtering and multi-stage selection remain explicitly
-`not_executable`; none is padded with a guessed answer.
+V4-selected exact cell passes all gates. It additionally accepts a complete,
+defined, confidence ≥0.95 `percentage_change` EvidenceSet whose `x_old` and
+`x_new` cells pass a second exact V2 row/header/provenance/parse check and have
+identical resolved units. That is the only formula path eligible for a final
+submission.
+
+The ledger also has one evaluation-only executor for an explicitly listed,
+single-entity operating-cash-flow argmax across named years. It requires one
+same-year raw V2 cell per year, a common scope and unit, a cash-flow statement
+function and a unique maximum. Its output sets `submission_eligible=false`, so
+the submission compiler rejects it even though its raw evidence is grounded.
+Both formula paths preserve the FormulaSet hash and original review consensus;
+neither modifies a review label or creates a silver training example. Temporal
+formulas outside those controlled paths, ratio, comparison, aggregation,
+filtering and multi-stage selection remain explicitly `not_executable`; none
+is padded with a guessed answer.

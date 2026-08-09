@@ -1012,6 +1012,18 @@ training và review-status promotion, không đi vào corpus/index hay autonomou
 review mặc định. Nó vẫn phải qua cùng gate common-scope/unique-binding trước
 khi bất kỳ EvidenceSet nào được coi là đủ input.
 
+Một nhánh execution khác, tách biệt với source completion, hỗ trợ **duy nhất**
+`operating_cash_flow_argmax_period` ở chế độ shadow evaluation. Câu phải có
+một ticker, danh sách năm tường minh, metric CFO tường minh và yêu cầu maximum.
+Executor revalidate exact V2 row/cell/header của từng năm báo cáo, ticker,
+scope, unit, table function `cash_flow_statement`, tính argmax duy nhất và
+fail-closed khi tie/mất binding. Comparative value lặp ở report năm kế tiếp chỉ
+được lưu witness sau khi raw string, parsed value, scope và unit giống hệt;
+binding chính luôn là report đúng năm. Record kết quả mang
+`submission_eligible=false`, `review_status_promoted=false`; compiler cấm nó
+vào submission và nó không tạo silver/training label. Không mở rộng quy tắc
+này sang ranking nhiều entity hay multi-stage.
+
 ---
 
 # 20. Question-family-specific evidence requirements

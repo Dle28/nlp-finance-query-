@@ -160,6 +160,35 @@ def _formula_match(uid: str, year: int, value: str) -> dict:
     }
 
 
+def _cfo_formula_table(uid: str, year: int, value: str) -> dict:
+    table = _formula_table(uid, year, value)
+    table.update(
+        {
+            "document_id": f"QNS_financial_statements_{year}_separate",
+            "ticker": "QNS",
+            "report_year": year,
+            "scope": "separate",
+            "rows": [["Chỉ tiêu", f"Năm {year} VND"], ["Lưu chuyển tiền thuần từ hoạt động kinh doanh", value]],
+        }
+    )
+    return table
+
+
+def _cfo_formula_context(year: int) -> dict:
+    context = _formula_context(year)
+    context["canonical_headers"]["columns"][1]["source_label"] = f"Năm {year} VND"
+    context["table_function"] = {"kind": "cash_flow_statement"}
+    return context
+
+
+def _cfo_formula_match(uid: str, year: int, value: str) -> dict:
+    match = _formula_match(uid, year, value)
+    match["source_row"] = ["Lưu chuyển tiền thuần từ hoạt động kinh doanh", value]
+    match["binding"]["column_label"] = f"Năm {year} VND"
+    match["scope"] = "separate"
+    return match
+
+
 class ExecutionLedgerTests(unittest.TestCase):
     def test_machine_calibrated_direct_cell_becomes_exact_execution_record(self) -> None:
         row = ledger.direct_execution_row(_item(), _review(), {UID: _table()})
@@ -309,6 +338,53 @@ class ExecutionLedgerTests(unittest.TestCase):
         self.assertEqual(row["computed_answer"], "-20.0")
         self.assertEqual(row["operation_ast"], {"op": "percentage_change", "args": ["x_new", "x_old"]})
         self.assertFalse(row["formula_provenance"]["review_status_promoted"])
+
+    def test_complete_single_entity_cfo_argmax_returns_year_without_promoting_review(self) -> None:
+        evidence = {
+            "id": 1,
+            "evidence_completeness": "complete",
+            "reason_codes": [],
+            "formula": {
+                "formula_id": "operating_cash_flow_argmax_period",
+                "definition_status": "defined",
+                "confidence": 0.995,
+                "entity": "QNS",
+                "operands": [
+                    {"operand_id": "cfo_2021", "entity": "QNS", "years": [2021], "role": "period_argmax_value", "allowed_table_functions": ["cash_flow_statement"]},
+                    {"operand_id": "cfo_2023", "entity": "QNS", "years": [2023], "role": "period_argmax_value", "allowed_table_functions": ["cash_flow_statement"]},
+                ],
+            },
+            "selected_operand_matches": {
+                "cfo_2021": _cfo_formula_match("cfo-old", 2021, "100"),
+                "cfo_2023": _cfo_formula_match("cfo-new", 2023, "120"),
+            },
+        }
+        row = ledger.exact_formula_execution_row(
+            {"id": 1},
+            evidence,
+            {
+                "cfo-old": _cfo_formula_table("cfo-old", 2021, "100"),
+                "cfo-new": _cfo_formula_table("cfo-new", 2023, "120"),
+            },
+            {"cfo-old": _cfo_formula_context(2021), "cfo-new": _cfo_formula_context(2023)},
+            manifest={"sidecar_sha256": "formula-sha", "evidence_context_file": "tables_evidence_context_v3.jsonl"},
+        )
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["computed_answer"], "2023")
+        self.assertEqual(row["execution_mode"], "exact_formula_period_argmax")
+        self.assertFalse(row["submission_eligible"])
+        self.assertFalse(row["formula_provenance"]["review_status_promoted"])
+
+        evidence["selected_operand_matches"]["cfo_2021"]["binding"]["raw_value"] = "120"
+        self.assertIsNone(
+            ledger.exact_formula_execution_row(
+                {"id": 1}, evidence,
+                {"cfo-old": _cfo_formula_table("cfo-old", 2021, "100"), "cfo-new": _cfo_formula_table("cfo-new", 2023, "120")},
+                {"cfo-old": _cfo_formula_context(2021), "cfo-new": _cfo_formula_context(2023)},
+                manifest={"sidecar_sha256": "formula-sha", "evidence_context_file": "tables_evidence_context_v3.jsonl"},
+            )
+        )
 
     def test_formula_execution_requires_high_controlled_formula_confidence(self) -> None:
         evidence = {

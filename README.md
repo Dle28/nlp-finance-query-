@@ -508,13 +508,17 @@ executor theo stage. Mỗi cell còn
 phải parse thành đúng **một** số nguồn tin cậy; cell OCR ghép hai nhóm số bị
 giữ `partial`, không thể tạo answer.
 
-Execution ledger có allow-list tách biệt, rất hẹp: hiện chỉ
-`percentage_change` đã `defined`, confidence ≥0,95, đủ đúng hai operand
-`x_old`/`x_new`, cùng source unit và qua lần revalidate thứ hai với raw V2
-row/cell/header/provenance mới có thể được tính. Record lưu FormulaSet hash,
-consensus status ban đầu và `review_status_promoted=false`; nó không đổi review
-label, không tạo machine-silver training pair. Ratio, lọc/xếp hạng và
-multi-stage vẫn fail-closed.
+Execution ledger có allow-list tách biệt, rất hẹp. `percentage_change` đã
+`defined`, confidence ≥0,95, đủ đúng hai operand `x_old`/`x_new`, cùng source
+unit và qua lần revalidate thứ hai với raw V2 row/cell/header/provenance mới có
+thể tạo execution record **eligible cho submission**. Một path shadow-only
+khác xử lý riêng câu một entity liệt kê các năm và hỏi năm có `lưu chuyển tiền
+thuần từ hoạt động kinh doanh` cao nhất: mỗi năm phải có exact raw V2 cell
+cùng scope/unit, raw report đúng năm và cash-flow function; tie hoặc thiếu
+binding fail-closed. Path này luôn ghi `submission_eligible=false`, nên
+compiler từ chối nó; nó chỉ dùng để audit/đánh giá, không đổi review label hay
+tạo machine-silver training pair. Ratio, lọc/xếp hạng và multi-stage vẫn
+fail-closed.
 
 Kiểm tra lại mọi operand đã lưu trước khi nghiên cứu executor tiếp theo:
 

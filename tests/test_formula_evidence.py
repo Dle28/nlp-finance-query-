@@ -5,6 +5,7 @@ from finance_query.formula_evidence import (
     FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE,
     formula_evidence_set,
     operand_evidence_matches,
+    select_coherent_operand_matches,
     source_discovery_candidates,
 )
 
@@ -40,6 +41,33 @@ def _entity_table(uid: str, ticker: str) -> dict:
 
 
 class FormulaEvidenceTests(unittest.TestCase):
+
+    def test_equivalent_comparative_witnesses_need_same_year_primary_value_and_unit(self):
+        operands = [{"operand_id": "cfo_2021", "entity": "ABC", "years": [2021]}]
+        primary = {
+            "internal_table_uid": "u2021", "ticker": "ABC", "scope": "separate", "report_year": 2021,
+            "source_unit": "vnd", "binding": {"raw_value": "100", "parsed_value": "100"},
+        }
+        comparative = {
+            "internal_table_uid": "u2022", "ticker": "ABC", "scope": "separate", "report_year": 2022,
+            "source_unit": "vnd", "binding": {"raw_value": "100", "parsed_value": "100"},
+        }
+        selected, reasons = select_coherent_operand_matches(
+            {"cfo_2021": [primary, comparative]},
+            operands,
+            allow_equivalent_comparative_witnesses=True,
+        )
+        self.assertEqual(reasons, [])
+        self.assertEqual(selected["cfo_2021"]["internal_table_uid"], "u2021")
+        self.assertEqual(len(selected["cfo_2021"]["equivalent_comparative_witnesses"]), 1)
+        comparative["binding"]["raw_value"] = "101"
+        selected, reasons = select_coherent_operand_matches(
+            {"cfo_2021": [primary, comparative]},
+            operands,
+            allow_equivalent_comparative_witnesses=True,
+        )
+        self.assertEqual(selected, {})
+        self.assertEqual(reasons, ["ambiguous_operand_bindings"])
     def test_source_discovery_uses_only_resolved_source_metadata(self):
         formula = {
             "operands": [

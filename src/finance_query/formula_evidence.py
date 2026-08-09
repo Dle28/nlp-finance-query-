@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from .corpus import infer_unit
 from .execution import parse_decimal
 from .financial_metrics import operand_match_score
 
@@ -17,6 +18,7 @@ from .financial_metrics import operand_match_score
 FORMULA_SOURCE_DISCOVERY_POLICY = "resolved_ticker_operand_year_or_following_report_v1"
 FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE = "formula_source_discovery_v1"
 FORMULA_SOURCE_DISCOVERY_RANK_BASE = 1_000_000
+EQUIVALENT_COMPARATIVE_WITNESS_FORMULAS = {"operating_cash_flow_argmax_period"}
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -155,6 +157,22 @@ def _period_labels(context: Mapping[str, Any]) -> list[str]:
         str(column.get("source_label") or "")
         for column in (context.get("canonical_headers") or {}).get("columns") or []
     ]
+
+
+def _source_unit(table: Mapping[str, Any]) -> str | None:
+    """Return only an explicitly declared source unit for cross-report checks."""
+    unit_hint = table.get("unit_hint")
+    if isinstance(unit_hint, str) and unit_hint:
+        return unit_hint
+    context = " ".join(
+        [
+            str(table.get("context_before") or ""),
+            str((table.get("context_trace") or {}).get("source_title") or ""),
+            " ".join((table.get("context_trace") or {}).get("unit_labels") or []),
+        ]
+    )
+    rows = table.get("rows") or []
+    return infer_unit(context, "\n".join(" | ".join(map(str, row)) for row in rows))
 
 
 def bind_operand_cell(
@@ -305,6 +323,7 @@ def operand_evidence_matches(
                 "scope": candidate.get("scope") or table.get("scope"),
                 "report_year": candidate.get("report_year"),
                 "candidate_source": candidate.get("candidate_source") or "retrieved",
+                "source_unit": _source_unit(table),
                 "row_index": row_index,
                 "source_row": [str(value) for value in row],
                 "match_score": score,
@@ -317,6 +336,8 @@ def operand_evidence_matches(
 def select_coherent_operand_matches(
     coverage: Mapping[str, list[dict[str, Any]]],
     operands: list[Mapping[str, Any]],
+    *,
+    allow_equivalent_comparative_witnesses: bool = False,
 ) -> tuple[dict[str, dict[str, Any]], list[str]]:
     """Select only a unique source-consistent binding for each operand.
 
@@ -334,6 +355,62 @@ def select_coherent_operand_matches(
     entity_scoped = bool(entities and "" not in entities)
     selected: dict[str, dict[str, Any]] = {}
     reason_codes: list[str] = []
+
+    def equivalent_comparative_primary(
+        operand: Mapping[str, Any], matches: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        """Choose a current-year witness only when every duplicate is identical.
+
+        A comparative report can repeat an earlier period exactly. It is not a
+        second value. This exception is deliberately available only to a
+        controlled argmax-year formula and still requires an explicit source
+        unit, a same-year primary report, same ticker/scope, same parsed/raw
+        value, and report years limited to the source year or its following
+        comparative report.
+        """
+        years = [value for value in operand.get("years") or [] if _int_or_none(value) is not None]
+        if not allow_equivalent_comparative_witnesses or len(years) != 1 or len(matches) < 2:
+            return None
+        year = int(years[0])
+        primary = [match for match in matches if _int_or_none(match.get("report_year")) == year]
+        if len(primary) != 1:
+            return None
+        candidate = primary[0]
+        ticker = str(candidate.get("ticker") or "")
+        scope = str(candidate.get("scope") or "")
+        raw_value = str((candidate.get("binding") or {}).get("raw_value") or "")
+        parsed_value = str((candidate.get("binding") or {}).get("parsed_value") or "")
+        source_unit = str(candidate.get("source_unit") or "")
+        if not ticker or not scope or not raw_value or not parsed_value or not source_unit:
+            return None
+        if any(
+            str(match.get("ticker") or "") != ticker
+            or str(match.get("scope") or "") != scope
+            or str((match.get("binding") or {}).get("raw_value") or "") != raw_value
+            or str((match.get("binding") or {}).get("parsed_value") or "") != parsed_value
+            or str(match.get("source_unit") or "") != source_unit
+            or _int_or_none(match.get("report_year")) not in {year, year + 1}
+            for match in matches
+        ):
+            return None
+        witnesses = [
+            {
+                "internal_table_uid": str(match.get("internal_table_uid") or ""),
+                "document_id": match.get("document_id"),
+                "report_year": match.get("report_year"),
+                "row_index": match.get("row_index"),
+                "column_index": (match.get("binding") or {}).get("column_index"),
+                "raw_value": (match.get("binding") or {}).get("raw_value"),
+                "source_unit": match.get("source_unit"),
+            }
+            for match in matches
+            if match is not candidate
+        ]
+        return {
+            **candidate,
+            "equivalent_comparative_witnesses": witnesses,
+            "selection_policy": "same_year_primary_with_identical_comparative_witnesses_v1",
+        }
 
     if entity_scoped:
         scope_sets: list[set[str]] = []
@@ -370,10 +447,11 @@ def select_coherent_operand_matches(
                 if str(match.get("ticker") or "").casefold() == entity
                 and str(match.get("scope") or "") == scope
             ]
-            if len(matches) != 1:
+            selected_match = matches[0] if len(matches) == 1 else equivalent_comparative_primary(operand, matches)
+            if selected_match is None:
                 reason_codes.append("ambiguous_operand_bindings")
                 break
-            selected[operand_id] = matches[0]
+            selected[operand_id] = selected_match
         return (selected if not reason_codes else {}), reason_codes
 
     coherent_pairs: set[tuple[str, str]] | None = None
@@ -462,12 +540,17 @@ def formula_evidence_set(
         "conditional_analytical",
         "cross_entity_comparison",
         "multi_entity_or_period_aggregation",
-    }:
+    } and str(formula.get("formula_id") or "") not in EQUIVALENT_COMPARATIVE_WITNESS_FORMULAS:
         reason_codes.append("question_family_requires_composed_execution")
     selected_operand_matches: dict[str, dict[str, Any]] = {}
     if not missing:
         selected_operand_matches, selection_reasons = select_coherent_operand_matches(
-            coverage, operands
+            coverage,
+            operands,
+            allow_equivalent_comparative_witnesses=(
+                str(formula.get("formula_id") or "")
+                in EQUIVALENT_COMPARATIVE_WITNESS_FORMULAS
+            ),
         )
         reason_codes.extend(selection_reasons)
     evidence_completeness = (

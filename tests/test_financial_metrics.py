@@ -159,6 +159,21 @@ class FinancialMetricFormulaTests(unittest.TestCase):
         assert spec is not None
         self.assertEqual(spec["formula_id"], "multi_stage_selection_unresolved")
 
+    def test_single_entity_multi_period_cfo_max_has_exact_year_operands(self):
+        spec = infer_formula_spec(
+            "Năm nào trong các năm 2017, 2019, 2020, 2021 và 2023 ghi nhận "
+            "lưu chuyển tiền thuần từ hoạt động kinh doanh của QNS trên cơ sở công ty mẹ cao nhất?"
+        )
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        self.assertEqual(spec["formula_id"], "operating_cash_flow_argmax_period")
+        self.assertEqual(spec["entity"], "QNS")
+        self.assertEqual(spec["output_unit"], "year")
+        self.assertEqual(spec["execution_status"], "period_argmax_required")
+        self.assertEqual([operand["years"] for operand in spec["operands"]], [[2017], [2019], [2020], [2021], [2023]])
+        self.assertTrue(all(operand["entity"] == "QNS" for operand in spec["operands"]))
+        self.assertTrue(all(operand["allowed_table_functions"] == ["cash_flow_statement"] for operand in spec["operands"]))
+
     def test_entity_specific_operand_does_not_bind_other_ticker(self):
         operand = {
             "entity": "HPG",

@@ -140,9 +140,10 @@ label complete.
 
 ## Exact formula execution (narrow allow-list)
 
-`scripts/build_execution_ledger.py --formula-evidence ...` hiện chỉ có một
-allow-list: `percentage_change`. Nó không dùng Formula EvidenceSet như answer
-guesser. Một record chỉ được materialize khi đồng thời thỏa:
+`scripts/build_execution_ledger.py --formula-evidence ...` không dùng Formula
+EvidenceSet như answer guesser. Allow-list chuẩn cho submission hiện chỉ có
+`percentage_change`. Một record percentage-change chỉ được materialize khi
+đồng thời thỏa:
 
 1. EvidenceSet V3 và manifest còn khớp hash của bundle, V2 structure và V2
    canonical context.
@@ -158,8 +159,21 @@ Execution record giữ `formula_provenance.review_consensus_status` và
 `human_verified` hoặc sửa lại trong review/silver file. `machine_calibrated`
 trên **execution ledger** chỉ biểu thị rằng deterministic formula gate đã qua
 để compiler có thể nhận record; không tạo training pair và không làm review
-status gốc thay đổi. Mọi ratio, ranking, filtering, multi-stage và mọi formula
-khác vẫn evidence-only / `not_executable`.
+status gốc thay đổi.
+
+Ngoài ra có một executor **shadow-only** cho mẫu đơn thực thể rất hẹp
+`operating_cash_flow_argmax_period`: câu phải liệt kê từ hai năm trở lên, nêu
+đúng metric `lưu chuyển tiền thuần từ hoạt động kinh doanh`, một ticker và yêu
+cầu năm cao nhất. Mỗi năm phải bind lại vào raw V2 row/cell của **đúng năm báo
+cáo**, cùng ticker/scope/unit và function `cash_flow_statement`; nếu trùng giá
+trị lớn nhất, thiếu năm, hoặc khác scope/unit thì không có kết quả. Một giá trị
+lặp nguyên văn ở báo cáo năm kế tiếp chỉ là comparative witness; primary của
+năm gốc vẫn là binding được chọn.
+
+Kết quả shadow có `submission_eligible=false` và compiler từ chối cứng record
+này. Nó chỉ phục vụ đánh giá/audit, không đổi review status, không tạo
+machine-silver hay training pair. Mọi ratio, ranking, filtering, multi-stage
+và formula khác vẫn evidence-only / `not_executable`.
 
 ## Giới hạn có chủ đích
 
