@@ -46,6 +46,24 @@ def _allowed_table_function(operand: Mapping[str, Any], context: Mapping[str, An
     return function in allowed
 
 
+def _candidate_matches_question_plan(
+    item: Mapping[str, Any], candidate: Mapping[str, Any], table: Mapping[str, Any]
+) -> tuple[bool, str | None]:
+    """Require resolved entity/scope metadata before formula operands can bind."""
+    plan = item.get("question_plan") or {}
+    expected_tickers = {str(value) for value in plan.get("tickers") or [] if str(value)}
+    ticker = str(candidate.get("ticker") or table.get("ticker") or "")
+    if not expected_tickers:
+        return False, "question_entity_not_resolved"
+    if ticker not in expected_tickers:
+        return False, "candidate_ticker_mismatch"
+    expected_scope = str(plan.get("scope") or "")
+    scope = str(candidate.get("scope") or table.get("scope") or "")
+    if expected_scope and scope != expected_scope:
+        return False, "candidate_scope_mismatch"
+    return True, None
+
+
 def _period_labels(context: Mapping[str, Any]) -> list[str]:
     return [
         str(column.get("source_label") or "")
@@ -182,6 +200,7 @@ def operand_evidence_matches(
                 "candidate_rank": int(candidate.get("rank") or 0),
                 "document_id": table.get("document_id"),
                 "ticker": candidate.get("ticker") or table.get("ticker"),
+                "scope": candidate.get("scope") or table.get("scope"),
                 "report_year": candidate.get("report_year"),
                 "row_index": row_index,
                 "source_row": [str(value) for value in row],
@@ -203,10 +222,15 @@ def formula_evidence_set(
     """Collect source-only operand matches for one controlled formula template."""
     operands = [value for value in formula.get("operands") or [] if value.get("required", True)]
     coverage: dict[str, list[dict[str, Any]]] = {str(value["operand_id"]): [] for value in operands}
+    candidate_gate_rejections: dict[str, int] = {}
     for candidate in item.get("candidates") or []:
         uid = str(candidate.get("internal_table_uid") or "")
         table, context = tables.get(uid), contexts.get(uid)
         if table is None or context is None:
+            continue
+        allowed, reason = _candidate_matches_question_plan(item, candidate, table)
+        if not allowed:
+            candidate_gate_rejections[str(reason)] = candidate_gate_rejections.get(str(reason), 0) + 1
             continue
         for operand in operands:
             coverage[str(operand["operand_id"])].extend(
@@ -233,6 +257,10 @@ def formula_evidence_set(
     question_plan = item.get("question_plan") or {}
     family = str(question_plan.get("family") or item.get("weak_family") or "")
     reason_codes: list[str] = []
+    if not (question_plan.get("tickers") or []):
+        reason_codes.append("question_entity_not_resolved")
+    if candidate_gate_rejections.get("candidate_scope_mismatch"):
+        reason_codes.append("candidate_scope_mismatch")
     if str(formula.get("definition_status") or "defined") != "defined":
         reason_codes.append("formula_definition_requires_confirmation")
     if str(formula.get("execution_status") or "") == "stage_binding_required":
@@ -243,9 +271,34 @@ def formula_evidence_set(
         "multi_entity_or_period_aggregation",
     }:
         reason_codes.append("question_family_requires_composed_execution")
+    coherent_pairs: set[tuple[str, str]] | None = None
+    for matches in coverage.values():
+        pairs = {
+            (str(value.get("ticker") or ""), str(value.get("scope") or ""))
+            for value in matches
+        }
+        coherent_pairs = pairs if coherent_pairs is None else coherent_pairs & pairs
+    selected_operand_matches: dict[str, dict[str, Any]] = {}
+    if not missing:
+        if not coherent_pairs:
+            reason_codes.append("no_common_entity_scope_for_required_operands")
+        elif len(coherent_pairs) > 1:
+            reason_codes.append("ambiguous_entity_or_scope_combination")
+        else:
+            pair = next(iter(coherent_pairs))
+            for operand_id, matches in coverage.items():
+                pair_matches = [
+                    value
+                    for value in matches
+                    if (str(value.get("ticker") or ""), str(value.get("scope") or "")) == pair
+                ]
+                if len(pair_matches) != 1:
+                    reason_codes.append("ambiguous_operand_bindings")
+                    break
+                selected_operand_matches[operand_id] = pair_matches[0]
     evidence_completeness = (
         "complete"
-        if operand_coverage_status == "complete" and not reason_codes
+        if operand_coverage_status == "complete" and len(selected_operand_matches) == len(operands) and not reason_codes
         else "partial"
     )
     return {
@@ -253,11 +306,13 @@ def formula_evidence_set(
         "question": item.get("question"),
         "formula": dict(formula),
         "operand_matches": coverage,
+        "selected_operand_matches": selected_operand_matches,
         "required_operand_count": len(operands),
         "covered_operand_count": len(operands) - len(missing),
         "missing_operand_ids": missing,
         "operand_coverage_status": operand_coverage_status,
         "evidence_completeness": evidence_completeness,
         "reason_codes": reason_codes,
+        "candidate_gate_rejections": candidate_gate_rejections,
         "execution_status": "not_executed_source_evidence_only",
     }

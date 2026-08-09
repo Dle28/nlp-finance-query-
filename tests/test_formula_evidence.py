@@ -68,6 +68,7 @@ class FormulaEvidenceTests(unittest.TestCase):
         item = {
             "id": 1,
             "question": "test",
+            "question_plan": {"family": "ratio_or_derived", "tickers": ["ABC"]},
             "candidates": [{"internal_table_uid": "u1", "rank": 1, "ticker": "ABC", "report_year": 2023}],
         }
         evidence = formula_evidence_set(formula, item, {"u1": table}, {"u1": context})
@@ -88,10 +89,48 @@ class FormulaEvidenceTests(unittest.TestCase):
         item = {
             "id": 1,
             "question": "test",
-            "question_plan": {"family": "conditional_analytical"},
+            "question_plan": {"family": "conditional_analytical", "tickers": ["ABC"]},
             "candidates": [{"internal_table_uid": "u1", "rank": 1, "ticker": "ABC", "report_year": 2023}],
         }
         evidence = formula_evidence_set(formula, item, {"u1": table}, {"u1": context})
         self.assertEqual(evidence["operand_coverage_status"], "complete")
         self.assertEqual(evidence["evidence_completeness"], "partial")
         self.assertIn("question_family_requires_composed_execution", evidence["reason_codes"])
+
+    def test_unique_single_entity_operands_can_be_complete_source_evidence(self):
+        table = _table()
+        context = build_evidence_context(table)
+        formula = {
+            "formula_id": "ratio",
+            "definition_status": "defined",
+            "operands": [
+                {"operand_id": "assets", "metric_hints": ["tài sản ngắn hạn"], "years": [2023], "required": True},
+                {"operand_id": "liabilities", "metric_hints": ["nợ ngắn hạn"], "years": [2023], "required": True},
+            ],
+        }
+        item = {
+            "id": 1,
+            "question": "test",
+            "question_plan": {"family": "ratio_or_derived", "tickers": ["ABC"]},
+            "candidates": [{"internal_table_uid": "u1", "rank": 1, "ticker": "ABC", "scope": "separate", "report_year": 2023}],
+        }
+        evidence = formula_evidence_set(formula, item, {"u1": table}, {"u1": context})
+        self.assertEqual(evidence["evidence_completeness"], "complete")
+        self.assertEqual(set(evidence["selected_operand_matches"]), {"assets", "liabilities"})
+
+    def test_candidate_with_wrong_ticker_cannot_supply_formula_evidence(self):
+        table = _table()
+        context = build_evidence_context(table)
+        formula = {
+            "formula_id": "ratio",
+            "operands": [{"operand_id": "assets", "metric_hints": ["tài sản ngắn hạn"], "years": [2023], "required": True}],
+        }
+        item = {
+            "id": 1,
+            "question": "test",
+            "question_plan": {"family": "ratio_or_derived", "tickers": ["XYZ"]},
+            "candidates": [{"internal_table_uid": "u1", "rank": 1, "ticker": "ABC", "report_year": 2023}],
+        }
+        evidence = formula_evidence_set(formula, item, {"u1": table}, {"u1": context})
+        self.assertEqual(evidence["evidence_completeness"], "partial")
+        self.assertIn("candidate_ticker_mismatch", evidence["candidate_gate_rejections"])
