@@ -261,7 +261,7 @@ numeric binding because they did not parse as exactly one reliable number.
 The corresponding autonomous V4 run produced 57 `machine_calibrated`, 363
 `machine_provisional`, and 592 `needs_human` records. The direct exact-cell
 ledger made 47 direct-lookups `grounded`; FormulaSet discovery joined 33,069
-metadata-bound candidates and audited 350 exact operand bindings. Under the
+metadata-bound candidates and audited 391 exact operand bindings. Under the
 separate formula allow-list, one defined, complete `percentage_change` also
 passed a second exact V2 revalidation, for 48 grounded execution records in
 total; the other 964 remain explicitly `not_executable`. This did not change
