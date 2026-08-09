@@ -6,7 +6,8 @@ from finance_query.semantic_rerank import semantic_candidate_input, semantic_inp
 class SemanticRerankTests(unittest.TestCase):
     def test_input_is_source_bounded_and_digest_is_stable(self):
         candidate = {
-            "structure_validation": {"row_index": 1},
+            "value_row_index": 1,
+            "evidence_window": [{"index": 1, "row": ["Tiền", "100"]}],
             "direct_evidence": "UNTRUSTED PROJECTION MUST NOT REACH THE MODEL",
         }
         table = {
@@ -30,7 +31,7 @@ class SemanticRerankTests(unittest.TestCase):
     def test_input_refuses_candidate_without_an_exact_v2_row(self):
         value = semantic_candidate_input(
             "Tiền cuối năm là bao nhiêu?",
-            {"structure_validation": {}},
+            {"value_row_index": 0, "evidence_window": [{"index": 0, "row": ["sai", "100"]}]},
             {"rows": [["Tiền", "100"]]},
             {"canonical_headers": {"columns": []}},
         )
@@ -39,8 +40,8 @@ class SemanticRerankTests(unittest.TestCase):
     def test_long_cells_are_explicitly_truncated_not_synthesized(self):
         value = semantic_candidate_input(
             "Q",
-            {"structure_validation": {"row_index": 0}},
+            {"value_row_index": 0, "evidence_window": [{"index": 0, "row": ["a" * 300, "100"]}]},
             {"rows": [["a" * 300, "100"]]},
             {"canonical_headers": {"columns": []}},
         )
-        self.assertIn("c0=" + "a" * 229 + "…", value)
+        self.assertIn("c0=" + "a" * 119 + "…", value)

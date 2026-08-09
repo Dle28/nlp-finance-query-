@@ -27,9 +27,9 @@ def compact_text(value: Any, limit: int) -> str:
 def _column_labels(context: Mapping[str, Any]) -> str:
     headers = (context.get("canonical_headers") or {}).get("columns") or []
     labels = [
-        compact_text(column.get("source_label"), 52)
+        compact_text(column.get("source_label"), 28)
         for column in headers
-        if compact_text(column.get("source_label"), 52)
+        if compact_text(column.get("source_label"), 28)
     ]
     return " | ".join(labels[:6])
 
@@ -42,15 +42,53 @@ def exact_source_row(candidate: Mapping[str, Any], table: Mapping[str, Any]) -> 
     the cross-encoder window; an ellipsis is an explicit truncation marker,
     never a synthesized table value.
     """
-    validation = candidate.get("structure_validation") or {}
-    row_index = validation.get("row_index")
     rows = table.get("rows") or []
-    if not isinstance(row_index, int) or not 0 <= row_index < len(rows):
+    row_index = None
+    # V3 candidates predate the local reviewer and keep their raw table
+    # coordinate under these retrieval fields rather than under a later
+    # ``structure_validation`` object.  Accept one only if its stored
+    # evidence window reproduces the V2 row exactly; this prevents an index
+    # from becoming a loose, unverified pointer after table reconstruction.
+    evidence_window = candidate.get("evidence_window") or []
+    for key in ("value_row_index", "best_row_index", "anchor_row_index"):
+        candidate_index = candidate.get(key)
+        if not isinstance(candidate_index, int) or not 0 <= candidate_index < len(rows):
+            continue
+        expected = next(
+            (
+                entry.get("row")
+                for entry in evidence_window
+                if isinstance(entry, Mapping) and entry.get("index") == candidate_index
+            ),
+            None,
+        )
+        if isinstance(expected, list) and [str(cell) for cell in expected] == [
+            str(cell) for cell in rows[candidate_index]
+        ]:
+            row_index = candidate_index
+            break
+    if row_index is None:
         return ""
-    cells = [
-        f"c{column_index}={compact_text(cell, 230 if column_index == 0 else 96)}"
-        for column_index, cell in enumerate(rows[row_index])
-    ]
+    row = rows[row_index]
+    # In statement tables the descriptive metric is not always c0 (the first
+    # cell can be a line code). Preserve the first substantive text label,
+    # retain numeric cells, and make all other verbose note cells short and
+    # visibly truncated. This keeps the actual metric/value relation within
+    # the model's fixed context window without inventing a row summary.
+    label_index = next(
+        (
+            index
+            for index, cell in enumerate(row)
+            if re.search(r"[A-Za-zÀ-ỹà-ỹĐđ]", str(cell))
+        ),
+        None,
+    )
+    cells: list[str] = []
+    for column_index, cell in enumerate(row):
+        normalized = compact_text(cell, 10_000)
+        numeric_like = bool(re.fullmatch(r"[\s()\-+\d.,%/]+", normalized))
+        limit = 120 if column_index == label_index else 72 if numeric_like else 20
+        cells.append(f"c{column_index}={compact_text(cell, limit)}")
     return " | ".join(cells)
 
 
@@ -75,14 +113,14 @@ def semantic_candidate_input(
         function.get("label") if isinstance(function, Mapping) else function,
         120,
     )
-    source_title = compact_text(trace.get("source_title"), 160)
+    source_title = compact_text(str(trace.get("source_title") or "").replace("□", " "), 70)
     unit_labels = trace.get("unit_labels") or []
     units = " | ".join(compact_text(value, 80) for value in unit_labels if compact_text(value, 80))
     # Put the question and the attributable V2 row first.  Cross-encoders
     # impose a token limit; headings, titles and metadata remain useful but
     # must not push that exact row out of the model window.
     lines = [
-        f"Câu hỏi: {compact_text(question, 320)}",
+        f"Câu hỏi: {compact_text(question, 280)}",
         f"Dòng nguồn exact (V2): {source_row}",
         f"Cột nguồn: {_column_labels(context)}",
         f"Chức năng bảng: {compact_text(function_name, 80)}",
