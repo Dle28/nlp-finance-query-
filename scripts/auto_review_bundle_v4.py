@@ -6,7 +6,7 @@ It runs independent retrieval, semantic, evidence, metadata and critic views
 over candidates that have survived two deterministic source contracts:
 
 1. exact V2 raw-HTML row binding; and
-2. V1 canonical header/provenance quality gate.
+2. V2 canonical header/provenance quality gate.
 
 ``machine_calibrated`` here means a conservative autonomous silver label.  It
 never becomes ``human_verified``.  Candidates with unclear OCR structure are
@@ -22,7 +22,10 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from finance_query.evidence_context import validate_evidence_context_sidecar
+from finance_query.evidence_context import (  # noqa: E402
+    AUTONOMOUS_REVIEW_PROTOCOL,
+    validate_evidence_context_sidecar,
+)
 from finance_query.plan_overrides import apply_plan_overrides, validate_plan_overrides
 from finance_query.table_structure import validate_structure_sidecar
 
@@ -369,7 +372,7 @@ def autonomous_review_item(
                 "consensus_status": "needs_human",
                 "review_reason": "No candidate survived raw-source, canonical-header, exact-row and grounding gates.",
                 "machine_self_review": {
-                    "protocol": "raw_v2_canonical_context_v1",
+                    "protocol": AUTONOMOUS_REVIEW_PROTOCOL,
                     "training_eligible": False,
                     "candidate_assessments": assessments,
                 },
@@ -486,7 +489,7 @@ def autonomous_review_item(
             "consensus_status": status,
             "review_reason": reason,
             "machine_self_review": {
-                "protocol": "raw_v2_canonical_context_v2",
+                "protocol": AUTONOMOUS_REVIEW_PROTOCOL,
                 "training_eligible": status == "machine_calibrated",
                 "critic_accepts": critic_accepts,
                 "alternative_uid": None if alternative is None else alternative["uid"],

@@ -4,6 +4,8 @@ import importlib.util
 import unittest
 from pathlib import Path
 
+from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
+
 
 ROOT = Path(__file__).parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -50,7 +52,7 @@ def _review(value: str = "1.880.000.000") -> dict:
         "machine_confidence": 0.91,
         "agreement": 0.86,
         "machine_self_review": {
-            "protocol": "raw_v2_canonical_context_v1",
+            "protocol": AUTONOMOUS_REVIEW_PROTOCOL,
             "training_eligible": True,
             "critic_accepts": True,
             "selected_value_binding": {
@@ -89,6 +91,13 @@ class ExecutionLedgerTests(unittest.TestCase):
         row = ledger.direct_execution_row(_item(), _review("1.990.000.000"), {UID: _table()})
         self.assertEqual(row["execution_status"], "not_executable")
         self.assertEqual(row["reason"], "selected_value_differs_from_v2_source")
+
+    def test_historic_context_v1_review_cannot_enter_v2_execution(self) -> None:
+        review = _review()
+        review["machine_self_review"]["protocol"] = "raw_v2_canonical_context_v1"
+        row = ledger.direct_execution_row(_item(), review, {UID: _table()})
+        self.assertEqual(row["execution_status"], "not_executable")
+        self.assertEqual(row["reason"], "review_protocol_not_numeric_safe_v2")
 
     def test_canonical_header_path_is_the_production_binding_contract(self) -> None:
         review = _review()

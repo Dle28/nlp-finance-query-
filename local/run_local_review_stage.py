@@ -182,11 +182,15 @@ def main() -> None:
     )
     if overrides is not None and not overrides.is_file():
         raise FileNotFoundError(overrides)
-    variant = "_replanned" if overrides is not None else ""
-    autonomous_reviews = labels / f"machine_reviews_{run_tag}_autonomous{variant}.jsonl"
-    autonomous_quarantine = labels / f"autonomous_quarantine_{run_tag}{variant}.jsonl"
-    autonomous_silver = labels / f"machine_silver_labels_{run_tag}{variant}.jsonl"
-    execution_ledger = labels / f"machine_execution_ledger_{run_tag}{variant}.jsonl"
+    plan_variant = "_replanned" if overrides is not None else ""
+    # Context V1 files remain auditable history.  New default reviews must be
+    # physically distinguishable, otherwise autotrain/submission could consume
+    # a result made before the numeric-safety contract existed.
+    artifact_variant = f"{plan_variant}_context_v2"
+    autonomous_reviews = labels / f"machine_reviews_{run_tag}_autonomous{artifact_variant}.jsonl"
+    autonomous_quarantine = labels / f"autonomous_quarantine_{run_tag}{artifact_variant}.jsonl"
+    autonomous_silver = labels / f"machine_silver_labels_{run_tag}{artifact_variant}.jsonl"
+    execution_ledger = labels / f"machine_execution_ledger_{run_tag}{artifact_variant}.jsonl"
 
     if args.mode == "preprocess":
         command = [

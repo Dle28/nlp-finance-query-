@@ -22,6 +22,7 @@ import json
 import os
 from pathlib import Path
 
+from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
 from finance_query.retrieval import AssetStore
 
 
@@ -105,8 +106,10 @@ def validate_provenance(row: dict, provenance: str, line_number: int) -> None:
         raise ValueError(f"Line {line_number} does not declare machine label_source")
     if not bool((row.get("structure_validation") or {}).get("validated")):
         raise ValueError(f"Line {line_number} lacks exact V2 row validation")
-    if str(self_review.get("protocol") or "") != "raw_v2_canonical_context_v1":
-        raise ValueError(f"Line {line_number} lacks the autonomous V4 source protocol")
+    if str(self_review.get("protocol") or "") != AUTONOMOUS_REVIEW_PROTOCOL:
+        raise ValueError(
+            f"Line {line_number} lacks the numeric-safe autonomous V4 source protocol"
+        )
     if not bool(self_review.get("training_eligible")):
         raise ValueError(f"Line {line_number} is not training-eligible autonomous silver")
 

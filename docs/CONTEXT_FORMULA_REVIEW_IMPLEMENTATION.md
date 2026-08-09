@@ -173,8 +173,10 @@ function và numeric layout, nên không case nào bị đoán header.
 `review_ready`; câu có đầu/cuối kỳ còn phải bind được một cột raw header duy
 nhất. Trên bundle 60 câu, V4 xuất 2 `machine_calibrated` silver, 16
 `machine_provisional`, 42 `needs_human`, quarantine 245 candidate. Hai silver
-Q13/Q115 giữ `machine_self_review.protocol=raw_v2_canonical_context_v1` và
-không phải `human_verified`.
+Q13/Q115 giữ `machine_self_review.protocol=raw_v2_canonical_context_v1` trong
+artifact lịch sử 60 câu và không phải `human_verified`. Protocol V1 chỉ còn để
+audit; pipeline mới yêu cầu `raw_v2_canonical_context_v2` cùng sidecar context
+V2 có policy numeric-safe.
 
 `autotrain` kiểm provenance đó, lấy passage trực tiếp từ immutable
 `bundle/tables.jsonl` (không dùng lexical DB có UID namespace khác) và chỉ

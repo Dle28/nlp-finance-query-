@@ -3,7 +3,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from finance_query.evidence_context import build_evidence_context
+from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL, build_evidence_context
 
 
 ROOT = Path(__file__).parents[1]
@@ -17,6 +17,25 @@ spec.loader.exec_module(mod)
 
 
 class AutonomousReviewV4Tests(unittest.TestCase):
+    def test_no_eligible_candidate_records_the_current_context_protocol(self):
+        review, _quarantine = mod.autonomous_review_item(
+            {
+                "id": 1,
+                "question": "Tiền cuối năm là bao nhiêu?",
+                "weak_family": "direct_lookup",
+                "candidates": [],
+            },
+            {},
+            {},
+            0.85,
+            0.45,
+            0.67,
+            0.84,
+        )
+        self.assertEqual(
+            review["machine_self_review"]["protocol"], AUTONOMOUS_REVIEW_PROTOCOL
+        )
+
     def test_explicit_year_binds_only_matching_raw_header(self):
         table = {
             "internal_table_uid": "u1",

@@ -435,7 +435,8 @@ python local/run_local_review_stage.py autonomous \
     --bundle-dir ~/ViFinQA_review/run_002
 ```
 
-`preprocess` tạo sidecar riêng từ V2 raw-HTML grid: khôi phục path tiêu đề
+`preprocess` tạo `tables_evidence_context_v2.jsonl` cùng manifest riêng từ V2
+raw-HTML grid: khôi phục path tiêu đề
 cha–con theo span provenance, bind period/unit vào cột nguồn và quarantine
 bảng không đủ dữ kiện. Sidecar cũng tách cell chỉ *trông* giống số khỏi cell
 parse được đúng một số; OCR ghép nhiều nhóm số bị quarantine, không bị tách
@@ -443,6 +444,10 @@ hay suy diễn. `autonomous` cho retrieval/semantic/evidence/metadata/
 challenger/critic views review chéo. Chỉ direct lookup qua toàn bộ source gate
 mới là `machine_calibrated` silver; phần còn lại vẫn là `machine_provisional`
 hoặc `needs_human` và bị loại khỏi train.
+
+`tables_evidence_context_v1.jsonl` chỉ được giữ để audit sidecar lịch sử;
+không bị ghi đè. Các stage mới mặc định dùng V2 và từ chối manifest V2 không
+có policy bind đúng một số raw-source cho mỗi cell.
 
 Với cụm từ giống phép tính nhưng thực tế là một **dòng đã được báo cáo sẵn**
 (`Tổng cộng tài sản`, `Tỷ lệ sở hữu`, `Lỗ chênh lệch tỷ giá`), không sửa
@@ -471,6 +476,7 @@ và không thay đổi label:
 ```bash
 python scripts/build_formula_evidence_sets.py \
   --bundle-dir ~/ViFinQA_review/run_002 \
+  --evidence-context ~/ViFinQA_review/run_002/tables_evidence_context_v2.jsonl \
   --output ~/ViFinQA_review/run_002/formula_evidence_sets_v2.jsonl
 ```
 

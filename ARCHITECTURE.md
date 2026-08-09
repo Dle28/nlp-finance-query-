@@ -904,7 +904,7 @@ gold. Luồng V4 trước hết tạo sidecar semantic riêng từ V2 raw-HTML g
 
 ```text
 V2 cell provenance
-→ canonical header parent/child path
+→ V2 canonical header parent/child path
 → per-column period/unit context
 → row role + source-quality gate
 → review_ready | needs_processing | blocked
@@ -932,7 +932,7 @@ V4 copy effective plan và provenance vào review output; ledger dùng đúng pl
 formula nhiều operand không được đưa vào override.
 
 Canonical header cũng phải là prefix trước data row quan sát được đầu tiên.
-Nếu V2 heuristic đánh dấu một row số liệu nằm sau data là header, V1 loại row
+Nếu V2 heuristic đánh dấu một row số liệu nằm sau data là header, V2 loại row
 đó khỏi header path và ghi `nonleading_header_rows_excluded_from_canonical_path`;
 không ghép số liệu vào period label. Raw cells và marker V2 không bị sửa. Khi
 prefix còn lại không đủ label cột số, table bị `needs_processing`.
@@ -942,6 +942,12 @@ contract execution. Cell OCR có hình thức số nhưng ghép nhiều nhóm s�
 ghi riêng ở `unreliable_numeric_columns`; row chỉ có các cell đó mang role
 `data_with_unreliable_numeric` và không thể bind. Điều này là quarantine của
 derived context, không sửa/tách raw V2 grid.
+
+`tables_evidence_context_v1.jsonl` được giữ read-only để audit các sidecar lịch
+sử. Mọi review/evidence/execution mới dùng `tables_evidence_context_v2.jsonl`
+và manifest mang `numeric_binding_policy =
+one_reliable_raw_v2_number_per_cell`; consumer từ chối V2 sidecar thiếu
+contract này.
 
 ```text
 machine_calibrated  source-gated autonomous silver; có thể train sau min size

@@ -27,7 +27,10 @@ if str(ROOT / "src") not in sys.path:
 from finance_query.binding import row_label  # noqa: E402
 from finance_query.corpus import infer_unit  # noqa: E402
 from finance_query.execution import convert_unit, parse_decimal  # noqa: E402
-from finance_query.evidence_context import validate_evidence_context_sidecar  # noqa: E402
+from finance_query.evidence_context import (  # noqa: E402
+    AUTONOMOUS_REVIEW_PROTOCOL,
+    validate_evidence_context_sidecar,
+)
 from finance_query.schemas import DirectBinding  # noqa: E402
 from finance_query.table_structure import validate_structure_sidecar  # noqa: E402
 
@@ -139,6 +142,8 @@ def direct_execution_row(
     if str(review.get("consensus_status") or "") != "machine_calibrated":
         return _non_executable(item, review, "review_not_machine_calibrated")
     self_review = review.get("machine_self_review") or {}
+    if str(self_review.get("protocol") or "") != AUTONOMOUS_REVIEW_PROTOCOL:
+        return _non_executable(item, review, "review_protocol_not_numeric_safe_v2")
     if not bool(self_review.get("training_eligible")) or not bool(self_review.get("critic_accepts")):
         return _non_executable(item, review, "self_review_or_critic_not_accepted")
     # V4 may carry a hash-bound local plan override for a disclosed source

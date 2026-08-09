@@ -28,6 +28,7 @@ from .table_structure import normalize_space, sha256_file
 
 NUMERIC_CELL_RE = re.compile(r"^[\s()\-+\d.,%/]+$")
 EVIDENCE_CONTEXT_VERSION = 2
+AUTONOMOUS_REVIEW_PROTOCOL = f"raw_v2_canonical_context_v{EVIDENCE_CONTEXT_VERSION}"
 PERIOD_RE = re.compile(
     r"(?:31\s*[/.-]\s*12\s*[/.-]\s*(?:19|20)\d{2}|"
     r"0?1\s*[/.-]\s*0?1\s*[/.-]\s*(?:19|20)\d{2}|"

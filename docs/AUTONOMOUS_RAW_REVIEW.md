@@ -15,10 +15,11 @@ immutable review bundle
         │       - rowspan / colspan provenance preserved
         │       - raw source UID / hash checked
         │
-        └── V1 canonical evidence context
+        └── V2 canonical evidence context
                 - parent + child header paths reconstructed from span provenance
                 - period and unit labels per source column
-                - row roles and numeric-column profiles
+                - row roles and reliable-numeric profiles
+                - exactly-one-number binding policy per source cell
                 - review_ready / needs_processing / blocked gate
         │
         ▼
@@ -42,7 +43,7 @@ dense model fine-tuning (new model only; no FAISS/index rebuild)
 V2 is intentionally lossless: a `colspan` parent value appears in its anchor
 cell and the covered cells remain blank.  This prevents an OCR table from
 shifting columns, but a naïve display can consequently show a child header
-without its parent period.  V1 canonical context follows the V2 span
+without its parent period.  V2 canonical context follows the V2 span
 provenance to form a *derived header path* such as:
 
 ```text
@@ -62,13 +63,20 @@ from being concatenated into a period label. The raw V2 cells/markers remain
 unchanged; tables whose remaining prefix cannot label numeric data become
 `needs_processing` rather than being guessed.
 
-V1 also distinguishes a cell that merely *looks numeric* in OCR syntax from a
+V2 also distinguishes a cell that merely *looks numeric* in OCR syntax from a
 cell that parses as exactly one reliable number under the execution parser.
 The former remains visible in the lossless grid, but a concatenation such as
 `(72…)(27…)` is recorded in `unreliable_numeric_columns` and cannot be bound
 as an answer or formula operand. A row with no remaining reliable number is
 `data_with_unreliable_numeric`, not a usable data row; a sibling valid cell in
 the same row remains available. No OCR text is split, replaced, or inferred.
+
+The old `tables_evidence_context_v1.jsonl` remains immutable for historical
+sidecar audits. New preprocessing writes `tables_evidence_context_v2.jsonl`
+and `table_evidence_context_v2.manifest.json`; every new review, formula
+EvidenceSet and execution ledger must name or default to that V2 sidecar.
+The convenience runner includes `_context_v2` in its generated review, silver
+label and execution-ledger filenames for the same reason.
 
 ## Independent autonomous gates
 
@@ -147,6 +155,7 @@ coverage sidecar:
 ```bash
 python scripts/build_formula_evidence_sets.py \
   --bundle-dir ~/ViFinQA_review/run_002 \
+  --evidence-context ~/ViFinQA_review/run_002/tables_evidence_context_v2.jsonl \
   --output ~/ViFinQA_review/run_002/formula_evidence_sets_v2.jsonl
 ```
 
@@ -223,3 +232,17 @@ No dense-index rebuild is required. Only after enough labels pass the same
 raw-source protocol should `autotrain` run. Model evaluation remains
 machine-silver evaluation—not a claim of human/official accuracy—until an
 external gold source becomes available.
+
+## Full-bundle V2 checkpoint
+
+For the extracted `run_full_001` bundle, context V2 built 29,428 contexts with
+zero build errors. It placed 4,036 tables in `needs_processing` and retained
+25,392 as `review_ready`; 22,373 OCR cells were visible but excluded from
+numeric binding because they did not parse as exactly one reliable number.
+
+The corresponding autonomous V4 run produced 57 `machine_calibrated`, 363
+`machine_provisional`, and 592 `needs_human` records. The exact-cell execution
+ledger made 47 direct-lookups `grounded`; the other 965 are explicitly
+`not_executable`. Formula EvidenceSets remained `partial` for all 134 formula
+questions, so none supplied a computed answer. This is the current evidence
+boundary, not an error to be solved by lowering the promotion threshold.
