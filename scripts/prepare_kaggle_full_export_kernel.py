@@ -86,6 +86,66 @@ else:
             source = source.replace("UPLOAD_FULL_TO_KAGGLE = True", "UPLOAD_FULL_TO_KAGGLE = False")
             source = source.replace("RUN_BGE_BENCHMARK = True", "RUN_BGE_BENCHMARK = False")
             _set_source(cell, source)
+        if "from kaggle_secrets import UserSecretsClient" in source and "def github_env()" in source:
+            # A private Kaggle input is more reliable than a per-run secret:
+            # CLI-pushed kernel versions cannot attach a user's Secrets
+            # selection, while the snapshot is immutable and contains the
+            # exact Git revision that was validated locally.  Keep the
+            # authenticated clone fallback for an operator who intentionally
+            # omits the source input.
+            _set_source(
+                cell,
+                """from kaggle_secrets import UserSecretsClient
+import os
+import shutil
+import subprocess
+
+SOURCE_SNAPSHOT = Path('/kaggle/input/vifinqa-source-snapshot/AI_guru_source.tar.gz')
+
+if SOURCE_SNAPSHOT.is_file():
+    if REPO_DIR.exists():
+        shutil.rmtree(REPO_DIR)
+    REPO_DIR.mkdir(parents=True, exist_ok=False)
+    subprocess.run(['tar', '-xzf', str(SOURCE_SNAPSHOT), '-C', str(REPO_DIR)], check=True)
+    assert (REPO_DIR / 'pyproject.toml').is_file(), 'Source snapshot is incomplete.'
+    print('Repo hydrated from private Kaggle source snapshot:', SOURCE_SNAPSHOT.name)
+else:
+    print('Source snapshot unavailable; falling back to configured GitHub secret.')
+
+    def github_env():
+        token = UserSecretsClient().get_secret(GITHUB_SECRET_NAME)
+        if not token:
+            raise RuntimeError(f'Không đọc được Kaggle Secret: {GITHUB_SECRET_NAME}')
+
+        askpass = Path('/tmp/github_askpass.sh')
+        askpass.write_text(
+            \"\"\"#!/bin/sh
+case \"$1\" in
+    *Username*) echo \"$GIT_USERNAME\" ;;
+    *Password*) echo \"$GIT_TOKEN\" ;;
+esac
+\"\"\",
+            encoding='utf-8',
+        )
+        askpass.chmod(0o700)
+
+        env = os.environ.copy()
+        env['GIT_TERMINAL_PROMPT'] = '0'
+        env['GIT_ASKPASS'] = str(askpass)
+        env['GIT_USERNAME'] = 'Dle28'
+        env['GIT_TOKEN'] = token
+        return env
+
+    env = github_env()
+    if (REPO_DIR / '.git').is_dir():
+        subprocess.run(['git', '-C', str(REPO_DIR), 'pull', '--ff-only', 'origin', 'main'], env=env, check=True)
+    else:
+        if REPO_DIR.exists():
+            shutil.rmtree(REPO_DIR)
+        subprocess.run(['git', 'clone', '--depth', '1', REPO_URL, str(REPO_DIR)], env=env, check=True)
+    print('Repo ready from authenticated GitHub clone:', REPO_DIR)
+""",
+            )
         if '"finance-query",\n            "build-dense",' in source:
             # Kaggle's current PyTorch wheel does not include kernels for the
             # P100 (compute capability 6.0).  A lexical-only bundle is much
