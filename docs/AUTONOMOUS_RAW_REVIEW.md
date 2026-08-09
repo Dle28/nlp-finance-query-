@@ -284,23 +284,26 @@ zero build errors. It placed 4,036 tables in `needs_processing` and retained
 25,392 as `review_ready`; 22,373 OCR cells were visible but excluded from
 numeric binding because they did not parse as exactly one reliable number.
 
-The corresponding autonomous V4 run produced 61 `machine_calibrated`, 359
+The corresponding autonomous V4 run produced 66 `machine_calibrated`, 354
 `machine_provisional`, and 592 `needs_human` records. The direct exact-cell
-ledger made 56 direct-lookups `grounded`; FormulaSet discovery joined 33,069
+ledger made 61 direct-lookups `grounded`; FormulaSet discovery joined 33,069
 metadata-bound candidates and audited 391 exact operand bindings. Under the
 separate formula allow-list, one defined, complete `percentage_change` also
-passed a second exact V2 revalidation, for 57 grounded execution records in
-total; the other 955 remain explicitly `not_executable`. Five direct records
+passed a second exact V2 revalidation, for 62 grounded execution records in
+total; the other 950 remain explicitly `not_executable`. Five direct records
 remain blocked because their raw source does not declare a monetary unit; five
 others now bind because the resolver preserves explicit `Triệu đồng` source
 headers.
 
-One of the four additional direct bindings is Q14: the raw V2 row is `Chi phí
+One of the four initial additional direct bindings is Q14: the raw V2 row is `Chi phí
 quản lý doanh nghiệp | VI.06 | 144.071.806.197`, where `VI.06` is recorded as
 an ignored standalone note reference. Its source header is `Năm nay` in ASM's
 2025 separate report and the declared VND unit is converted to
 `144071.806197` million VND in the execution ledger. The other three were
-the prior exact raw-label tie-break records. All 61 labels remain
+prior exact raw-label tie-break records. Five more direct bindings use the
+equivalent-critic policy: every near-tied V2 alternative carries the same
+parsed VND value, and the ledger independently revalidates those alternatives
+before conversion. All 66 labels remain
 machine-silver only; `autotrain` correctly defers because the protocol requires
 at least 200 provenance-validated pairs. All ratios, comparisons, filters and
 multi-stage formulas remain fail-closed.
