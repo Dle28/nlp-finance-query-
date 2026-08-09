@@ -29,8 +29,12 @@ from finance_query.evidence_context import (  # noqa: E402
 from finance_query.binding import row_label  # noqa: E402
 from finance_query.corpus import infer_unit  # noqa: E402
 from finance_query.execution import parse_decimal  # noqa: E402
-from finance_query.plan_overrides import apply_plan_overrides, validate_plan_overrides
-from finance_query.table_structure import validate_structure_sidecar
+from finance_query.plan_overrides import (
+    apply_plan_overrides,
+    canonical_sha256,
+    validate_plan_overrides,
+)
+from finance_query.table_structure import sha256_file, validate_structure_sidecar
 
 import auto_review_bundle_v31 as v31
 
@@ -49,6 +53,7 @@ RAW_NOTE_REFERENCE_RE = re.compile(
 )
 STRICT_TIEBREAK_MIN_SEMANTIC = 0.90
 STRICT_TIEBREAK_MIN_EVIDENCE = 0.85
+DIRECT_EVIDENCE_SCHEMA_VERSION = 1
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,6 +67,15 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Optional hash-bound local plan-override sidecar; source bundle stays immutable.",
+    )
+    parser.add_argument(
+        "--direct-evidence",
+        type=Path,
+        default=None,
+        help=(
+            "Optional hash-bound raw-V2 direct-source-discovery sidecar. "
+            "It supplements candidate recall but does not create labels by itself."
+        ),
     )
     parser.add_argument("--min-agreement", type=float, default=0.67)
     parser.add_argument("--silver-threshold", type=float, default=0.84)
@@ -80,6 +94,122 @@ def by_uid(rows: list[dict[str, Any]], name: str) -> dict[str, dict[str, Any]]:
             raise ValueError(f"Duplicate UID in {name}: {uid}")
         output[uid] = row
     return output
+
+
+def validate_direct_evidence_sidecar(
+    bundle: Path,
+    sidecar: Path,
+    context_path: Path,
+    *,
+    question_plan_overrides: Path | None,
+) -> list[dict[str, Any]]:
+    """Accept only an immutable-input-bound V2 direct-source sidecar."""
+    if sidecar.parent != bundle:
+        raise ValueError("Direct evidence sidecar must reside in the review bundle")
+    manifest_path = sidecar.with_suffix(".manifest.json")
+    if not sidecar.is_file() or not manifest_path.is_file():
+        raise FileNotFoundError("Direct evidence sidecar or manifest is missing")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if int(manifest.get("schema_version") or 0) != DIRECT_EVIDENCE_SCHEMA_VERSION:
+        raise ValueError("Unsupported direct evidence sidecar schema")
+    expected_paths = {
+        "bundle_review_items_sha256": bundle / "review_items.jsonl",
+        "bundle_tables_sha256": bundle / "tables.jsonl",
+        "structured_tables_sha256": bundle / "tables_structured_v2.jsonl",
+        "evidence_context_sha256": context_path,
+    }
+    for key, path in expected_paths.items():
+        if str(manifest.get(key) or "") != sha256_file(path):
+            raise ValueError(f"Direct evidence manifest does not match {path.name}")
+    if str(manifest.get("evidence_context_file") or "") != context_path.name:
+        raise ValueError("Direct evidence manifest names a different canonical context")
+    expected_override_file = (
+        None if question_plan_overrides is None else question_plan_overrides.name
+    )
+    expected_override_hash = (
+        None if question_plan_overrides is None else sha256_file(question_plan_overrides)
+    )
+    if manifest.get("question_plan_override_file") != expected_override_file:
+        raise ValueError("Direct evidence sidecar was built with different plan overrides")
+    if manifest.get("question_plan_overrides_sha256") != expected_override_hash:
+        raise ValueError("Direct evidence plan-override hash does not match")
+    if str(manifest.get("sidecar_sha256") or "") != sha256_file(sidecar):
+        raise ValueError("Direct evidence sidecar hash does not match its manifest")
+    rows = v3.load_jsonl(sidecar)
+    if int(manifest.get("question_count") or -1) != len(rows):
+        raise ValueError("Direct evidence sidecar question count does not match manifest")
+    return rows
+
+
+def apply_direct_source_discovery(
+    items: list[dict[str, Any]], sidecar_rows: list[dict[str, Any]]
+) -> tuple[int, int]:
+    """Merge direct raw-row candidates, retaining ordinary Top-K provenance.
+
+    The discovery sidecar contains at most one candidate per table/question.
+    It may replace a retrieved candidate's projected evidence for the same
+    table UID with an exact raw V2 row, while preserving retrieval ranks for
+    audit.  Multi-row same-table matches are excluded by the builder rather
+    than resolved here by list order.
+    """
+    discoveries: dict[int, dict[str, Any]] = {}
+    for row in sidecar_rows:
+        qid = int(row.get("id") or -1)
+        if qid in discoveries:
+            raise ValueError(f"Duplicate direct evidence sidecar record for Q{qid}")
+        discoveries[qid] = row
+    replaced_or_added = 0
+    ambiguous = 0
+    for item in items:
+        plan = item.get("question_plan") or {}
+        if str(plan.get("family") or item.get("weak_family") or "") != "direct_lookup":
+            continue
+        qid = int(item["id"])
+        discovered = discoveries.get(qid)
+        if discovered is None:
+            raise ValueError(f"Direct evidence sidecar omits direct-lookup Q{qid}")
+        if int(discovered.get("schema_version") or 0) != DIRECT_EVIDENCE_SCHEMA_VERSION:
+            raise ValueError(f"Q{qid}: unsupported direct evidence record schema")
+        if str(discovered.get("family") or "") != "direct_lookup":
+            raise ValueError(f"Q{qid}: direct evidence family differs from effective plan")
+        if str(discovered.get("effective_question_plan_sha256") or "") != canonical_sha256(plan):
+            raise ValueError(f"Q{qid}: direct evidence plan hash differs from effective plan")
+        ambiguous += len(discovered.get("ambiguous_same_table_rows") or [])
+        existing = {
+            str(candidate["internal_table_uid"]): dict(candidate)
+            for candidate in item.get("candidates") or []
+        }
+        seen: set[str] = set()
+        for candidate in discovered.get("candidates") or []:
+            uid = str(candidate.get("internal_table_uid") or "")
+            source = candidate.get("source_discovery") or {}
+            if not uid or uid in seen:
+                raise ValueError(f"Q{qid}: invalid or duplicate direct source candidate UID")
+            seen.add(uid)
+            if str(candidate.get("candidate_source") or "") != "raw_v2_direct_source_discovery":
+                raise ValueError(f"Q{qid}: direct source candidate has an invalid source marker")
+            if str(source.get("policy") or "") != "exact_raw_v2_metric_token_sequence_v1":
+                raise ValueError(f"Q{qid}: direct source candidate has an invalid discovery policy")
+            row_index = candidate.get("best_row_index")
+            if not isinstance(row_index, int) or isinstance(row_index, bool):
+                raise ValueError(f"Q{qid}: direct source candidate lacks a raw row index")
+            prior = existing.get(uid, {})
+            # Retain only the retrieval ordering fields from Top-K.  All row
+            # evidence/provenance is supplied by the source-discovery record.
+            merged = {
+                **prior,
+                **candidate,
+                "rank": prior.get("rank", candidate.get("rank")),
+                "lexical_rank": prior.get("lexical_rank", candidate.get("lexical_rank")),
+                "dense_rank": prior.get("dense_rank", candidate.get("dense_rank")),
+            }
+            existing[uid] = merged
+            replaced_or_added += 1
+        item["candidates"] = list(existing.values())
+    extra_ids = sorted(set(discoveries) - {int(item["id"]) for item in items})
+    if extra_ids:
+        raise ValueError(f"Direct evidence sidecar has IDs absent from bundle: {extra_ids[:10]}")
+    return replaced_or_added, ambiguous
 
 
 def period_requirement(question: str) -> str:
@@ -744,6 +874,22 @@ def main() -> None:
             v3.load_jsonl(args.question_plan_overrides.resolve()),
         )
     items = apply_plan_overrides(source_items, overrides)
+    direct_source_candidates = 0
+    direct_source_ambiguous = 0
+    if args.direct_evidence is not None:
+        sidecar_rows = validate_direct_evidence_sidecar(
+            bundle,
+            args.direct_evidence.resolve(),
+            context_path.resolve(),
+            question_plan_overrides=(
+                None
+                if args.question_plan_overrides is None
+                else args.question_plan_overrides.resolve()
+            ),
+        )
+        direct_source_candidates, direct_source_ambiguous = apply_direct_source_discovery(
+            items, sidecar_rows
+        )
     tables = by_uid(v3.load_jsonl(structure_path), "V2 structures")
     contexts = by_uid(v3.load_jsonl(context_path), "evidence contexts")
     validated, candidate_total = v3.attach_structure_validation(items, bundle)
@@ -773,6 +919,13 @@ def main() -> None:
     print("Quarantined candidates:", len(quarantine))
     if args.question_plan_overrides is not None:
         print("Applied source-bound plan overrides:", len(overrides))
+    if args.direct_evidence is not None:
+        print(
+            "Applied raw-V2 direct source candidates:",
+            direct_source_candidates,
+            "same-table ambiguities retained:",
+            direct_source_ambiguous,
+        )
     if args.quarantine_output:
         print("Quarantine audit:", args.quarantine_output)
 

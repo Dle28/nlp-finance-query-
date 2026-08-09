@@ -922,6 +922,16 @@ V4 chỉ chọn cột có raw canonical header nêu đúng năm; fallback `Năm 
 này` chỉ hợp lệ khi report year của candidate đúng bằng năm hỏi. Nếu không có
 một cột duy nhất thì giữ `row_bound`/`ambiguous_period_column`, không đoán.
 
+Trước V4 có thêm sidecar `direct_evidence_sets_context_v2_discovered.jsonl`
+để bù recall theo raw V2 cho `direct_lookup`, không rebuild lexical/dense
+index. Nó giới hạn bảng theo ticker/năm/scope của effective plan và chỉ thêm
+một row khi label có exact significant-token sequence, endpoint `đầu/cuối`
+không mâu thuẫn, table `review_ready` và cột số bind duy nhất qua canonical
+header. Hai raw row cùng table cùng match được ghi ambiguity và không chọn theo
+thứ tự. Sidecar hash-bind với bundle/V2/context/plan override; V4 và execution
+ledger vẫn lặp lại toàn bộ gate nên đây là source recall có provenance, không
+phải label hay answer tự suy diễn.
+
 Một số metric là row label đã disclosed dù có từ giống phép tính, ví dụ `Tổng
 cộng tài sản`, `Tỷ lệ sở hữu`, `Lỗ chênh lệch tỷ giá`. Rule planner chỉ
 reclassify các form đơn chủ thể/đơn kỳ có pattern hẹp. Với bundle đã tạo, việc

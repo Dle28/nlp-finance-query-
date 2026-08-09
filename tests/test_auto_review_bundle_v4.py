@@ -404,6 +404,58 @@ class AutonomousReviewV4Tests(unittest.TestCase):
         )
         self.assertNotEqual(review["consensus_status"], "machine_calibrated")
 
+    def test_direct_source_discovery_replaces_only_row_evidence_and_keeps_rank(self):
+        plan = {"family": "direct_lookup", "operands": [{"metric": "Tiền"}]}
+        item = {
+            "id": 99,
+            "question": "Tiền năm 2023 là bao nhiêu?",
+            "weak_family": "direct_lookup",
+            "question_plan": plan,
+            "candidates": [
+                {
+                    "internal_table_uid": "u1",
+                    "rank": 4,
+                    "lexical_rank": 3,
+                    "dense_rank": 2,
+                    "direct_evidence": "VALUE: wrong row",
+                }
+            ],
+        }
+        discovered = {
+            "schema_version": 1,
+            "id": 99,
+            "family": "direct_lookup",
+            "effective_question_plan_sha256": mod.canonical_sha256(plan),
+            "candidates": [
+                {
+                    "internal_table_uid": "u1",
+                    "rank": 1_000_000,
+                    "lexical_rank": 1_000_000,
+                    "dense_rank": 1_000_000,
+                    "candidate_source": "raw_v2_direct_source_discovery",
+                    "best_row_index": 7,
+                    "direct_evidence": "VALUE: Tiền | 100",
+                    "source_discovery": {
+                        "policy": "exact_raw_v2_metric_token_sequence_v1",
+                        "row_index": 7,
+                    },
+                }
+            ],
+            "ambiguous_same_table_rows": [],
+        }
+        count, ambiguous = mod.apply_direct_source_discovery([item], [discovered])
+        self.assertEqual((count, ambiguous), (1, 0))
+        candidate = item["candidates"][0]
+        self.assertEqual(candidate["rank"], 4)
+        self.assertEqual(candidate["lexical_rank"], 3)
+        self.assertEqual(candidate["dense_rank"], 2)
+        self.assertEqual(candidate["best_row_index"], 7)
+        self.assertEqual(candidate["direct_evidence"], "VALUE: Tiền | 100")
+
+        discovered["effective_question_plan_sha256"] = "mismatch"
+        with self.assertRaisesRegex(ValueError, "plan hash"):
+            mod.apply_direct_source_discovery([item], [discovered])
+
     def test_missing_period_header_cannot_be_autonomous_silver(self):
         table = {
             "internal_table_uid": "u1",

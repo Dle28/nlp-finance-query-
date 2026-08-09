@@ -192,6 +192,7 @@ def main() -> None:
     autonomous_silver = labels / f"machine_silver_labels_{run_tag}{artifact_variant}.jsonl"
     execution_ledger = labels / f"machine_execution_ledger_{run_tag}{artifact_variant}.jsonl"
     formula_evidence = bundle / "formula_evidence_sets_context_v2_discovered.jsonl"
+    direct_evidence = bundle / "direct_evidence_sets_context_v2_discovered.jsonl"
 
     if args.mode == "preprocess":
         command = [
@@ -255,6 +256,19 @@ def main() -> None:
             ],
             root,
         )
+        direct_command = [
+            sys.executable,
+            str(root / "scripts/build_direct_evidence_sets.py"),
+            "--bundle-dir",
+            str(bundle),
+            "--evidence-context",
+            str(evidence_context),
+            "--output",
+            str(direct_evidence),
+        ]
+        if overrides is not None:
+            direct_command.extend(["--question-plan-overrides", str(overrides)])
+        run(direct_command, root)
         review_command = [
             sys.executable,
             str(root / "scripts/auto_review_bundle_v4.py"),
@@ -266,6 +280,8 @@ def main() -> None:
             str(autonomous_reviews),
             "--quarantine-output",
             str(autonomous_quarantine),
+            "--direct-evidence",
+            str(direct_evidence),
         ]
         if overrides is not None:
             review_command.extend(["--question-plan-overrides", str(overrides)])

@@ -124,6 +124,24 @@ near-tie set, canonical headers, data-row/numeric-cell role, cell provenance,
 parsed number and source unit before it can emit a grounded answer. Therefore
 a review record cannot bypass the critic merely by carrying the policy name.
 
+## Raw-V2 direct source discovery
+
+Top-K retrieval can omit a table even when the local V2 corpus contains an
+exact raw row for a direct lookup. Before V4 review, the autonomous runner now
+builds `direct_evidence_sets_context_v2_discovered.jsonl`. It filters only by
+the effective plan's ticker/year/scope, requires a `review_ready` canonical
+context, an exact significant metric-token sequence in one raw row, no explicit
+opposite `đầu`/`cuối` row endpoint, and exactly one reliable raw-header-bound
+numeric cell. A table with more than one qualifying row is recorded as an
+ambiguity and contributes no candidate.
+
+This is a source-recall sidecar, not a label and not an answer. Its manifest
+binds the bundle tables, V2 structures, canonical context and plan-override
+file. V4 revalidates the projected row after merging it into candidates; all
+usual critic, unit and execution-ledger contracts still apply. The sidecar can
+therefore surface a missed competing raw row and demote an unsafe prior silver
+label rather than only increasing label count.
+
 ## Commands
 
 ```bash
