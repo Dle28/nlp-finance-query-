@@ -260,10 +260,13 @@ numeric binding because they did not parse as exactly one reliable number.
 
 The corresponding autonomous V4 run produced 57 `machine_calibrated`, 363
 `machine_provisional`, and 592 `needs_human` records. The direct exact-cell
-ledger made 47 direct-lookups `grounded`; FormulaSet discovery joined 33,069
+ledger made 52 direct-lookups `grounded`; FormulaSet discovery joined 33,069
 metadata-bound candidates and audited 391 exact operand bindings. Under the
 separate formula allow-list, one defined, complete `percentage_change` also
-passed a second exact V2 revalidation, for 48 grounded execution records in
-total; the other 964 remain explicitly `not_executable`. This did not change
+passed a second exact V2 revalidation, for 53 grounded execution records in
+total; the other 959 remain explicitly `not_executable`. Five direct records
+remain blocked because their raw source does not declare a monetary unit; five
+others now bind because the resolver preserves explicit `Triệu đồng` source
+headers. This did not change
 the 57 training-eligible machine-silver labels or promote a review status.
 All ratios, comparisons, filters and multi-stage formulas remain fail-closed.

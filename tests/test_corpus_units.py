@@ -18,6 +18,12 @@ class CorpusUnitTests(unittest.TestCase):
             "million_vnd",
         )
 
+    def test_detects_plain_scaled_unit_in_source_header(self) -> None:
+        self.assertEqual(
+            infer_unit("", "Chỉ tiêu | Năm nay Triệu đồng | Năm trước Triệu đồng"),
+            "million_vnd",
+        )
+
     def test_does_not_invent_unit_from_bare_dong_word(self) -> None:
         self.assertIsNone(
             infer_unit("Giá trị thanh toán bằng đồng ý của các bên", "Chỉ tiêu | 2023"),

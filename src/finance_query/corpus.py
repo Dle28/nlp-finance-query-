@@ -84,7 +84,13 @@ def infer_unit(context: str, table_text: str) -> str | None:
     search_area = f"{context}\n{table_text[:1500]}"
     declared = DECLARED_UNIT_RE.search(search_area)
     scaled = SCALED_VND_RE.search(search_area)
-    value = (declared.group(1) if declared else scaled.group(1) if scaled else "").casefold()
+    # ``DECLARED_UNIT_RE`` captures the complete declared unit as group 1,
+    # while ``SCALED_VND_RE`` captures only its scale (for example ``triệu``)
+    # in group 1. The unit map below deliberately keys on the complete phrase
+    # (``triệu đồng``), so use the full scaled match here. Otherwise an
+    # explicit source header such as ``Năm nay Triệu đồng`` silently becomes
+    # unit-unknown and is unnecessarily excluded from exact execution.
+    value = (declared.group(1) if declared else scaled.group(0) if scaled else "").casefold()
     value = " ".join(value.split())
     unit_map = {
         "nghìn đồng": "thousand_vnd",
