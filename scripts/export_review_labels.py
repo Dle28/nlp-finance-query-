@@ -52,6 +52,15 @@ def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
     temporary.replace(path)
 
 
+def id_preview(ids: list[int], limit: int = 12) -> str:
+    """Render a bounded operational log summary without hiding the count."""
+    if not ids:
+        return "0"
+    preview = ", ".join(str(value) for value in ids[:limit])
+    suffix = ", …" if len(ids) > limit else ""
+    return f"{len(ids)} [{preview}{suffix}]"
+
+
 def human_training_eligible(row: dict[str, Any]) -> bool:
     return bool(
         str(row.get("annotation_status") or "") == "human_verified"
@@ -141,8 +150,8 @@ def main() -> None:
 
     print("Exported labels:", len(output))
     print("Human labels:", len(human))
-    print("Excluded human partial/no-candidate IDs:", excluded_human_nontraining)
-    print("Excluded unresolved/provisional IDs:", excluded)
+    print("Excluded human partial/no-candidate IDs:", id_preview(excluded_human_nontraining))
+    print("Excluded unresolved/provisional IDs:", id_preview(excluded))
     print("Output:", args.output)
 
 
