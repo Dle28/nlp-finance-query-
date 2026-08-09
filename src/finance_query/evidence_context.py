@@ -104,17 +104,53 @@ def source_grid_integrity(table: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def effective_header_row_indices(table: dict[str, Any]) -> tuple[list[int], list[int]]:
+    """Keep V2-designated header rows only before the first observed data row.
+
+    OCR table reconstruction can occasionally mark later numeric rows as
+    headers.  Treating those rows as part of a column path leaks report values
+    into a label and can shift period interpretation.  This function does not
+    alter the V2 grid or its original header markers; it derives a conservative
+    *canonical* header prefix and reports which later markers were excluded.
+    """
+    rows = table.get("rows") or []
+    raw = sorted(
+        {
+            int(index)
+            for index in table.get("header_row_indices") or []
+            if _is_int(index) and 0 <= int(index) < len(rows)
+        }
+    )
+    raw_set = set(raw)
+    first_observed_data = next(
+        (
+            row_index
+            for row_index, row in enumerate(rows)
+            if row_index not in raw_set
+            and any(_looks_numeric(value) for column, value in enumerate(row) if column > 0)
+        ),
+        None,
+    )
+    if first_observed_data is None:
+        return raw, []
+    effective = [index for index in raw if index < first_observed_data]
+    excluded = [index for index in raw if index >= first_observed_data]
+    return effective, excluded
+
+
 def canonical_headers(table: dict[str, Any]) -> dict[str, Any]:
     """Create per-column source-header paths while preserving header provenance."""
     rows = table.get("rows") or []
     provenance = table.get("cell_provenance") or []
-    header_indices = [
-        int(index)
-        for index in table.get("header_row_indices") or []
-        if _is_int(index) and 0 <= int(index) < len(rows)
-    ]
+    header_indices, excluded_header_indices = effective_header_row_indices(table)
     if not rows:
-        return {"header_row_indices": [], "columns": [], "span_recoveries": 0}
+        return {
+            "header_row_indices": [],
+            "raw_header_row_indices": [],
+            "excluded_header_row_indices": [],
+            "columns": [],
+            "span_recoveries": 0,
+        }
     width = len(rows[0])
     provenance_available = (
         isinstance(provenance, list)
@@ -169,6 +205,12 @@ def canonical_headers(table: dict[str, Any]) -> dict[str, Any]:
         )
     return {
         "header_row_indices": header_indices,
+        "raw_header_row_indices": [
+            int(index)
+            for index in table.get("header_row_indices") or []
+            if _is_int(index) and 0 <= int(index) < len(rows)
+        ],
+        "excluded_header_row_indices": excluded_header_indices,
         "columns": columns,
         "span_recoveries": span_recoveries,
     }
@@ -247,6 +289,8 @@ def evidence_quality(
     )
     if not headers["header_row_indices"]:
         reasons.append("header_not_detected")
+    if headers.get("excluded_header_row_indices"):
+        reasons.append("nonleading_header_rows_excluded_from_canonical_path")
     if not data:
         reasons.append("no_data_rows")
     if numeric_columns and numeric_header_coverage < 1.0:
