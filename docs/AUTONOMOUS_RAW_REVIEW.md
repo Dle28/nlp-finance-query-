@@ -154,6 +154,18 @@ execution parser: an OCR cell containing multiple numeric groups (for example
 two parenthesized values concatenated into one cell) is rejected, not treated
 as a formula operand.
 
+Audit the generated sidecar before considering any later executor work:
+
+```bash
+python scripts/analyze_formula_evidence.py \
+  --bundle-dir ~/ViFinQA_review/run_002 \
+  --formula-evidence ~/ViFinQA_review/run_002/formula_evidence_sets_v2.jsonl \
+  --output ~/ViFinQA_review/run_002/formula_evidence_sets_v2.audit.json
+```
+
+The audit verifies each stored operand row/cell/header against V2 again and
+reports coverage bottlenecks. It does not calculate an answer.
+
 ### Semantic rerank V2 is diagnostic, exact-row and reproducible
 
 The semantic cross-encoder is a separate audit sidecar, never a label

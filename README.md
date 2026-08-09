@@ -478,6 +478,15 @@ ambiguous vẫn giữ `partial` cho đến khi có executor theo stage. Mỗi ce
 phải parse thành đúng **một** số nguồn tin cậy; cell OCR ghép hai nhóm số bị
 giữ `partial`, không thể tạo answer.
 
+Kiểm tra lại mọi operand đã lưu trước khi nghiên cứu executor tiếp theo:
+
+```bash
+python scripts/analyze_formula_evidence.py \
+  --bundle-dir ~/ViFinQA_review/run_002 \
+  --formula-evidence ~/ViFinQA_review/run_002/formula_evidence_sets_v2.jsonl \
+  --output ~/ViFinQA_review/run_002/formula_evidence_sets_v2.audit.json
+```
+
 Semantic rerank V2 là sidecar audit riêng: model chỉ thấy question, exact V2
 row đã đối chiếu với `evidence_window`, header/function/unit gọn; nó lưu
 `source_input` + hash và audit render lại từ raw source. Điểm semantic không
