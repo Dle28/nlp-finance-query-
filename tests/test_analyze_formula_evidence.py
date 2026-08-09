@@ -17,7 +17,7 @@ spec.loader.exec_module(mod)
 
 
 class AnalyzeFormulaEvidenceTests(unittest.TestCase):
-    def test_selected_operand_must_match_raw_cell_header_and_parser(self) -> None:
+    def test_operand_match_must_match_raw_cell_header_and_parser(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             bundle = Path(directory)
             table = {"internal_table_uid": "u1", "rows": [["Chỉ tiêu", "Năm 2023"], ["Tiền", "100"]]}
@@ -30,8 +30,8 @@ class AnalyzeFormulaEvidenceTests(unittest.TestCase):
             rows = [
                 {
                     "id": 1,
-                    "selected_operand_matches": {
-                        "cash": {
+                    "operand_matches": {
+                        "cash": [{
                             "internal_table_uid": "u1",
                             "source_row": ["Tiền", "100"],
                             "binding": {
@@ -42,14 +42,14 @@ class AnalyzeFormulaEvidenceTests(unittest.TestCase):
                                 "raw_value": "100",
                                 "parsed_value": "100",
                             },
-                        }
+                        }]
                     },
                 }
             ]
-            self.assertEqual(mod.validate_selected_matches(rows, bundle), 1)
-            rows[0]["selected_operand_matches"]["cash"]["binding"]["parsed_value"] = "999"
+            self.assertEqual(mod.validate_operand_matches(rows, bundle), 1)
+            rows[0]["operand_matches"]["cash"][0]["binding"]["parsed_value"] = "999"
             with self.assertRaises(ValueError):
-                mod.validate_selected_matches(rows, bundle)
+                mod.validate_operand_matches(rows, bundle)
 
     def test_summary_separates_coverage_from_execution_eligibility(self) -> None:
         summary = mod.summarize(

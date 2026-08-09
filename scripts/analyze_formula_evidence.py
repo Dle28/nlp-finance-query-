@@ -79,18 +79,19 @@ def validate_manifest(bundle: Path, sidecar: Path) -> dict[str, Any]:
     return manifest
 
 
-def selected_matches(rows: Iterable[dict[str, Any]]) -> Iterable[tuple[int, str, dict[str, Any]]]:
+def operand_matches(rows: Iterable[dict[str, Any]]) -> Iterable[tuple[int, str, dict[str, Any]]]:
     for row in rows:
         qid = int(row["id"])
-        for operand_id, match in (row.get("selected_operand_matches") or {}).items():
-            if isinstance(match, dict):
-                yield qid, str(operand_id), match
+        for operand_id, matches in (row.get("operand_matches") or {}).items():
+            for match in matches or []:
+                if isinstance(match, dict):
+                    yield qid, str(operand_id), match
 
 
 def _needed_uids(rows: Iterable[dict[str, Any]]) -> set[str]:
     return {
         str(match.get("internal_table_uid") or "")
-        for _qid, _operand_id, match in selected_matches(rows)
+        for _qid, _operand_id, match in operand_matches(rows)
         if str(match.get("internal_table_uid") or "")
     }
 
@@ -125,19 +126,19 @@ def canonical_column_label(context: dict[str, Any], column_index: int) -> str:
     )
 
 
-def validate_selected_matches(rows: list[dict[str, Any]], bundle: Path) -> int:
+def validate_operand_matches(rows: list[dict[str, Any]], bundle: Path) -> int:
     uids = _needed_uids(rows)
     if not uids:
         return 0
     tables = load_referenced_jsonl(bundle / "tables_structured_v2.jsonl", uids)
     contexts = load_referenced_jsonl(bundle / "tables_evidence_context_v1.jsonl", uids)
     checked = 0
-    for qid, operand_id, match in selected_matches(rows):
+    for qid, operand_id, match in operand_matches(rows):
         uid = str(match.get("internal_table_uid") or "")
         table, context = tables[uid], contexts[uid]
         binding = match.get("binding") or {}
         if str(binding.get("status") or "") != "cell_bound":
-            raise ValueError(f"Q{qid}/{operand_id}: selected match is not cell_bound")
+            raise ValueError(f"Q{qid}/{operand_id}: stored operand match is not cell_bound")
         row_index, column_index = binding.get("row_index"), binding.get("column_index")
         source_rows = table.get("rows") or []
         if not isinstance(row_index, int) or not isinstance(column_index, int):
@@ -153,7 +154,7 @@ def validate_selected_matches(rows: list[dict[str, Any]], bundle: Path) -> int:
             raise ValueError(f"Q{qid}/{operand_id}: column label differs from canonical source")
         parsed = parse_decimal(raw_value)
         if parsed.value is None or any(warning != "percent_value_not_scaled" for warning in parsed.warnings):
-            raise ValueError(f"Q{qid}/{operand_id}: selected source is not one reliable number")
+            raise ValueError(f"Q{qid}/{operand_id}: stored source is not one reliable number")
         if str(binding.get("parsed_value") or "") != parsed.value:
             raise ValueError(f"Q{qid}/{operand_id}: parsed value differs from source parser")
         checked += 1
@@ -193,10 +194,10 @@ def main() -> None:
     bundle, sidecar = args.bundle_dir.resolve(), args.formula_evidence.resolve()
     manifest = validate_manifest(bundle, sidecar)
     rows = load_jsonl(sidecar)
-    checked = validate_selected_matches(rows, bundle)
+    checked = validate_operand_matches(rows, bundle)
     output = {
         "formula_evidence_manifest": manifest,
-        "selected_operand_binding_count_checked": checked,
+        "operand_binding_count_checked": checked,
         "summary": summarize(rows),
         "note": (
             "Audit only: it validates source coverage and numeric safety; it does not execute a formula, "
