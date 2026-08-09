@@ -22,6 +22,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .execution import parse_decimal
 from .table_structure import normalize_space, sha256_file
 
 
@@ -225,18 +226,42 @@ def _looks_numeric(value: Any) -> bool:
     )
 
 
+def _is_reliable_numeric_value(value: Any) -> bool:
+    """Accept only one numeric source value under the execution contract.
+
+    Structural OCR detection intentionally remains broad (it also notices
+    dates/header-like numbers).  A cell may be structural-numeric yet unsafe
+    to bind if OCR concatenated several values; those cases are exposed in the
+    context profile rather than silently considered a usable operand.
+    """
+    parsed = parse_decimal(value)
+    return parsed.value is not None and not any(
+        warning != "percent_value_not_scaled" for warning in parsed.warnings
+    )
+
+
 def row_profiles(table: dict[str, Any], header_indices: set[int]) -> list[dict[str, Any]]:
     profiles: list[dict[str, Any]] = []
     for row_index, row in enumerate(table.get("rows") or []):
         values = [str(value).strip() for value in row]
         non_empty = [value for value in values if value]
-        numeric_columns = [index for index, value in enumerate(values) if _looks_numeric(value)]
+        structural_numeric_columns = [
+            index for index, value in enumerate(values) if _looks_numeric(value)
+        ]
+        numeric_columns = [
+            index for index in structural_numeric_columns if _is_reliable_numeric_value(values[index])
+        ]
+        unreliable_numeric_columns = [
+            index for index in structural_numeric_columns if index not in numeric_columns
+        ]
         if row_index in header_indices:
             role = "header"
         elif not non_empty:
             role = "empty"
         elif numeric_columns:
             role = "data"
+        elif structural_numeric_columns:
+            role = "data_with_unreliable_numeric"
         elif len(non_empty) == 1:
             role = "group_or_note"
         else:
@@ -246,6 +271,8 @@ def row_profiles(table: dict[str, Any], header_indices: set[int]) -> list[dict[s
                 "row_index": row_index,
                 "role": role,
                 "numeric_columns": numeric_columns,
+                "structural_numeric_columns": structural_numeric_columns,
+                "unreliable_numeric_columns": unreliable_numeric_columns,
                 "non_empty_cell_count": len(non_empty),
             }
         )
@@ -259,6 +286,9 @@ def evidence_quality(
     reasons = list(grid["reason_codes"])
     columns = headers["columns"]
     data = [profile for profile in profiles if profile["role"] == "data"]
+    unreliable_cells = sum(
+        len(profile.get("unreliable_numeric_columns") or []) for profile in profiles
+    )
     numeric_columns = {
         column
         for profile in data
@@ -293,6 +323,8 @@ def evidence_quality(
         reasons.append("nonleading_header_rows_excluded_from_canonical_path")
     if not data:
         reasons.append("no_data_rows")
+    if unreliable_cells:
+        reasons.append("unreliable_numeric_source_cells")
     if numeric_columns and numeric_header_coverage < 1.0:
         reasons.append("numeric_column_without_source_header")
     if not grid["rectangular"] or not grid["provenance_complete"]:
@@ -317,6 +349,7 @@ def evidence_quality(
         "numeric_header_coverage": round(numeric_header_coverage, 4),
         "data_row_count": len(data),
         "numeric_column_count": len(numeric_columns),
+        "unreliable_numeric_cell_count": unreliable_cells,
         "period_bound_numeric_column_count": period_bound_numeric_columns,
     }
 

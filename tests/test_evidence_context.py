@@ -90,6 +90,59 @@ class EvidenceContextTests(unittest.TestCase):
             context["quality"]["reason_codes"],
         )
 
+    def test_concatenated_ocr_numbers_are_not_bindable_numeric_cells(self):
+        table = {
+            "internal_table_uid": "u_ocr_numbers",
+            "rows": [
+                ["Chỉ tiêu", "Năm 2023"],
+                ["Chi phí tài chính", "(72.193.585.614)(27.471.160.925)"],
+            ],
+            "header_row_indices": [0],
+            "cell_provenance": [
+                [
+                    {"anchor_row": row, "anchor_column": column, "covered_by_span": False}
+                    for column in range(2)
+                ]
+                for row in range(2)
+            ],
+            "source_provenance": {},
+        }
+
+        context = build_evidence_context(table)
+
+        profile = context["row_profiles"][1]
+        self.assertEqual(profile["role"], "data_with_unreliable_numeric")
+        self.assertEqual(profile["numeric_columns"], [])
+        self.assertEqual(profile["unreliable_numeric_columns"], [1])
+        self.assertEqual(context["quality"]["status"], "needs_processing")
+        self.assertIn("unreliable_numeric_source_cells", context["quality"]["reason_codes"])
+
+    def test_safe_cells_remain_bindable_when_a_sibling_ocr_cell_is_unreliable(self):
+        table = {
+            "internal_table_uid": "u_mixed_numbers",
+            "rows": [
+                ["Chỉ tiêu", "Năm 2023", "Năm 2022"],
+                ["Chi phí tài chính", "100", "(72.193.585.614)(27.471.160.925)"],
+            ],
+            "header_row_indices": [0],
+            "cell_provenance": [
+                [
+                    {"anchor_row": row, "anchor_column": column, "covered_by_span": False}
+                    for column in range(3)
+                ]
+                for row in range(2)
+            ],
+            "source_provenance": {},
+        }
+
+        context = build_evidence_context(table)
+
+        profile = context["row_profiles"][1]
+        self.assertEqual(profile["role"], "data")
+        self.assertEqual(profile["numeric_columns"], [1])
+        self.assertEqual(profile["unreliable_numeric_columns"], [2])
+        self.assertEqual(context["quality"]["status"], "review_ready")
+
     def test_adjacent_continuation_recovers_only_compatible_raw_header(self):
         previous = {
             "internal_table_uid": "previous",
