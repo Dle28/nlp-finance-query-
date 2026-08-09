@@ -913,9 +913,23 @@ V2 cell provenance
 Header cha được khôi phục chỉ khi `cell_provenance` xác nhận đó là ô bị cover
 bởi span; OCR text/số và V2 grid gốc vẫn bất biến. Candidate muốn thành
 `machine_calibrated` silver phải có exact V2 row, canonical table
-`review_ready`, data-row binding, unique period-cell binding nếu câu hỏi yêu
-cầu đầu/cuối kỳ, consensus của retrieval/semantic/evidence/metadata/source,
+`review_ready`, data-row binding, unique raw-header period/year-cell binding
+nếu câu hỏi yêu cầu đầu/cuối kỳ hoặc nêu rõ năm, consensus của retrieval/semantic/evidence/metadata/source,
 và critic không tìm thấy alternative gần ngang điểm.
+
+Năm trong metadata của report **không** tự bind giá trị vào một cột so sánh.
+V4 chỉ chọn cột có raw canonical header nêu đúng năm; fallback `Năm nay/Kỳ
+này` chỉ hợp lệ khi report year của candidate đúng bằng năm hỏi. Nếu không có
+một cột duy nhất thì giữ `row_bound`/`ambiguous_period_column`, không đoán.
+
+Một số metric là row label đã disclosed dù có từ giống phép tính, ví dụ `Tổng
+cộng tài sản`, `Tỷ lệ sở hữu`, `Lỗ chênh lệch tỷ giá`. Rule planner chỉ
+reclassify các form đơn chủ thể/đơn kỳ có pattern hẹp. Với bundle đã tạo, việc
+replan không sửa `review_items.jsonl`: `question_plan_overrides_v1.jsonl`
+bind hash câu hỏi và original plan, reason code, effective `lookup` plan.
+V4 copy effective plan và provenance vào review output; ledger dùng đúng plan
+đã review nhưng compiler vẫn yêu cầu raw V2 cell. Group/range/comparison hoặc
+formula nhiều operand không được đưa vào override.
 
 ```text
 machine_calibrated  source-gated autonomous silver; có thể train sau min size

@@ -442,6 +442,26 @@ challenger/critic views review chéo. Chỉ direct lookup qua toàn bộ source 
 mới là `machine_calibrated` silver; phần còn lại vẫn là `machine_provisional`
 hoặc `needs_human` và bị loại khỏi train.
 
+Với cụm từ giống phép tính nhưng thực tế là một **dòng đã được báo cáo sẵn**
+(`Tổng cộng tài sản`, `Tỷ lệ sở hữu`, `Lỗ chênh lệch tỷ giá`), không sửa
+`review_items.jsonl` gốc. Tạo sidecar hash-bound rồi dùng nó khi autonomous
+review:
+
+```bash
+python scripts/build_question_plan_overrides.py \
+  --bundle-dir ~/ViFinQA_review/run_002 \
+  --output ~/ViFinQA_review/run_002/question_plan_overrides_v1.jsonl
+
+python local/run_local_review_stage.py autonomous \
+  --bundle-dir ~/ViFinQA_review/run_002 \
+  --question-plan-overrides ~/ViFinQA_review/run_002/question_plan_overrides_v1.jsonl
+```
+
+Chỉ dạng một chủ thể/một kỳ, không có so sánh/tổng hợp/range, mới được
+replan. Override mang hash câu hỏi + plan gốc và được ghi lại trong review;
+nó không thay đổi raw table, không giả mạo `human_verified` và vẫn phải qua
+exact-row/exact-column gate.
+
 Sau khi tích luỹ đủ 200 machine-silver pairs, chạy:
 
 ```bash

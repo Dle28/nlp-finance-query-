@@ -62,8 +62,11 @@ A selected candidate must pass all of these before it can be machine silver:
 2. Its canonical table context is `review_ready`; tables with missing headers,
    rows or provenance are not eligible.
 3. The evidence row is classified as a data row, not a header/narrative row.
-4. For an opening/closing-period question, one and only one numeric column can
-   be bound through a raw source header to that period.
+4. For an opening/closing-period **or explicitly named-year** question, one
+   and only one numeric column can be bound through a raw source header to that
+   period/year. A report metadata year alone never binds a comparison column.
+   ``Năm nay`` is allowed only when the candidate report year exactly equals
+   the question year and the raw header says so.
 5. Semantic grounding, metadata and multiple candidate-selection views agree;
    the critic must not find a near-tied alternative.
 
@@ -85,13 +88,40 @@ python local/run_local_review_stage.py autonomous \
 # Fine-tune only after the minimum amount of V4 silver exists.
 python local/run_local_review_stage.py autotrain \
   --bundle-dir ~/ViFinQA_review/run_002 \
-  --autonomous-min-pairs 40
+  --autonomous-min-pairs 200
 ```
 
 `autotrain` exits with a `deferred` report if fewer than 200 valid pairs exist;
 it does not create a model in that case. When it trains, it writes a new
 encoder model only. It does not modify the existing corpus, lexical index,
 dense embeddings or FAISS index.
+
+### Correcting a high-precision plan without rewriting the bundle
+
+Some Vietnamese row labels contain operation-like words even though the report
+already discloses one value: for example ``Tổng cộng tài sản``, ``Tỷ lệ sở
+hữu`` or ``Lỗ chênh lệch tỷ giá``. The planner only treats narrow,
+single-subject/single-period forms as a direct lookup. Group, comparison,
+range and arithmetic wording stays composed.
+
+For an existing immutable bundle, create a separate, hash-bound sidecar rather
+than editing `review_items.jsonl`:
+
+```bash
+python scripts/build_question_plan_overrides.py \
+  --bundle-dir ~/ViFinQA_review/run_002 \
+  --output ~/ViFinQA_review/run_002/question_plan_overrides_v1.jsonl
+
+python local/run_local_review_stage.py autonomous \
+  --bundle-dir ~/ViFinQA_review/run_002 \
+  --question-plan-overrides ~/ViFinQA_review/run_002/question_plan_overrides_v1.jsonl
+```
+
+Each override includes the exact question hash and original-plan hash, a narrow
+reason code, and an effective one-operand `lookup` plan. V4 records both the
+effective plan and its provenance; the execution ledger refuses an override
+that does not match the original bundle. The sidecar changes neither source
+tables nor any `human_verified`/machine provenance state.
 
 ## Current run on `run_002`
 
