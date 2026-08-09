@@ -61,13 +61,16 @@ def semantic_candidate_input(
     source_title = compact_text(trace.get("source_title"), 420)
     unit_labels = trace.get("unit_labels") or []
     units = " | ".join(compact_text(value, 80) for value in unit_labels if compact_text(value, 80))
+    # Put question, headers and the exact source row first.  Cross-encoders
+    # impose a token limit; table titles and projected evidence remain useful
+    # context, but must not push the attributable row out of that window.
     lines = [
         f"Câu hỏi: {compact_text(question, 700)}",
-        f"Nguồn: {source_title}",
-        f"Chức năng bảng: {function_name}",
-        f"Đơn vị: {compact_text(table.get('unit_hint'), 80) or units}",
         f"Cột nguồn: {_column_labels(context)}",
         f"Dòng nguồn exact: {_source_row(candidate, table)}",
+        f"Chức năng bảng: {function_name}",
+        f"Đơn vị: {compact_text(table.get('unit_hint'), 80) or units}",
+        f"Nguồn: {source_title}",
         f"Evidence source: {compact_text(candidate.get('direct_evidence'), 1200)}",
     ]
     return "\n".join(line for line in lines if not line.endswith(": "))
@@ -80,4 +83,3 @@ def semantic_input_digest(question: str, candidate_input: str) -> str:
         separators=(",", ":"),
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
