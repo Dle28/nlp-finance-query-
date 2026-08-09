@@ -36,6 +36,13 @@ from finance_query.schemas import DirectBinding  # noqa: E402
 from finance_query.table_structure import validate_structure_sidecar  # noqa: E402
 
 
+EQUIVALENT_CRITIC_POLICY = "strict_equivalent_critic_answer"
+EQUIVALENT_CRITIC_MIN_SEMANTIC = 0.90
+EQUIVALENT_CRITIC_MIN_EVIDENCE = 0.85
+EQUIVALENT_CRITIC_MARGIN = Decimal("0.05")
+EQUIVALENT_CRITIC_TIE_EPSILON = Decimal("0.000000000001")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bundle-dir", type=Path, required=True)
@@ -195,6 +202,170 @@ def _profile_for_row(context: dict[str, Any], row_index: int) -> dict[str, Any]:
         ),
         {},
     )
+
+
+def _candidate_score(assessment: dict[str, Any]) -> Decimal:
+    return (
+        Decimal("0.55") * Decimal(str(assessment.get("semantic_score") or 0))
+        + Decimal("0.35") * Decimal(str(assessment.get("evidence_score") or 0))
+        + Decimal("0.10") * Decimal(str(assessment.get("metadata_score") or 0))
+    )
+
+
+def _has_tied_best(assessments: list[dict[str, Any]], key: str) -> bool:
+    if len(assessments) < 2:
+        return False
+    scores = sorted(
+        (Decimal(str(assessment.get(key) or 0)) for assessment in assessments),
+        reverse=True,
+    )
+    return abs(scores[0] - scores[1]) <= EQUIVALENT_CRITIC_TIE_EPSILON
+
+
+def _revalidate_equivalent_critic_policy(
+    review: dict[str, Any],
+    self_review: dict[str, Any],
+    selected_table: dict[str, Any],
+    selected_context: dict[str, Any],
+    *,
+    selected_uid: str,
+    selected_row_index: int,
+    selected_column_index: int,
+    selected_parsed_value: str,
+    selected_source_unit: str,
+    tables: dict[str, dict[str, Any]],
+    contexts: dict[str, dict[str, Any]],
+) -> bool:
+    """Reprove V4's critic-equivalence exception directly from V2 source.
+
+    This exception is executable only when the review's whole near-tie set is
+    recorded and each alternate still resolves to the same numeric V2 cell
+    value in the same source unit.  It intentionally does not trust a review
+    status or a natural-language explanation alone.
+    """
+    if str(self_review.get("selection_policy") or "") != EQUIVALENT_CRITIC_POLICY:
+        return False
+    if bool(self_review.get("critic_accepts")):
+        return False
+    selected_assessment = self_review.get("selected_assessment") or {}
+    assessments = self_review.get("candidate_assessments") or []
+    if (
+        str(selected_assessment.get("uid") or "") != selected_uid
+        or not bool((selected_assessment.get("raw_metric_identity") or {}).get("exact"))
+        or Decimal(str(selected_assessment.get("semantic_score") or 0))
+        < Decimal(str(EQUIVALENT_CRITIC_MIN_SEMANTIC))
+        or Decimal(str(selected_assessment.get("evidence_score") or 0))
+        < Decimal(str(EQUIVALENT_CRITIC_MIN_EVIDENCE))
+        or Decimal(str(selected_assessment.get("source_score") or 0))
+        < Decimal("1") - EQUIVALENT_CRITIC_TIE_EPSILON
+        or Decimal(str(selected_assessment.get("metadata_score") or 0))
+        < Decimal("1") - EQUIVALENT_CRITIC_TIE_EPSILON
+        or not isinstance(assessments, list)
+    ):
+        return False
+    selected_binding = selected_assessment.get("value_binding") or {}
+    if (
+        selected_binding.get("status") != "cell_bound"
+        or selected_binding.get("row_index") != selected_row_index
+        or selected_binding.get("column_index") != selected_column_index
+    ):
+        return False
+    if not _has_tied_best(assessments, "source_score") or not _has_tied_best(
+        assessments, "metadata_score"
+    ):
+        return False
+    votes = review.get("agent_votes") or {}
+    if not all(
+        str(votes.get(agent) or "") == selected_uid
+        for agent in ("semantic_agent", "evidence_agent", "challenger_agent")
+    ):
+        return False
+    selected_score = _candidate_score(selected_assessment)
+    expected = {
+        str(assessment.get("uid") or "")
+        for assessment in assessments
+        if str(assessment.get("uid") or "") != selected_uid
+        and selected_score - _candidate_score(assessment) < EQUIVALENT_CRITIC_MARGIN
+    }
+    recorded = self_review.get("equivalent_critic_alternatives") or []
+    if not expected or not isinstance(recorded, list):
+        return False
+    recorded_by_uid = {
+        str(alternative.get("internal_table_uid") or ""): alternative
+        for alternative in recorded
+        if isinstance(alternative, dict) and str(alternative.get("internal_table_uid") or "")
+    }
+    if set(recorded_by_uid) != expected or len(recorded_by_uid) != len(recorded):
+        return False
+
+    # The selected table/context arguments have already passed the regular
+    # direct-execution revalidation.  Keep explicit references here to make
+    # the equality contract clear and avoid accepting a disconnected audit.
+    if tables.get(selected_uid) is not selected_table or contexts.get(selected_uid) is not selected_context:
+        return False
+    for uid, alternative in recorded_by_uid.items():
+        table, context = tables.get(uid), contexts.get(uid)
+        if table is None or context is None:
+            return False
+        row_index, column_index = alternative.get("row_index"), alternative.get("column_index")
+        rows = table.get("rows") or []
+        if (
+            not isinstance(row_index, int)
+            or isinstance(row_index, bool)
+            or not isinstance(column_index, int)
+            or isinstance(column_index, bool)
+            or not 0 <= row_index < len(rows)
+            or not 0 <= column_index < len(rows[row_index])
+        ):
+            return False
+        profile = _profile_for_row(context, row_index)
+        if str(profile.get("role") or "") != "data" or column_index not in {
+            int(value) for value in profile.get("numeric_columns") or []
+        }:
+            return False
+        raw_value = str(rows[row_index][column_index])
+        if raw_value != str(alternative.get("raw_value") or ""):
+            return False
+        if row_label(rows[row_index]) != str(alternative.get("raw_row_label") or ""):
+            return False
+        headers = (context.get("canonical_headers") or {}).get("columns") or []
+        column_label = str(
+            next(
+                (
+                    column.get("source_label")
+                    for column in headers
+                    if isinstance(column.get("column_index"), int)
+                    and not isinstance(column.get("column_index"), bool)
+                    and column["column_index"] == column_index
+                ),
+                "",
+            )
+            or ""
+        )
+        if column_label != str(alternative.get("column_label") or ""):
+            return False
+        provenance_rows = table.get("cell_provenance") or []
+        if (
+            row_index >= len(provenance_rows)
+            or column_index >= len(provenance_rows[row_index] or [])
+            or provenance_rows[row_index][column_index] != alternative.get("source_cell")
+        ):
+            return False
+        parsed = parse_decimal(raw_value)
+        if (
+            parsed.value is None
+            or any(warning != "percent_value_not_scaled" for warning in parsed.warnings)
+            or parsed.value != str(alternative.get("parsed_value") or "")
+            or parsed.value != selected_parsed_value
+        ):
+            return False
+        source_unit = canonical_unit(table)
+        if (
+            source_unit != selected_source_unit
+            or source_unit != str(alternative.get("source_unit") or "")
+        ):
+            return False
+    return True
 
 
 def _formula_binding(
@@ -378,7 +549,13 @@ def direct_execution_row(
     self_review = review.get("machine_self_review") or {}
     if str(self_review.get("protocol") or "") != AUTONOMOUS_REVIEW_PROTOCOL:
         return _non_executable(item, review, "review_protocol_not_numeric_safe_v2")
-    if not bool(self_review.get("training_eligible")) or not bool(self_review.get("critic_accepts")):
+    if not bool(self_review.get("training_eligible")):
+        return _non_executable(item, review, "self_review_or_critic_not_accepted")
+    critic_accepts = bool(self_review.get("critic_accepts"))
+    equivalent_critic_policy = (
+        str(self_review.get("selection_policy") or "") == EQUIVALENT_CRITIC_POLICY
+    )
+    if not critic_accepts and not equivalent_critic_policy:
         return _non_executable(item, review, "self_review_or_critic_not_accepted")
     # V4 may carry a hash-bound local plan override for a disclosed source
     # row.  The immutable bundle plan remains available in the review record's
@@ -438,6 +615,20 @@ def direct_execution_row(
     monetary_targets = {"vnd", "thousand_vnd", "million_vnd", "billion_vnd", "trillion_vnd"}
     if requested_unit in monetary_targets and source_unit is None:
         return _non_executable(item, review, "source_monetary_unit_unresolved")
+    if not critic_accepts and not _revalidate_equivalent_critic_policy(
+        review,
+        self_review,
+        table,
+        context or {},
+        selected_uid=uid,
+        selected_row_index=row_index,
+        selected_column_index=column_index,
+        selected_parsed_value=parsed.value,
+        selected_source_unit=str(source_unit or ""),
+        tables=tables,
+        contexts=contexts or {},
+    ):
+        return _non_executable(item, review, "critic_equivalence_not_revalidated")
     try:
         converted_value = convert_unit(
             Decimal(parsed.value), source_unit, str(requested_unit) if requested_unit else None
@@ -480,7 +671,9 @@ def direct_execution_row(
             "review_protocol": self_review.get("protocol"),
             "machine_confidence": review.get("machine_confidence"),
             "agreement": review.get("agreement"),
-            "critic_accepts": True,
+            "critic_accepts": critic_accepts,
+            "selection_policy": self_review.get("selection_policy"),
+            "critic_equivalence_revalidated": not critic_accepts,
         },
     }
 

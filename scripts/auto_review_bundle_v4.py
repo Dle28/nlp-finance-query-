@@ -473,6 +473,7 @@ def equivalent_critic_alternatives(
                 "raw_value": binding.get("value"),
                 "parsed_value": value,
                 "source_unit": unit,
+                "source_cell": binding.get("source_cell"),
             }
         )
     return equivalents or None

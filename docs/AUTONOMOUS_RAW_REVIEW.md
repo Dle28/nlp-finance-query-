@@ -119,6 +119,10 @@ every near-tied alternative is independently cell-bound, parses to the same
 number, and declares the same source unit. All alternative row/cell/value/unit
 facts are retained in the review record. A different value, unknown unit,
 different unit, or another unverified near tie remains `machine_provisional`.
+The execution ledger repeats this check from V2: it verifies the full recorded
+near-tie set, canonical headers, data-row/numeric-cell role, cell provenance,
+parsed number and source unit before it can emit a grounded answer. Therefore
+a review record cannot bypass the critic merely by carrying the policy name.
 
 ## Commands
 

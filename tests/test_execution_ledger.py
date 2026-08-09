@@ -17,6 +17,7 @@ spec.loader.exec_module(ledger)
 
 
 UID = "a" * 64
+ALT_UID = "b" * 64
 
 
 def _item() -> dict:
@@ -75,6 +76,38 @@ def _context(label: str = "Số cuối năm VND") -> dict:
                 {"column_index": 1, "source_label": label},
             ]
         },
+    }
+
+
+def _equivalence_context(uid: str, label: str = "Số cuối năm VND") -> dict:
+    return {
+        "internal_table_uid": uid,
+        "canonical_headers": {
+            "columns": [
+                {"column_index": 0, "source_label": "Chỉ tiêu"},
+                {"column_index": 1, "source_label": label},
+            ]
+        },
+        "row_profiles": [
+            {"row_index": 0, "role": "header", "numeric_columns": []},
+            {"row_index": 1, "role": "data", "numeric_columns": [1]},
+        ],
+    }
+
+
+def _equivalence_table(uid: str, label: str) -> dict:
+    return {
+        "internal_table_uid": uid,
+        "document_id": f"ABC_{uid[:1]}",
+        "unit_hint": "vnd",
+        "rows": [["Chỉ tiêu", "Số cuối năm VND"], [label, "1.880.000.000"]],
+        "cell_provenance": [
+            [
+                {"anchor_row": row, "anchor_column": column, "covered_by_span": False}
+                for column in range(2)
+            ]
+            for row in range(2)
+        ],
     }
 
 
@@ -167,6 +200,78 @@ class ExecutionLedgerTests(unittest.TestCase):
         )
         self.assertEqual(row["execution_status"], "not_executable")
         self.assertEqual(row["reason"], "selected_column_label_differs_from_canonical_source")
+
+    def test_equivalent_critic_policy_revalidates_every_alternate_v2_cell(self) -> None:
+        selected = _equivalence_table(UID, "Tiền")
+        alternate = _equivalence_table(ALT_UID, "Tiền gửi")
+        review = _review()
+        self_review = review["machine_self_review"]
+        self_review.update(
+            {
+                "critic_accepts": False,
+                "selection_policy": "strict_equivalent_critic_answer",
+                "selected_assessment": {
+                    "uid": UID,
+                    "semantic_score": 1.0,
+                    "evidence_score": 0.95,
+                    "source_score": 1.0,
+                    "metadata_score": 1.0,
+                    "raw_metric_identity": {"exact": True},
+                    "value_binding": self_review["selected_value_binding"],
+                },
+                "candidate_assessments": [
+                    {
+                        "uid": UID,
+                        "semantic_score": 1.0,
+                        "evidence_score": 0.95,
+                        "source_score": 1.0,
+                        "metadata_score": 1.0,
+                    },
+                    {
+                        "uid": ALT_UID,
+                        "semantic_score": 1.0,
+                        "evidence_score": 0.95,
+                        "source_score": 1.0,
+                        "metadata_score": 1.0,
+                    },
+                ],
+                "equivalent_critic_alternatives": [
+                    {
+                        "internal_table_uid": ALT_UID,
+                        "raw_row_label": "Tiền gửi",
+                        "row_index": 1,
+                        "column_index": 1,
+                        "column_label": "Số cuối năm VND",
+                        "raw_value": "1.880.000.000",
+                        "parsed_value": "1880000000",
+                        "source_unit": "vnd",
+                        "source_cell": {
+                            "anchor_row": 1,
+                            "anchor_column": 1,
+                            "covered_by_span": False,
+                        },
+                    }
+                ],
+            }
+        )
+        review["agent_votes"] = {
+            agent: UID
+            for agent in ("semantic_agent", "evidence_agent", "challenger_agent")
+        }
+        contexts = {UID: _equivalence_context(UID), ALT_UID: _equivalence_context(ALT_UID)}
+        row = ledger.direct_execution_row(
+            _item(), review, {UID: selected, ALT_UID: alternate}, contexts
+        )
+        self.assertEqual(row["execution_status"], "grounded")
+        self.assertFalse(row["review_provenance"]["critic_accepts"])
+        self.assertTrue(row["review_provenance"]["critic_equivalence_revalidated"])
+
+        review["machine_self_review"]["equivalent_critic_alternatives"][0]["raw_value"] = "9"
+        row = ledger.direct_execution_row(
+            _item(), review, {UID: selected, ALT_UID: alternate}, contexts
+        )
+        self.assertEqual(row["execution_status"], "not_executable")
+        self.assertEqual(row["reason"], "critic_equivalence_not_revalidated")
 
     def test_complete_percentage_evidence_becomes_exact_formula_execution(self) -> None:
         old_uid, new_uid = "old", "new"
