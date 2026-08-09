@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from finance_query.evidence_context import validate_evidence_context_sidecar
+from finance_query.plan_overrides import apply_plan_overrides, validate_plan_overrides
 from finance_query.table_structure import validate_structure_sidecar
 
 import auto_review_bundle_v31 as v31
@@ -40,6 +41,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--evidence-context", type=Path, default=None)
     parser.add_argument("--quarantine-output", type=Path, default=None)
+    parser.add_argument(
+        "--question-plan-overrides",
+        type=Path,
+        default=None,
+        help="Optional hash-bound local plan-override sidecar; source bundle stays immutable.",
+    )
     parser.add_argument("--min-agreement", type=float, default=0.67)
     parser.add_argument("--silver-threshold", type=float, default=0.84)
     parser.add_argument("--adjacent-min-token-coverage", type=float, default=0.85)
@@ -502,7 +509,14 @@ def main() -> None:
     context_path = args.evidence_context or bundle / "tables_evidence_context_v1.jsonl"
     validate_structure_sidecar(bundle, structure_path)
     validate_evidence_context_sidecar(bundle, structure_path, context_path)
-    items = v3.load_jsonl(bundle / "review_items.jsonl")
+    source_items = v3.load_jsonl(bundle / "review_items.jsonl")
+    overrides = {}
+    if args.question_plan_overrides is not None:
+        overrides = validate_plan_overrides(
+            source_items,
+            v3.load_jsonl(args.question_plan_overrides.resolve()),
+        )
+    items = apply_plan_overrides(source_items, overrides)
     tables = by_uid(v3.load_jsonl(structure_path), "V2 structures")
     contexts = by_uid(v3.load_jsonl(context_path), "evidence contexts")
     validated, candidate_total = v3.attach_structure_validation(items, bundle)
@@ -519,6 +533,8 @@ def main() -> None:
             args.min_agreement,
             args.silver_threshold,
         )
+        review["effective_question_plan"] = item.get("question_plan") or {}
+        review["question_plan_provenance"] = item.get("_question_plan_provenance") or {}
         reviews.append(review)
         quarantine.extend(rejected)
     v3.write_jsonl(args.output, reviews)
@@ -528,6 +544,8 @@ def main() -> None:
     print("Status counts:", dict(Counter(str(row["consensus_status"]) for row in reviews)))
     print("Exact V2 candidate rows:", f"{validated}/{candidate_total}")
     print("Quarantined candidates:", len(quarantine))
+    if args.question_plan_overrides is not None:
+        print("Applied source-bound plan overrides:", len(overrides))
     if args.quarantine_output:
         print("Quarantine audit:", args.quarantine_output)
 

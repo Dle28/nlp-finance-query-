@@ -120,7 +120,10 @@ def direct_execution_row(
     self_review = review.get("machine_self_review") or {}
     if not bool(self_review.get("training_eligible")) or not bool(self_review.get("critic_accepts")):
         return _non_executable(item, review, "self_review_or_critic_not_accepted")
-    plan = item.get("question_plan") or {}
+    # V4 may carry a hash-bound local plan override for a disclosed source
+    # row.  The immutable bundle plan remains available in the review record's
+    # provenance; execution must use the plan that V4 actually reviewed.
+    plan = review.get("effective_question_plan") or item.get("question_plan") or {}
     if str(plan.get("family") or item.get("weak_family") or "") != "direct_lookup":
         return _non_executable(item, review, "family_requires_composed_executor")
     uid = str(review.get("machine_candidate_uid") or "")

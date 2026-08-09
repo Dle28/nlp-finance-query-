@@ -60,6 +60,12 @@ def parse_args() -> argparse.Namespace:
         help="Minimum V4 source-gated machine-silver pairs before autonomous dense training.",
     )
     p.add_argument(
+        "--question-plan-overrides",
+        type=Path,
+        default=None,
+        help="Hash-bound effective-plan sidecar used by autonomous/retrain/submission stages.",
+    )
+    p.add_argument(
         "--submission-output-dir",
         type=Path,
         default=None,
@@ -168,10 +174,18 @@ def main() -> None:
     review_ledger = labels / f"review_ledger_{run_tag}.jsonl"
     human_check_queue = labels / f"human_check_queue_{run_tag}.jsonl"
     evidence_context = bundle / "tables_evidence_context_v1.jsonl"
-    autonomous_reviews = labels / f"machine_reviews_{run_tag}_autonomous.jsonl"
-    autonomous_quarantine = labels / f"autonomous_quarantine_{run_tag}.jsonl"
-    autonomous_silver = labels / f"machine_silver_labels_{run_tag}.jsonl"
-    execution_ledger = labels / f"machine_execution_ledger_{run_tag}.jsonl"
+    overrides = (
+        args.question_plan_overrides.resolve()
+        if args.question_plan_overrides is not None
+        else None
+    )
+    if overrides is not None and not overrides.is_file():
+        raise FileNotFoundError(overrides)
+    variant = "_replanned" if overrides is not None else ""
+    autonomous_reviews = labels / f"machine_reviews_{run_tag}_autonomous{variant}.jsonl"
+    autonomous_quarantine = labels / f"autonomous_quarantine_{run_tag}{variant}.jsonl"
+    autonomous_silver = labels / f"machine_silver_labels_{run_tag}{variant}.jsonl"
+    execution_ledger = labels / f"machine_execution_ledger_{run_tag}{variant}.jsonl"
 
     if args.mode == "preprocess":
         command = [
@@ -198,21 +212,21 @@ def main() -> None:
                 ],
                 root,
             )
-        run(
-            [
-                sys.executable,
-                str(root / "scripts/auto_review_bundle_v4.py"),
-                "--bundle-dir",
-                str(bundle),
-                "--evidence-context",
-                str(evidence_context),
-                "--output",
-                str(autonomous_reviews),
-                "--quarantine-output",
-                str(autonomous_quarantine),
-            ],
-            root,
-        )
+        review_command = [
+            sys.executable,
+            str(root / "scripts/auto_review_bundle_v4.py"),
+            "--bundle-dir",
+            str(bundle),
+            "--evidence-context",
+            str(evidence_context),
+            "--output",
+            str(autonomous_reviews),
+            "--quarantine-output",
+            str(autonomous_quarantine),
+        ]
+        if overrides is not None:
+            review_command.extend(["--question-plan-overrides", str(overrides)])
+        run(review_command, root)
         run(
             [
                 sys.executable,
