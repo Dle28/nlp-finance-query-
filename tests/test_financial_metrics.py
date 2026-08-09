@@ -39,6 +39,23 @@ class FinancialMetricFormulaTests(unittest.TestCase):
         )
         self.assertIn("từ các chủ mỏ", reversed_years["operands"][0]["label"].casefold())
 
+    def test_growth_rule_extracts_metric_from_calculation_and_bare_growth_forms(self):
+        calculated = infer_formula_spec(
+            "Tính phần trăm tăng trưởng lãi tiền gửi có kỳ hạn của công ty mẹ "
+            "CTCP Phát triển Hạ tầng Kỹ thuật từ năm 2016 sang năm 2021."
+        )
+        self.assertIn("lãi tiền gửi có kỳ hạn", calculated["operands"][0]["label"].casefold())
+        self.assertEqual(
+            [operand["years"] for operand in calculated["operands"]], [[2016], [2021]]
+        )
+
+        bare = infer_formula_spec(
+            "Tăng trưởng khoản vay ngắn hạn của MCH từ cuối năm 2021 đến cuối năm 2023 "
+            "là bao nhiêu %?"
+        )
+        self.assertIn("khoản vay ngắn hạn", bare["operands"][0]["label"].casefold())
+        self.assertNotIn("chỉ tiêu cần so sánh", bare["operands"][0]["label"].casefold())
+
     def test_known_balance_sheet_ratio_is_explicit(self):
         spec = infer_formula_spec(
             "Tỷ lệ nợ ngắn hạn trên vốn chủ sở hữu của công ty mẹ VNM năm 2022 là bao nhiêu %?"

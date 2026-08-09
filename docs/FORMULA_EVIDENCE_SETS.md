@@ -27,6 +27,12 @@ Formula rules nằm trong `src/finance_query/financial_metrics.py`. Widget dùng
 chúng để trình bày ngữ cảnh và lưu provenance, không dùng LLM để tự viết công
 thức hay evidence.
 
+Với growth rule, metric chỉ bị cắt tại một boundary thời gian có năm/ngày rõ
+ràng. Rule nhận cả các dạng mở đầu `Tính phần trăm tăng trưởng …` và `Tăng
+trưởng …`; do đó cụm metric được giữ nguyên để đối sánh raw V2, kể cả khi có
+`từ` bên trong nhãn như `doanh thu từ hoạt động xây dựng`. Chuẩn hoá này chỉ
+thay đổi template tìm evidence, không sửa text/cell nguồn.
+
 ## Contract lưu review
 
 Với câu được nhận diện, record review có thêm:

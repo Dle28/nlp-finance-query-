@@ -112,9 +112,15 @@ def _growth_metric(question: str) -> str:
     instead carry an explicit year/date phrase.
     """
     value = re.sub(r"\s+", " ", question).strip(" ?.\n")
+    # Vietnamese questions may lead with ``Tính phần trăm tăng trưởng ...``
+    # or simply ``Tăng trưởng ...``.  Previously only a few nominal prefixes
+    # were recognised, silently yielding the generic metric placeholder for
+    # these direct temporal questions. Keep the phrase before the explicit
+    # time boundary verbatim; it is later matched against a raw V2 row.
     match = re.search(
-        r"(?:tỷ lệ tăng trưởng|tỉ lệ tăng trưởng|tốc độ tăng trưởng|"
-        r"tỷ lệ tăng\s*%|tỉ lệ tăng\s*%|phần trăm tốc độ tăng trưởng)\s+(.+)$",
+        r"(?:tính\s+)?(?:phần\s+trăm\s+)?(?:tỷ\s+lệ|tỉ\s+lệ|"
+        r"tốc\s+độ|tỷ\s+suất)?\s*(?:tốc\s+độ\s+)?(?:tăng\s+trưởng|tăng)"
+        r"(?:\s*\(\s*%\s*\)|\s*%)?\s+(.+)$",
         value,
         re.IGNORECASE,
     )
@@ -124,6 +130,8 @@ def _growth_metric(question: str) -> str:
     time_boundary = re.search(
         r"\s+(?:từ\s+(?:(?:đầu|cuối)\s+)?năm\s+|"
         r"từ\s+(?:19|20)\d{2}\b|"
+        r"giữa\s+(?:(?:đầu|cuối)\s+)?năm\s+(?:19|20)\d{2}\s+"
+        r"(?:và|đến)\s+(?:(?:đầu|cuối)\s+)?năm\s+(?:19|20)\d{2}\b|"
         r"trong\s+năm\s+(?:19|20)\d{2}\s+so\s+với\s+năm\s+(?:19|20)\d{2}\b|"
         r"năm\s+(?:19|20)\d{2}\s+so\s+với\s+năm\s+(?:19|20)\d{2}\b)",
         metric,
@@ -131,6 +139,7 @@ def _growth_metric(question: str) -> str:
     )
     if time_boundary:
         metric = metric[: time_boundary.start()].strip()
+    metric = re.sub(r"^(?:\(\s*%\s*\)\s*)?(?:của\s+)?", "", metric, flags=re.IGNORECASE)
     metric = re.sub(r"\s+(?:tính|so)$", "", metric, flags=re.IGNORECASE).strip()
     entity = re.search(
         r"\s+của\s+(?:công ty mẹ|ctcp|công ty cổ phần|ngân hàng|tập đoàn|tổng công ty)\b",
