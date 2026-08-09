@@ -14,9 +14,21 @@ import hashlib
 import json
 import os
 import statistics
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+
+from finance_query.semantic_rerank import (  # noqa: E402
+    SEMANTIC_INPUT_RENDERER_VERSION,
+    semantic_candidate_input,
+    semantic_input_digest,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,7 +74,7 @@ def validate_sidecar(bundle: Path, sidecar: Path) -> dict[str, Any]:
     if not manifest_path.is_file():
         raise FileNotFoundError(f"Semantic-rerank manifest missing: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if int(manifest.get("schema_version") or 0) != 1:
+    if int(manifest.get("schema_version") or 0) not in {1, 2}:
         raise ValueError("Unsupported semantic-rerank schema")
     expected = {
         "bundle_review_items_sha256": bundle / "review_items.jsonl",
@@ -75,6 +87,57 @@ def validate_sidecar(bundle: Path, sidecar: Path) -> dict[str, Any]:
     if str(manifest.get("sidecar_sha256") or "") != sha256_file(sidecar):
         raise ValueError("Semantic-rerank sidecar hash does not match its manifest")
     return manifest
+
+
+def validate_v2_source_inputs(
+    bundle: Path,
+    manifest: dict[str, Any],
+    score_rows: dict[int, dict[str, Any]],
+    items: dict[int, dict[str, Any]],
+) -> None:
+    """Prove every V2 score saw the stated, current exact-source input.
+
+    V1 stored only a digest and remains usable for historical diagnostic
+    comparison.  V2 stores its bounded source input and verifies that it can
+    be regenerated from the immutable V2 row and canonical context.
+    """
+    if int(manifest.get("schema_version") or 0) < 2:
+        return
+    if int(manifest.get("input_renderer_version") or 0) != SEMANTIC_INPUT_RENDERER_VERSION:
+        raise ValueError("Semantic-rerank input renderer version is not supported")
+    tables = {
+        str(row["internal_table_uid"]): row
+        for row in load_jsonl(bundle / "tables_structured_v2.jsonl")
+    }
+    contexts = {
+        str(row["internal_table_uid"]): row
+        for row in load_jsonl(bundle / "tables_evidence_context_v1.jsonl")
+    }
+    for qid, score_row in score_rows.items():
+        item = items.get(qid)
+        if item is None:
+            raise ValueError(f"Semantic score Q{qid} lacks a bundle item")
+        candidates = {
+            (str(candidate.get("internal_table_uid") or ""), int(candidate.get("rank") or 0)): candidate
+            for candidate in item.get("candidates") or []
+        }
+        for score in score_row.get("candidate_scores") or []:
+            uid = str(score.get("internal_table_uid") or "")
+            rank = int(score.get("rank") or 0)
+            candidate = candidates.get((uid, rank))
+            source_input = str(score.get("source_input") or "")
+            if candidate is None or not source_input:
+                raise ValueError(f"Semantic V2 score Q{qid} has no attributable candidate/source input")
+            expected = semantic_candidate_input(
+                str(item.get("question") or ""),
+                candidate,
+                tables.get(uid) or {},
+                contexts.get(uid) or {},
+            )
+            if not expected or expected != source_input:
+                raise ValueError(f"Semantic V2 source input Q{qid} no longer matches raw V2 context")
+            if str(score.get("input_sha256") or "") != semantic_input_digest(item["question"], source_input):
+                raise ValueError(f"Semantic V2 source input hash mismatch for Q{qid}")
 
 
 def percentile(values: list[float], q: float) -> float | None:
@@ -107,6 +170,7 @@ def main() -> None:
     manifest = validate_sidecar(bundle, sidecar)
     score_rows = {int(row["id"]): row for row in load_jsonl(sidecar)}
     items = {int(row["id"]): row for row in load_jsonl(bundle / "review_items.jsonl")}
+    validate_v2_source_inputs(bundle, manifest, score_rows, items)
     reviews = {int(row["id"]): row for row in load_jsonl(args.machine_reviews.resolve())}
     human = complete_human_uids(args.human_reviews.resolve() if args.human_reviews else None)
 

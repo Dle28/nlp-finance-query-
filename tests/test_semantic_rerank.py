@@ -20,8 +20,27 @@ class SemanticRerankTests(unittest.TestCase):
             "canonical_headers": {"columns": [{"source_label": "Chỉ tiêu"}, {"source_label": "Số cuối năm"}]},
         }
         value = semantic_candidate_input("Tiền cuối năm là bao nhiêu?", candidate, table, context)
-        self.assertIn("Dòng nguồn exact: Tiền | 100", value)
+        self.assertIn("Dòng nguồn exact (V2): c0=Tiền | c1=100", value)
         self.assertIn("Cột nguồn: Chỉ tiêu | Số cuối năm", value)
+        self.assertLess(value.index("Dòng nguồn exact"), value.index("Cột nguồn"))
         self.assertNotIn("UNTRUSTED PROJECTION", value)
         self.assertEqual(semantic_input_digest("q", value), semantic_input_digest("q", value))
         self.assertNotEqual(semantic_input_digest("q", value), semantic_input_digest("q2", value))
+
+    def test_input_refuses_candidate_without_an_exact_v2_row(self):
+        value = semantic_candidate_input(
+            "Tiền cuối năm là bao nhiêu?",
+            {"structure_validation": {}},
+            {"rows": [["Tiền", "100"]]},
+            {"canonical_headers": {"columns": []}},
+        )
+        self.assertEqual(value, "")
+
+    def test_long_cells_are_explicitly_truncated_not_synthesized(self):
+        value = semantic_candidate_input(
+            "Q",
+            {"structure_validation": {"row_index": 0}},
+            {"rows": [["a" * 300, "100"]]},
+            {"canonical_headers": {"columns": []}},
+        )
+        self.assertIn("c0=" + "a" * 229 + "…", value)

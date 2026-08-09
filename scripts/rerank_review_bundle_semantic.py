@@ -21,6 +21,7 @@ if str(ROOT / "src") not in sys.path:
 
 from finance_query.semantic_rerank import (  # noqa: E402
     SEMANTIC_RERANK_SCHEMA_VERSION,
+    SEMANTIC_INPUT_RENDERER_VERSION,
     semantic_candidate_input,
     semantic_input_digest,
 )
@@ -94,11 +95,17 @@ def main() -> None:
                 if table is None or context is None:
                     continue
                 model_input = semantic_candidate_input(item["question"], candidate, table, context)
+                # A semantic score is diagnostic evidence, not a fallback
+                # retriever.  Do not score tables unless the candidate points
+                # to one exact raw V2 row that is visible in its model input.
+                if not model_input:
+                    continue
                 scored.append(
                     {
                         "internal_table_uid": uid,
                         "rank": int(candidate.get("rank") or 0),
                         "input_sha256": semantic_input_digest(item["question"], model_input),
+                        "source_input": model_input,
                         "score": None,
                     }
                 )
@@ -126,6 +133,7 @@ def main() -> None:
     write_jsonl(output, rows)
     manifest = {
         "schema_version": SEMANTIC_RERANK_SCHEMA_VERSION,
+        "input_renderer_version": SEMANTIC_INPUT_RENDERER_VERSION,
         "bundle_review_items_sha256": sha256_file(bundle / "review_items.jsonl"),
         "structured_tables_sha256": sha256_file(structured),
         "evidence_context_sha256": sha256_file(contexts_path),
