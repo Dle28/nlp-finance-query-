@@ -14,6 +14,86 @@ from .execution import parse_decimal
 from .financial_metrics import operand_match_score
 
 
+FORMULA_SOURCE_DISCOVERY_POLICY = "resolved_ticker_operand_year_or_following_report_v1"
+FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE = "formula_source_discovery_v1"
+FORMULA_SOURCE_DISCOVERY_RANK_BASE = 1_000_000
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def formula_operand_years(formula: Mapping[str, Any]) -> set[int]:
+    """Return explicitly controlled operand years; never derive one from OCR."""
+    return {
+        year
+        for operand in formula.get("operands") or []
+        for value in operand.get("years") or []
+        if (year := _int_or_none(value)) is not None
+    }
+
+
+def source_discovery_candidates(
+    item: Mapping[str, Any],
+    formula: Mapping[str, Any],
+    tables: Mapping[str, Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Find additional source tables through immutable metadata only.
+
+    This is deliberately narrower than generic retrieval: a formula question
+    must have resolved ticker(s) and explicit operand years; candidate tables
+    must share the ticker, any resolved scope, and a report year that is the
+    operand year or the immediately following comparative report.  It creates
+    only discovery candidates for exact-row/cell collection and never an
+    answer, label or synthetic table.
+    """
+    plan = item.get("question_plan") or {}
+    tickers = {str(value) for value in plan.get("tickers") or [] if str(value)}
+    years = formula_operand_years(formula)
+    if not tickers or not years:
+        return []
+    allowed_report_years = years | {year + 1 for year in years}
+    expected_scope = str(plan.get("scope") or "")
+    existing = {
+        str(candidate.get("internal_table_uid") or "")
+        for candidate in item.get("candidates") or []
+    }
+    selected: list[Mapping[str, Any]] = []
+    for uid, table in tables.items():
+        if uid in existing or str(table.get("ticker") or "") not in tickers:
+            continue
+        if expected_scope and str(table.get("scope") or "") != expected_scope:
+            continue
+        report_year = _int_or_none(table.get("report_year"))
+        if report_year not in allowed_report_years:
+            continue
+        selected.append(table)
+    selected.sort(
+        key=lambda table: (
+            str(table.get("ticker") or ""),
+            str(table.get("scope") or ""),
+            _int_or_none(table.get("report_year")) or 0,
+            str(table.get("document_id") or ""),
+            _int_or_none(table.get("local_ordinal")) or 0,
+            str(table.get("internal_table_uid") or ""),
+        )
+    )
+    return [
+        {
+            "internal_table_uid": str(table["internal_table_uid"]),
+            "rank": FORMULA_SOURCE_DISCOVERY_RANK_BASE + index,
+            "ticker": table.get("ticker"),
+            "scope": table.get("scope"),
+            "report_year": table.get("report_year"),
+            "candidate_source": FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE,
+        }
+        for index, table in enumerate(selected)
+    ]
+
+
 def _column_by_index(context: Mapping[str, Any], index: int) -> Mapping[str, Any]:
     return next(
         (
@@ -219,6 +299,7 @@ def operand_evidence_matches(
                 "ticker": candidate.get("ticker") or table.get("ticker"),
                 "scope": candidate.get("scope") or table.get("scope"),
                 "report_year": candidate.get("report_year"),
+                "candidate_source": candidate.get("candidate_source") or "retrieved",
                 "row_index": row_index,
                 "source_row": [str(value) for value in row],
                 "match_score": score,
@@ -331,5 +412,6 @@ def formula_evidence_set(
         "evidence_completeness": evidence_completeness,
         "reason_codes": reason_codes,
         "candidate_gate_rejections": candidate_gate_rejections,
+        "source_discovery": dict(item.get("_formula_source_discovery") or {}),
         "execution_status": "not_executed_source_evidence_only",
     }

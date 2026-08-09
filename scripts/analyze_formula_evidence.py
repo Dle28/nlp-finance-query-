@@ -24,6 +24,7 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from finance_query.execution import parse_decimal  # noqa: E402
+from finance_query.formula_evidence import FORMULA_SOURCE_DISCOVERY_POLICY  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -69,8 +70,9 @@ def validate_manifest(bundle: Path, sidecar: Path) -> dict[str, Any]:
     if not manifest_path.is_file():
         raise FileNotFoundError(f"Formula evidence manifest missing: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if int(manifest.get("schema_version") or 0) != 2:
-        raise ValueError("Formula evidence audit requires schema_version=2")
+    version = int(manifest.get("schema_version") or 0)
+    if version not in {2, 3}:
+        raise ValueError("Formula evidence audit requires schema_version=2 or 3")
     expected = {
         "bundle_review_items_sha256": bundle / "review_items.jsonl",
         "structured_tables_sha256": bundle / "tables_structured_v2.jsonl",
@@ -79,6 +81,12 @@ def validate_manifest(bundle: Path, sidecar: Path) -> dict[str, Any]:
     for key, path in expected.items():
         if str(manifest.get(key) or "") != sha256_file(path):
             raise ValueError(f"Formula evidence manifest does not match {path.name}")
+    if version >= 3:
+        if str(manifest.get("bundle_tables_sha256") or "") != sha256_file(bundle / "tables.jsonl"):
+            raise ValueError("Formula source-discovery manifest does not match tables.jsonl")
+        discovery = manifest.get("source_discovery") or {}
+        if not bool(discovery.get("enabled")) or str(discovery.get("policy") or "") != FORMULA_SOURCE_DISCOVERY_POLICY:
+            raise ValueError("Formula source-discovery manifest lacks the required policy")
     if str(manifest.get("sidecar_sha256") or "") != sha256_file(sidecar):
         raise ValueError("Formula evidence sidecar hash does not match its manifest")
     if str(manifest.get("numeric_binding_policy") or "") != "one_reliable_raw_v2_number_per_operand":

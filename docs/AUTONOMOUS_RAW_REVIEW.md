@@ -156,7 +156,8 @@ coverage sidecar:
 python scripts/build_formula_evidence_sets.py \
   --bundle-dir ~/ViFinQA_review/run_002 \
   --evidence-context ~/ViFinQA_review/run_002/tables_evidence_context_v2.jsonl \
-  --output ~/ViFinQA_review/run_002/formula_evidence_sets_v2.jsonl
+  --discover-source-operands \
+  --output ~/ViFinQA_review/run_002/formula_evidence_sets_context_v2_discovered.jsonl
 ```
 
 An operand is recorded only when its metric has an exact V2 data row and a
@@ -171,13 +172,20 @@ execution parser: an OCR cell containing multiple numeric groups (for example
 two parenthesized values concatenated into one cell) is rejected, not treated
 as a formula operand.
 
+With `--discover-source-operands`, the collector additionally joins immutable
+`tables.jsonl` metadata by UID. It requires a resolved question-plan ticker and
+only considers the operand year or the immediately following comparative
+report, plus the resolved scope when one exists. The discovered table still
+needs the same exact V2 row, canonical header and one-number cell binding. It
+is evidence discovery only, never answer or label generation.
+
 Audit the generated sidecar before considering any later executor work:
 
 ```bash
 python scripts/analyze_formula_evidence.py \
   --bundle-dir ~/ViFinQA_review/run_002 \
-  --formula-evidence ~/ViFinQA_review/run_002/formula_evidence_sets_v2.jsonl \
-  --output ~/ViFinQA_review/run_002/formula_evidence_sets_v2.audit.json
+  --formula-evidence ~/ViFinQA_review/run_002/formula_evidence_sets_context_v2_discovered.jsonl \
+  --output ~/ViFinQA_review/run_002/formula_evidence_sets_context_v2_discovered.audit.json
 ```
 
 The audit verifies each stored operand row/cell/header against V2 again and

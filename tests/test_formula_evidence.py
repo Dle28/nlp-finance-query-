@@ -1,7 +1,12 @@
 import unittest
 
 from finance_query.evidence_context import build_evidence_context
-from finance_query.formula_evidence import formula_evidence_set, operand_evidence_matches
+from finance_query.formula_evidence import (
+    FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE,
+    formula_evidence_set,
+    operand_evidence_matches,
+    source_discovery_candidates,
+)
 
 
 def _table() -> dict:
@@ -27,6 +32,89 @@ def _table() -> dict:
 
 
 class FormulaEvidenceTests(unittest.TestCase):
+    def test_source_discovery_uses_only_resolved_source_metadata(self):
+        formula = {
+            "operands": [
+                {"operand_id": "assets", "years": [2022], "required": True},
+            ]
+        }
+        item = {
+            "question_plan": {"tickers": ["ABC"], "scope": "separate"},
+            "candidates": [{"internal_table_uid": "already_retrieved"}],
+        }
+        tables = {
+            "already_retrieved": {
+                "internal_table_uid": "already_retrieved",
+                "ticker": "ABC",
+                "scope": "separate",
+                "report_year": 2022,
+            },
+            "same_year": {
+                "internal_table_uid": "same_year",
+                "ticker": "ABC",
+                "scope": "separate",
+                "report_year": 2022,
+            },
+            "following_year": {
+                "internal_table_uid": "following_year",
+                "ticker": "ABC",
+                "scope": "separate",
+                "report_year": 2023,
+            },
+            "other_year": {
+                "internal_table_uid": "other_year",
+                "ticker": "ABC",
+                "scope": "separate",
+                "report_year": 2024,
+            },
+            "other_scope": {
+                "internal_table_uid": "other_scope",
+                "ticker": "ABC",
+                "scope": "consolidated",
+                "report_year": 2022,
+            },
+            "other_ticker": {
+                "internal_table_uid": "other_ticker",
+                "ticker": "XYZ",
+                "scope": "separate",
+                "report_year": 2022,
+            },
+        }
+        discovered = source_discovery_candidates(item, formula, tables)
+        self.assertEqual(
+            [candidate["internal_table_uid"] for candidate in discovered],
+            ["same_year", "following_year"],
+        )
+        self.assertTrue(
+            all(
+                candidate["candidate_source"] == FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE
+                for candidate in discovered
+            )
+        )
+
+    def test_source_discovery_requires_explicit_ticker_and_operand_year(self):
+        table = {
+            "internal_table_uid": "u1",
+            "ticker": "ABC",
+            "report_year": 2023,
+        }
+        self.assertEqual(
+            source_discovery_candidates(
+                {"question_plan": {"tickers": []}},
+                {"operands": [{"years": [2023]}]},
+                {"u1": table},
+            ),
+            [],
+        )
+        self.assertEqual(
+            source_discovery_candidates(
+                {"question_plan": {"tickers": ["ABC"]}},
+                {"operands": [{"years": []}]},
+                {"u1": table},
+            ),
+            [],
+        )
+
     def test_operand_binds_exact_row_and_explicit_year_cell(self):
         table = _table()
         context = build_evidence_context(table)

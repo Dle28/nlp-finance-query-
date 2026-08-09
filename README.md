@@ -477,8 +477,14 @@ và không thay đổi label:
 python scripts/build_formula_evidence_sets.py \
   --bundle-dir ~/ViFinQA_review/run_002 \
   --evidence-context ~/ViFinQA_review/run_002/tables_evidence_context_v2.jsonl \
-  --output ~/ViFinQA_review/run_002/formula_evidence_sets_v2.jsonl
+  --discover-source-operands \
+  --output ~/ViFinQA_review/run_002/formula_evidence_sets_context_v2_discovered.jsonl
 ```
+
+Discovery này chỉ join UID với metadata immutable `tables.jsonl`: ticker trong
+question plan phải được resolve, report year phải là năm operand hoặc năm báo
+cáo kế tiếp. Sau đó operand vẫn phải qua exact raw-row/cell binding; không có
+answer hay label nào được tạo từ discovery.
 
 `complete` chỉ có nghĩa tất cả operand của formula đã có exact raw row/cell,
 cùng entity/scope và không mơ hồ; câu có lọc nhóm, xếp hạng hoặc công thức

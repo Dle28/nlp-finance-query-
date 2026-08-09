@@ -211,7 +211,7 @@ def main() -> None:
             raise FileNotFoundError(
                 f"Canonical context missing: {evidence_context}. Run preprocess first."
             )
-        formula_evidence = bundle / "formula_evidence_sets_v2.jsonl"
+        formula_evidence = bundle / "formula_evidence_sets_context_v2_discovered.jsonl"
         run(
             [
                 sys.executable,
@@ -222,6 +222,7 @@ def main() -> None:
                 str(formula_evidence),
                 "--evidence-context",
                 str(evidence_context),
+                "--discover-source-operands",
             ],
             root,
         )
