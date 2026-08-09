@@ -73,6 +73,14 @@ class TableAsset:
     rows: list[list[str]] = field(default_factory=list)
     row_paths: list[str] = field(default_factory=list)
     search_text: str = ""
+    structure_version: int = 1
+    context_schema_version: int = 1
+    header_row_indices: list[int] = field(default_factory=list)
+    table_function: dict[str, Any] = field(default_factory=dict)
+    table_section: dict[str, Any] = field(default_factory=dict)
+    table_purpose: dict[str, Any] = field(default_factory=dict)
+    context_trace: dict[str, Any] = field(default_factory=dict)
+    structure_quality: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

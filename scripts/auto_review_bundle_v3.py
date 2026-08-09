@@ -19,6 +19,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
+from finance_query.table_structure import validate_structure_sidecar
+
 TOKEN_RE = re.compile(r"[A-Za-zÀ-ỹ0-9%]+", re.UNICODE)
 STOPWORDS = {
     "cua", "của", "la", "là", "bao", "nhieu", "nhiêu", "vao", "vào",
@@ -70,6 +72,80 @@ def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
         f.flush(); os.fsync(f.fileno())
     tmp.replace(path)
+
+
+def source_row_text(row: list[Any]) -> str:
+    return re.sub(
+        r"\s+",
+        " ",
+        " | ".join(str(value).strip() for value in row if str(value).strip()),
+    ).strip()[:700]
+
+
+def projected_value_text(direct_evidence: Any) -> str:
+    value = str(direct_evidence or "")
+    for label in ("VALUE", "ANCHOR"):
+        match = re.search(
+            rf"(?:^|\|\|)\s*{label}:\s*(.*?)(?=\s*\|\||$)",
+            value,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if match:
+            return re.sub(r"\s+", " ", match.group(1)).strip()
+    return ""
+
+
+def validate_candidate_structure(
+    candidate: dict[str, Any],
+    table: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Bind projected VALUE/ANCHOR back to an exact UID-verified V2 row."""
+    if table is None:
+        return {"validated": False, "reason": "candidate UID missing from V2 sidecar"}
+    quality = table.get("structure_quality") or {}
+    if str(quality.get("status") or "") != "reconstructed_from_raw_html":
+        return {"validated": False, "reason": "table is not a raw-HTML V2 grid"}
+    row_index = candidate.get("best_row_index")
+    rows = table.get("rows") or []
+    if not isinstance(row_index, int) or not 0 <= row_index < len(rows):
+        return {"validated": False, "reason": "best_row_index is outside V2 grid"}
+    projected = projected_value_text(candidate.get("direct_evidence"))
+    observed = source_row_text(rows[row_index])
+    if not projected:
+        return {"validated": False, "reason": "no projected VALUE/ANCHOR row"}
+    if projected != observed:
+        return {
+            "validated": False,
+            "reason": "projected evidence differs from exact V2 row",
+            "row_index": row_index,
+        }
+    return {
+        "validated": True,
+        "structure_version": 2,
+        "row_index": row_index,
+        "row": [str(cell) for cell in rows[row_index]],
+        "column_labels": [str(label) for label in table.get("column_labels") or []],
+    }
+
+
+def attach_structure_validation(
+    items: list[dict[str, Any]], bundle: Path
+) -> tuple[int, int]:
+    path = bundle / "tables_structured_v2.jsonl"
+    validate_structure_sidecar(bundle, path)
+    structures = {
+        str(row["internal_table_uid"]): row for row in load_jsonl(path)
+    }
+    validated = 0
+    total = 0
+    for item in items:
+        for candidate in item.get("candidates") or []:
+            total += 1
+            uid = str(candidate["internal_table_uid"])
+            result = validate_candidate_structure(candidate, structures.get(uid))
+            candidate["structure_validation"] = result
+            validated += int(bool(result.get("validated")))
+    return validated, total
 
 
 def token_sequence(text: Any) -> list[str]:
@@ -147,7 +223,7 @@ def grounding(item: dict[str, Any], candidate: dict[str, Any], token_gate: float
 
 def candidate_score(item: dict[str, Any], candidate: dict[str, Any], token_gate: float, bigram_gate: float) -> float:
     g = grounding(item, candidate, token_gate, bigram_gate)
-    if not g["guard_pass"]:
+    if not g["guard_pass"] or not (candidate.get("structure_validation") or {}).get("validated"):
         return -1.0
     e = candidate.get("evidence_features") or {}
     retrieval = max(reciprocal(candidate.get("lexical_rank")), reciprocal(candidate.get("dense_rank")))
@@ -198,6 +274,8 @@ def calibrated_probabilities(candidates: list[dict[str, Any]], calibrator) -> di
 def verifier(item: dict[str, Any], candidate: dict[str, Any] | None, token_gate: float, bigram_gate: float) -> dict[str, Any]:
     if candidate is None:
         return {"verdict": "UNSUPPORTED", "reason": "No eligible candidate."}
+    if not (candidate.get("structure_validation") or {}).get("validated"):
+        return {"verdict": "UNSUPPORTED", "reason": "Candidate failed exact V2 row validation."}
     g = grounding(item, candidate, token_gate, bigram_gate)
     if not g["guard_pass"]:
         return {"verdict": "UNSUPPORTED", "reason": "Recovered adjacent table failed direct-evidence grounding guard."}
@@ -232,16 +310,25 @@ def review_item(item: dict[str, Any], calibrator, high_threshold: float, calibra
             "review_reason": "No candidate in Top-K; this is not proof that gold is absent from corpus.",
         }
 
-    guarded = [c for c in candidates if grounding(item, c, token_gate, bigram_gate)["guard_pass"]]
+    guarded = [
+        c
+        for c in candidates
+        if grounding(item, c, token_gate, bigram_gate)["guard_pass"]
+        and (c.get("structure_validation") or {}).get("validated")
+    ]
     if not guarded:
         return {
             "id": int(item["id"]), "question": item["question"],
             "family": (item.get("question_plan") or {}).get("family") or item.get("weak_family"),
             "machine_candidate_uid": None, "machine_candidate_rank": None,
             "agent_votes": {}, "agreement": 0.0,
-            "verifier": {"verdict": "UNSUPPORTED", "reason": "Every candidate failed grounding guard."},
+            "verifier": {
+                "verdict": "UNSUPPORTED",
+                "reason": "Every candidate failed grounding or exact V2 row validation.",
+            },
             "machine_confidence": 0.0, "calibrated_probability": None,
-            "consensus_status": "needs_human", "review_reason": "No grounded candidate survived source-aware guard.",
+            "consensus_status": "needs_human",
+            "review_reason": "No candidate survived source and V2 structure guards.",
         }
 
     lex = min_rank(guarded, "lexical_rank")
@@ -306,6 +393,7 @@ def review_item(item: dict[str, Any], calibrator, high_threshold: float, calibra
         "machine_candidate_uid": selected_uid, "machine_candidate_rank": int(selected.get("rank") or 0),
         "machine_candidate_summary": selected.get("one_line_summary"),
         "machine_candidate_direct_evidence": selected.get("direct_evidence"),
+        "structure_validation": selected.get("structure_validation"),
         "machine_candidate_source": selected.get("candidate_source"),
         "agent_votes": votes, "vote_counts": dict(counts), "agreement": agreement,
         "verifier": check, "grounding": g, "rejected_adjacent_candidates": rejected_adjacent,
@@ -346,6 +434,7 @@ def main() -> None:
     if int(manifest.get("schema_version") or 0) < 3:
         raise RuntimeError("auto_review_bundle_v3.py requires schema_version >= 3.")
     items = load_jsonl(bundle / "review_items.jsonl")
+    validated_structures, candidate_total = attach_structure_validation(items, bundle)
     calibrator = load_calibrator(a.calibrator)
     reviews = [review_item(x, calibrator, a.high_threshold, a.calibrated_threshold, a.adjacent_min_token_coverage, a.adjacent_min_bigram_ratio) for x in items]
     write_jsonl(a.output, reviews)
@@ -353,6 +442,10 @@ def main() -> None:
     counts = Counter(str(r.get("consensus_status")) for r in reviews)
     print("Status counts:", dict(counts))
     print("Adjacent candidates rejected by grounding guard:", sum(len(r.get("rejected_adjacent_candidates") or []) for r in reviews))
+    print(
+        "Candidates with exact V2 row validation:",
+        f"{validated_structures}/{candidate_total}",
+    )
     if a.seed_queue:
         queue = make_queue(reviews, a.seed_size); write_jsonl(a.seed_queue, queue); print("Human seed queue:", a.seed_queue, "count=", len(queue))
     if a.needs_human_queue:

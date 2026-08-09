@@ -22,6 +22,12 @@ def verifier(item, candidate, token_gate, bigram_gate):
     if candidate is None:
         return {"verdict": "UNSUPPORTED", "reason": "No eligible candidate."}
 
+    if not (candidate.get("structure_validation") or {}).get("validated"):
+        return {
+            "verdict": "UNSUPPORTED",
+            "reason": "Candidate failed exact V2 row validation.",
+        }
+
     g = v3.grounding(item, candidate, token_gate, bigram_gate)
     if not g["guard_pass"]:
         return {

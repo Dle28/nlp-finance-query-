@@ -33,6 +33,16 @@ class ReviewBundleV3ProjectionTests(unittest.TestCase):
             "Giá trị còn lại của bất động sản đầu tư",
         )
 
+    def test_heading_keeps_start_of_current_page_title(self):
+        context = (
+            "noise from previous page ===== PAGE 6 ===== "
+            "Công ty Cổ phần Masan MEATLife Băng cân đối kế toán hợp nhất "
+            "tại ngày 31 tháng 12 năm 2019"
+        )
+        heading = mod.heading(context)
+        self.assertTrue(heading.startswith("Công ty Cổ phần Masan MEATLife"))
+        self.assertIn("Băng cân đối kế toán", heading)
+
     def test_period_aware_projection_pairs_table_header_and_value(self):
         rows = [
             ["Nguyên giá", "Hao mòn lũy kế", "Giá trị còn lại"],

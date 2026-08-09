@@ -7,28 +7,31 @@ import re
 from pathlib import Path
 from typing import Iterable
 
-from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 from .schemas import TableAsset
+from .table_structure import normalize_space, parse_html_table
 
 
 TABLE_TEXT_RE = re.compile(r"<table\b.*?</table\s*>", re.IGNORECASE | re.DOTALL)
 TABLE_BYTES_RE = re.compile(rb"<table\b.*?</table\s*>", re.IGNORECASE | re.DOTALL)
 PAGE_RE = re.compile(r"===== PAGE\s+(\d+)\s+=====", re.IGNORECASE)
 SCOPE_RE = re.compile(r"_(consolidated|separate|aggregated)(?:_|$)", re.IGNORECASE)
-UNIT_RE = re.compile(
-    r"(?:đơn vị|đvt)\s*[:：]?\s*(nghìn đồng|triệu đồng|tỷ đồng|%|phần trăm)",
+DECLARED_UNIT_RE = re.compile(
+    r"(?:đơn vị|đvt)\s*[:：]?\s*"
+    r"(nghìn\s*(?:đồng|vnd)|ngàn\s*(?:đồng|vnd)|triệu\s*(?:đồng|vnd)|"
+    r"tỷ\s*(?:đồng|vnd)|nghìn\s*tỷ\s*(?:đồng|vnd)|vnd|%|phần trăm)",
     re.IGNORECASE,
 )
+SCALED_VND_RE = re.compile(
+    r"\b(nghìn|ngàn|triệu|tỷ|nghìn\s*tỷ)\s*(?:đồng|vnd)\b",
+    re.IGNORECASE,
+)
+VND_RE = re.compile(r"\bvnd\b", re.IGNORECASE)
 
 
 def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
-
-
-def normalize_space(value: str) -> str:
-    return re.sub(r"\s+", " ", value).strip()
 
 
 def infer_document_id(path: Path) -> str:
@@ -60,46 +63,49 @@ def page_for_position(page_starts: list[int], page_numbers: list[int], position:
 
 def parse_table_structure(
     table_html: str,
+    *,
+    context: str = "",
 ) -> tuple[list[str], list[list[str]], list[str], str]:
     """Return header cells, structured rows, row paths, and retrieval text.
 
-    This baseline preserves each parsed row and cell. It does not claim perfect
-    rowspan/colspan recovery; later hierarchy reconstruction can replace this
-    parser without changing source identity.
+    Blank source cells retain their positions and HTML row/column spans are
+    expanded before any retrieval text is derived.  The public return shape is
+    unchanged so legacy callers can rebuild their assets when they choose.
     """
-    soup = BeautifulSoup(table_html, "lxml")
-    rows: list[list[str]] = []
-    for row in soup.find_all("tr"):
-        cells = [
-            normalize_space(cell.get_text(" ", strip=True))
-            for cell in row.find_all(["th", "td"])
-        ]
-        cells = [cell for cell in cells if cell]
-        if cells:
-            rows.append(cells)
-
-    headers: list[str] = []
-    for row in rows[:3]:
-        headers.extend(row)
-
-    row_paths = [" > ".join(row) for row in rows]
+    structure = parse_html_table(table_html, context=context)
+    rows = structure["rows"]
+    headers = structure["column_labels"]
+    row_paths = [" > ".join(cell for cell in row if cell) for row in rows]
     flattened = "\n".join(row_paths)
     return headers, rows, row_paths, flattened
 
 
 def infer_unit(context: str, table_text: str) -> str | None:
     search_area = f"{context}\n{table_text[:1500]}"
-    match = UNIT_RE.search(search_area)
-    if not match:
-        return None
-    value = match.group(1).casefold()
-    return {
+    declared = DECLARED_UNIT_RE.search(search_area)
+    scaled = SCALED_VND_RE.search(search_area)
+    value = (declared.group(1) if declared else scaled.group(1) if scaled else "").casefold()
+    value = " ".join(value.split())
+    unit_map = {
         "nghìn đồng": "thousand_vnd",
+        "nghìn vnd": "thousand_vnd",
+        "ngàn đồng": "thousand_vnd",
+        "ngàn vnd": "thousand_vnd",
         "triệu đồng": "million_vnd",
+        "triệu vnd": "million_vnd",
         "tỷ đồng": "billion_vnd",
+        "tỷ vnd": "billion_vnd",
+        "nghìn tỷ đồng": "trillion_vnd",
+        "nghìn tỷ vnd": "trillion_vnd",
+        "vnd": "vnd",
         "%": "percent",
         "phần trăm": "percent",
-    }.get(value, value)
+    }
+    if value in unit_map:
+        return unit_map[value]
+    # A standalone VND in a header is explicit enough to distinguish it from
+    # an unspecified monetary amount.  Do not infer a unit from bare “đồng”.
+    return "vnd" if VND_RE.search(search_area) else None
 
 
 def iter_report_paths(reports_root: Path) -> Iterable[Path]:
@@ -138,7 +144,11 @@ def extract_assets_from_report(path: Path, reports_root: Path) -> list[TableAsse
         table_sha256 = sha256_bytes(table_html.encode("utf-8"))
         context_start = max(0, char_match.start() - 1000)
         context = normalize_space(text[context_start : char_match.start()])[-800:]
-        headers, rows, row_paths, flattened = parse_table_structure(table_html)
+        structure = parse_html_table(table_html, context=context)
+        headers = structure["column_labels"]
+        rows = structure["rows"]
+        row_paths = [" > ".join(cell for cell in row if cell) for row in rows]
+        flattened = "\n".join(row_paths)
         unit = infer_unit(context, flattened)
 
         uid_payload = (
@@ -183,6 +193,14 @@ def extract_assets_from_report(path: Path, reports_root: Path) -> list[TableAsse
                 rows=rows,
                 row_paths=row_paths,
                 search_text=search_text,
+                structure_version=int(structure["structure_version"]),
+                context_schema_version=int(structure["context_schema_version"]),
+                header_row_indices=list(structure["header_row_indices"]),
+                table_function=dict(structure["table_function"]),
+                table_section=dict(structure["table_section"]),
+                table_purpose=dict(structure["table_purpose"]),
+                context_trace=dict(structure["context_trace"]),
+                structure_quality=dict(structure["structure_quality"]),
             )
         )
     return assets

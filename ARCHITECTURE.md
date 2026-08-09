@@ -58,10 +58,14 @@ flowchart TD
     BUNDLE --> DOWNLOAD[Download archive]
 
     subgraph LOCAL["Local side"]
-        DOWNLOAD --> DIAG[Diagnostic gate]
+        DOWNLOAD --> STRUCTURE[Raw-HTML table structure V2]
+        STRUCTURE --> DIAG[Diagnostic gate]
         DIAG --> AGENTS[Source-aware multi-agent review]
-        AGENTS --> SEED[Human seed queue]
-        SEED --> HUMAN[Human review]
+        AGENTS --> CODEX[Codex-assisted evidence-set review]
+        CODEX --> LEDGER[Full review ledger]
+        LEDGER --> CHECK[Stratified human spot-check]
+        CHECK --> HUMAN[Human verification]
+        HUMAN --> CODEX
         HUMAN --> CAL[Review calibrator]
         CAL --> RERUN[Rerun reviewers]
         RERUN --> AUTO[Machine calibrated]
@@ -126,6 +130,25 @@ embedding toàn corpus
 GPU
 raw 146k-table indexing
 ```
+
+## 3.3 Local Table Structure V2
+
+Bundle V3 là immutable snapshot retrieval. Để sửa lỗi presentation do parser
+cũ bỏ ô trống hoặc không xử lý `rowspan`/`colspan`, local tạo sidecar
+`tables_structured_v2.jsonl` từ raw HTML report theo `internal_table_uid`.
+
+```text
+immutable V3 bundle + raw report HTML
+        ↓ UID/hash verification
+rectangular grid with blank cells and expanded spans
+        ↓
+column labels + cell provenance + table function/purpose + context trace
+        ↓
+compact review UI / section gate / formula EvidenceSet
+```
+
+Sidecar không thay raw source, không thay annotation provenance và không rebuild
+Kaggle/FTS/FAISS. Chi tiết contract: [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md).
 
 ---
 
@@ -364,6 +387,26 @@ evidence_features
 `direct_evidence` phải được ghép từ source table/context đã lưu.
 
 Không cho LLM tự viết evidence text rồi coi nó là source.
+
+Table Structure V2 bổ sung lớp context có kiểm soát:
+
+```text
+exact source title (audit)
++ nearest numbered topic/note (quick view)
++ observed period labels
++ observed unit labels
++ deterministic table function/purpose
+```
+
+Phân loại từ tiêu đề vùng thuyết minh mang `specificity=broad`; fallback tổng
+quát mang `specificity=generic`. Chúng không được trình bày như hiểu biết
+nghiệp vụ chắc chắn. UI ưu tiên topic ngắn, còn source title dài và rule
+evidence nằm trong trace thu gọn.
+
+Ngoài heading, primary statement được nhận diện bằng tập dòng chuẩn. Ví dụ một
+bảng có đồng thời `doanh thu thuần`, `lợi nhuận gộp` và `kế toán trước thuế`
+được đánh dấu `income_statement` với `specificity=structural`. Đây là metadata
+điều hướng; exact rows và cells vẫn là bằng chứng duy nhất cho số liệu.
 
 ---
 
@@ -618,7 +661,7 @@ Người review trực tiếp xác nhận.
 
 ---
 
-# 16. Human-in-the-loop strategy
+# 16. Collaborative Codex + human review strategy
 
 Không yêu cầu human review tất cả 60 câu.
 
@@ -627,15 +670,17 @@ Luồng:
 ```text
 machine review 60
        ↓
-stratified seed queue ~12
+Codex review một batch với exact UID/rows
        ↓
-human review seed
+human spot-check ~6 câu, ưu tiên disagreement + đủ family
        ↓
-train calibrator
+Codex đọc correction và review lại phần còn lại
        ↓
-rerun 60
+lặp đến khi có >=8 human cases dùng được cho calibration
        ↓
-review only unresolved cases
+train calibrator + rerun 60
+       ↓
+giữ đủ mọi trạng thái trong review ledger
 ```
 
 Seed queue cần chứa cả:
@@ -646,13 +691,71 @@ uncertain cases
 nhiều question families
 ```
 
-Mục tiêu là calibration, không phải chỉ tìm case khó.
+Mục tiêu là vừa calibration vừa đo disagreement. Codex review luôn có `reviewer_type=codex_assisted`, `human_verified=false` và không được tự nâng thành human gold.
+
+## 16.1 Review unit cho câu phức tạp
+
+Direct lookup có thể review một table. Temporal/ratio/comparison/aggregation phải review một `EvidenceSet`:
+
+```text
+question
+→ operand slots (entity, metric, year, scope)
+→ one or more exact table rows per slot
+→ completeness: complete | partial | missing
+```
+
+Một candidate đúng cho một operand vẫn có thể là positive retrieval table, nhưng toàn câu không được gọi complete khi operand khác còn thiếu.
+
+Formula planner hiện là tập rule có kiểm soát, chỉ tạo review template chứ
+không tính answer. Mỗi formula gồm `formula_id`, expression, definition status,
+required operands, period và role. Operand coverage giữ:
+
+```text
+operand_id
+→ candidate UID + rank
+→ exact row_index + exact row cells
+→ exact column labels/period context
+```
+
+Một EvidenceSet có thể ghép nhiều bảng. `definition_status=ambiguous` luôn
+fail closed; `review_required` cần human xác nhận công thức. Multi-operand
+formula không được accept trực tiếp từ machine recommendation.
+
+Câu lọc/xếp hạng nhiều giai đoạn được route thành
+`multi_stage_selection_unresolved`, thay vì lấy công thức từ keyword xuất hiện
+đầu tiên. Q369 là controlled canary đầu tiên có stage planner theo entity; mọi
+stage vẫn partial nếu thiếu exact-row EvidenceSet. Các pattern khác tiếp tục
+unresolved cho đến khi có rule riêng.
+
+Human có thể xác nhận phần evidence này bằng `human_verified_partial`. Nó được giữ trong ledger để Codex dùng ở vòng sau, nhưng không đi vào training subset cho đến khi evidence set complete.
 
 ---
 
 # 17. Review UI boundary
 
 `local/review_bundle_widget.py` sử dụng `ipywidgets`.
+
+Trước review số liệu, chạy `repair-tables --repair-force` để widget tự đọc
+`tables_structured_v2.jsonl`. UI chính chỉ hiển thị chức năng bảng, context
+ngắn, tối đa bốn exact rows liên quan, mức phù hợp và tóm tắt grounded; raw grid
+là phần mở rộng. Nếu phần kế
+toán của bảng mâu thuẫn rõ ràng với câu hỏi (ví dụ `asset` thay vì `liability`),
+machine acceptance bị chặn nhưng human vẫn có thể override có chủ đích.
+
+Với ratio/derived, UI hiện formula ở đầu câu, chỉ rõ operand đã có/đang thiếu
+và candidate nào hỗ trợ. Candidate không map được vào operand bị bỏ khỏi quick
+numeric view để giảm nhiễu nhưng full source grid vẫn mở được để kiểm tra.
+Legacy grid chưa được UID/hash-verified cũng không được dùng để tạo complete
+label. Khi build ledger, exact operand rows và column labels được đối chiếu lại
+với sidecar V2; mismatch làm tiến trình dừng.
+
+Positive human label từ UI cũ được bảo toàn trong audit ledger với
+`needs_review_refresh=true`, nhưng `training_eligible=false`. Sau khi human lưu
+lại trên V2, provenance human được giữ và structure gate mới được mở.
+
+Machine reviewer dùng cùng sidecar để bind projected `VALUE/ANCHOR` trở lại
+`best_row_index`. Candidate row mismatch bị loại trước consensus; machine label
+không có `structure_validation.validated=true` không qua final export gate.
 
 Nó phải chạy trong:
 
@@ -668,6 +771,7 @@ Command:
 %run local/review_bundle_widget.py \
     --bundle-dir ... \
     --machine-reviews ... \
+    --assistant-reviews ... \
     --queue ... \
     --output ...
 ```
@@ -683,6 +787,7 @@ pull
 install
 diagnose
 baseline
+collaborate
 calibrate
 final
 launch jupyter
@@ -725,7 +830,7 @@ Calibrator không được override grounding verifier.
 
 ---
 
-# 19. Label provenance
+# 19. Label provenance và output boundary
 
 Final label phải giữ nguồn:
 
@@ -747,6 +852,15 @@ hoặc:
 
 Không hợp nhất hai loại này thành một generic `verified=true`.
 
+Output được tách thành:
+
+```text
+review_ledger_60.jsonl     đủ mọi question/status/reviewer, dùng audit
+retriever_labels_v2.jsonl  chỉ training-eligible labels
+```
+
+`machine_provisional`, `needs_human` và `retrieval_failure` không bị xóa khỏi ledger chỉ vì chúng không được dùng để train.
+
 Training có thể dùng weighting khác nhau:
 
 ```text
@@ -754,6 +868,66 @@ human_verified          1.0
 machine_calibrated      < 1.0
 machine_provisional     không dùng mặc định
 ```
+
+---
+
+# 19.1 Pilot candidate reranker (shadow-only)
+
+Sau khi final label export, local có thể học một reranker nhỏ trên feature của
+**candidate đã tồn tại trong immutable bundle Top-K**. Đây không phải retriever
+training và không được rebuild dense/FAISS hoặc lexical index.
+
+```text
+review_items Top-K + final labels + provenance ledger
+→ candidate feature model
+→ GroupKFold theo question ID
+→ shadow ranking để audit
+```
+
+Negative supervision chỉ đến từ `human_verified` có V2 complete. Với
+`machine_calibrated`/`machine_high_confidence`, exact selected table là
+positive pseudo-label có weight; các candidate không được chọn là `unknown`,
+không được giả định là negative. Metric phải tách `human_verified_only` khỏi
+metric có pseudo-label, và chỉ nói về re-rank trong Top-K, không phải full
+corpus recall.
+
+Artifact luôn ở trạng thái shadow/hold cho đến khi đủ ít nhất 30 question
+`human_verified`, OOF human-only không giảm, và có holdout audit. Chi tiết
+contract và lệnh chạy ở [`docs/PILOT_CANDIDATE_RERANKER.md`](docs/PILOT_CANDIDATE_RERANKER.md).
+
+---
+
+# 19.2 Autonomous source-processing and machine-silver loop
+
+Khi không có human reviewer, hệ thống không thay machine provenance bằng human
+gold. Luồng V4 trước hết tạo sidecar semantic riêng từ V2 raw-HTML grid:
+
+```text
+V2 cell provenance
+→ canonical header parent/child path
+→ per-column period/unit context
+→ row role + source-quality gate
+→ review_ready | needs_processing | blocked
+```
+
+Header cha được khôi phục chỉ khi `cell_provenance` xác nhận đó là ô bị cover
+bởi span; OCR text/số và V2 grid gốc vẫn bất biến. Candidate muốn thành
+`machine_calibrated` silver phải có exact V2 row, canonical table
+`review_ready`, data-row binding, unique period-cell binding nếu câu hỏi yêu
+cầu đầu/cuối kỳ, consensus của retrieval/semantic/evidence/metadata/source,
+và critic không tìm thấy alternative gần ngang điểm.
+
+```text
+machine_calibrated  source-gated autonomous silver; có thể train sau min size
+machine_provisional audit only; không train
+needs_human         quarantine only khi không có reviewer; không train
+human_verified      không được tự tạo trong autonomous flow
+```
+
+Dense fine-tuning chỉ bắt đầu từ tối thiểu 200 V4 silver pairs. Training tạo
+model mới và không rebuild/rewrite existing dense index. Nếu chưa đủ pairs,
+pipeline trả `deferred` thay vì tự nới evidence threshold. Xem
+[`docs/AUTONOMOUS_RAW_REVIEW.md`](docs/AUTONOMOUS_RAW_REVIEW.md).
 
 ---
 
@@ -896,6 +1070,7 @@ Typed failures giúp biết phải sửa planner, retriever, projection hay reas
 ```text
 src/finance_query/
   corpus.py          raw report → TableAsset
+  table_structure.py raw HTML → rectangular grid + cell provenance
   retrieval.py       lexical/dense/RRF
   questions.py       planner/router
   pipeline.py        orchestration
@@ -905,6 +1080,7 @@ src/finance_query/
 
 scripts/
   build_review_bundle_v3.py
+  repair_review_bundle_tables.py  immutable bundle → local V2 sidecar
   auto_review_bundle_v31.py
   train_review_calibrator.py
   export_review_labels.py
@@ -974,3 +1150,35 @@ P7 final answer generation
 Nguyên tắc cuối:
 
 > **Không dùng model lớn để che lỗi retrieval hoặc provenance. Nếu bảng/evidence sai, answer đúng do may mắn vẫn được xem là failure.**
+
+---
+
+# 27. Kiến trúc cần cải thiện tiếp
+
+Thứ tự đề xuất sau collaborative review:
+
+```text
+P0 operand planner
+   tách entity × metric × year × scope trước retrieval;
+   không dùng toàn bộ complex question làm effective_metric.
+
+P0 evidence schema
+   tách context_hint khỏi exact_row_evidence;
+   lưu header/value row indices và period-column binding rõ ràng.
+
+P0 evidence-set verifier
+   đánh giá completeness của toàn bộ operand set;
+   không dùng verdict của một candidate để đại diện câu multi-step.
+
+P1 two-stage calibration
+   candidate relevance probability
+   + evidence-set completeness probability.
+
+P1 evaluation gates
+   table recall@K, operand coverage, exact-row precision,
+   human/Codex disagreement và calibration error theo family.
+
+P2 corpus context rebuild
+   chỉ thực hiện sau khi retrieval labels đủ ổn định;
+   không rebuild dense trong vòng local review hiện tại.
+```

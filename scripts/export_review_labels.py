@@ -52,6 +52,28 @@ def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
     temporary.replace(path)
 
 
+def human_training_eligible(row: dict[str, Any]) -> bool:
+    return bool(
+        str(row.get("annotation_status") or "") == "human_verified"
+        and row.get("positive_table_uids")
+        and (row.get("structure_validation") or {}).get("complete")
+    )
+
+
+def machine_training_eligible(
+    row: dict[str, Any], *, include_provisional: bool = False
+) -> bool:
+    status = str(row.get("consensus_status") or "")
+    allowed = {"machine_calibrated", "machine_high_confidence"}
+    if include_provisional:
+        allowed.add("machine_provisional")
+    return bool(
+        status in allowed
+        and row.get("machine_candidate_uid")
+        and (row.get("structure_validation") or {}).get("validated")
+    )
+
+
 def main() -> None:
     args = parse_args()
     machine = {int(row["id"]): row for row in load_jsonl(args.machine_reviews)}
@@ -59,11 +81,15 @@ def main() -> None:
 
     output: list[dict[str, Any]] = []
     excluded: list[int] = []
+    excluded_human_nontraining: list[int] = []
 
     all_ids = sorted(set(machine) | set(human))
     for qid in all_ids:
         if qid in human:
             row = dict(human[qid])
+            if not human_training_eligible(row):
+                excluded_human_nontraining.append(qid)
+                continue
             row["label_source"] = "human"
             row["training_weight"] = 1.0
             output.append(row)
@@ -73,13 +99,19 @@ def main() -> None:
         status = str(review.get("consensus_status") or "")
         selected = review.get("machine_candidate_uid")
 
+        if not machine_training_eligible(
+            review, include_provisional=args.include_provisional
+        ):
+            excluded.append(qid)
+            continue
+
         if status == "machine_calibrated" and selected:
             weight = args.calibrated_weight
         elif status == "machine_high_confidence" and selected:
             weight = args.high_weight
         elif status == "machine_provisional" and selected and args.include_provisional:
             weight = args.provisional_weight
-        else:
+        else:  # guarded by machine_training_eligible; kept fail-closed
             excluded.append(qid)
             continue
 
@@ -95,8 +127,13 @@ def main() -> None:
                 "training_weight": weight,
                 "machine_confidence": review.get("machine_confidence"),
                 "calibrated_probability": review.get("calibrated_probability"),
+                "structure_validation": review.get("structure_validation"),
                 "agent_votes": review.get("agent_votes"),
                 "verifier": review.get("verifier"),
+                # Autonomous V4 reviews attach their own source/semantic/critic
+                # protocol here.  Keep it with machine silver so a downstream
+                # trainer can reject ordinary machine guesses.
+                "machine_self_review": review.get("machine_self_review"),
             }
         )
 
@@ -104,6 +141,7 @@ def main() -> None:
 
     print("Exported labels:", len(output))
     print("Human labels:", len(human))
+    print("Excluded human partial/no-candidate IDs:", excluded_human_nontraining)
     print("Excluded unresolved/provisional IDs:", excluded)
     print("Output:", args.output)
 

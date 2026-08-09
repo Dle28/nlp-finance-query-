@@ -59,7 +59,14 @@ def pmatch(label,intent):
 
 def heading(ctx):
     if not ctx:return ""
-    tail=ctx.rsplit("</table>",1)[-1]; s=BeautifulSoup(tail,"lxml").get_text(" ",strip=True); s=re.sub(r"=====\s*PAGE\s*\d+\s*====="," ",s,flags=re.I); s=re.sub(r"\s+"," ",s).strip(); return s[-260:]
+    tail=ctx.rsplit("</table>",1)[-1]
+    # The source title normally begins immediately after the newest page
+    # marker.  Keeping its beginning avoids left-truncated names such as
+    # "y Cổ phần ..." while still bounding bundle size.
+    page_tail=re.split(r"=====\s*PAGE\s*\d+\s*=====",tail,flags=re.I)[-1]
+    s=BeautifulSoup(page_tail,"lxml").get_text(" ",strip=True)
+    s=re.sub(r"\s+"," ",s).strip()
+    return s[:420]
 
 def projection(rows,ctx,q,plan,metric):
     mt,qt=tokens(metric),tokens(q); intent=period(q); ch=heading(ctx); chm=ov(ch,mt); info=[]
@@ -98,6 +105,12 @@ def projection(rows,ctx,q,plan,metric):
     return {"effective_metric":metric,"context_heading":ch,"table_topic":topic[:260],"one_line_summary":f"Bảng: {topic[:260]}. Bằng chứng trực tiếp: {direct}"[:1100],"direct_evidence":direct,"anchor_row_index":ai,"best_row_index":best,"value_row_index":vi,"evidence_window":win,"period_intent":intent,"period_match":ps,"evidence_features":{"metric_overlap":ms,"question_overlap":qs,"numeric":numeric,"row_score":support,"period_match":ps,"anchor_row_index":ai,"value_row_index":vi,"context_heading_overlap":chm}}
 
 def rows(asset): return json.loads(asset.get("rows_json") or "[]")
+def jfield(asset,key,default):
+    value=asset.get(key,default)
+    if isinstance(value,str):
+        try:return json.loads(value)
+        except json.JSONDecodeError:return default
+    return value if value is not None else default
 def rowall(asset): return " ".join(rowtext(r) for r in rows(asset))
 def previous(store,a,radius):
     o=a.get("local_ordinal"); d=a.get("document_id")
@@ -111,7 +124,7 @@ def desc_adj(a,r): return {"internal_table_uid":a["uid"],"document_id":a.get("do
 def record(d,a,q,plan,metric):
     pr=projection(rows(a),str(a.get("context_before") or ""),q,plan,metric); m=meta(plan,d); prior=1/int(d["original_retrieval_rank"]) if d.get("original_retrieval_rank") else .5/int(d.get("parent_retrieval_rank") or 999); score=min(1,.62*pr["evidence_features"]["row_score"]+.23*m["metadata_score"]+.11*min(1,prior)+(.04 if d.get("candidate_source")!="retrieved" else 0))
     return {"rank":None,"internal_table_uid":d["internal_table_uid"],"document_id":d.get("document_id"),"ticker":d.get("ticker"),"report_year":d.get("report_year"),"scope":d.get("scope"),"local_ordinal":a.get("local_ordinal"),"page_no":a.get("page_no"),"lexical_rank":d.get("lexical_rank"),"dense_rank":d.get("dense_rank"),"fused_score":float(d.get("fused_score") or 0),"reranker_score":d.get("reranker_score"),"original_retrieval_rank":d.get("original_retrieval_rank"),"candidate_source":d.get("candidate_source"),"parent_retrieval_rank":d.get("parent_retrieval_rank"),"review_score":score,"preview":d.get("preview"),**m,**pr}
-def table(a): return {"internal_table_uid":a["uid"],"document_id":a.get("document_id"),"ticker":a.get("ticker"),"report_year":a.get("report_year"),"scope":a.get("scope"),"local_ordinal":a.get("local_ordinal"),"page_no":a.get("page_no"),"unit_hint":a.get("unit_hint"),"context_before":a.get("context_before") or "","headers":json.loads(a.get("headers_json") or "[]"),"rows":rows(a)}
+def table(a): return {"internal_table_uid":a["uid"],"document_id":a.get("document_id"),"ticker":a.get("ticker"),"report_year":a.get("report_year"),"scope":a.get("scope"),"local_ordinal":a.get("local_ordinal"),"page_no":a.get("page_no"),"unit_hint":a.get("unit_hint"),"context_before":a.get("context_before") or "","headers":json.loads(a.get("headers_json") or "[]"),"rows":rows(a),"structure_version":int(a.get("structure_version") or 1),"context_schema_version":int(a.get("context_schema_version") or 1),"column_labels":json.loads(a.get("headers_json") or "[]"),"header_row_indices":jfield(a,"header_row_indices_json",[]),"table_function":jfield(a,"table_function_json",{}),"table_section":jfield(a,"table_section_json",{}),"table_purpose":jfield(a,"table_purpose_json",{}),"context_trace":jfield(a,"context_trace_json",{}),"structure_quality":jfield(a,"structure_quality_json",{})}
 
 def health(root,minn,dense):
     ar=root/"artifacts"; ap=ar/"table_assets.jsonl"; db=ar/"lexical_index.sqlite3"; up=ar/"dense_uids.jsonl"; ip=ar/"dense.index"; na=count(ap); nu=count(up); nl=0

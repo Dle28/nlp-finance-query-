@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 
 from .config import ModelConfig, ProjectPaths
@@ -26,6 +27,14 @@ def parse_args() -> argparse.Namespace:
 
     dense = subparsers.add_parser("build-dense", help="Build sentence-transformer FAISS index.")
     dense.add_argument("--config", type=Path, default=None)
+    dense.add_argument("--encode-chunk-size", type=int, default=4096)
+    dense.add_argument("--max-wall-seconds", type=float, default=None)
+    dense.add_argument(
+        "--progress-path",
+        type=Path,
+        default=None,
+        help="Optional atomic JSON progress receipt, updated after each outer chunk.",
+    )
 
     retrieve = subparsers.add_parser("retrieve", help="Plan a question and retrieve table candidates.")
     retrieve.add_argument("--question", required=True)
@@ -76,7 +85,14 @@ def command_build_lexical(paths: ProjectPaths) -> None:
     print(json.dumps({"indexed_tables": count, "database": str(paths.lexical_db_path)}, indent=2))
 
 
-def command_build_dense(paths: ProjectPaths, config: ModelConfig) -> None:
+def command_build_dense(
+    paths: ProjectPaths,
+    config: ModelConfig,
+    *,
+    encode_chunk_size: int = 4096,
+    max_wall_seconds: float | None = None,
+    progress_path: Path | None = None,
+) -> None:
     if not paths.table_assets_path.is_file():
         raise FileNotFoundError(
             f"Table assets not found: {paths.table_assets_path}. Run build-assets first."
@@ -89,7 +105,30 @@ def command_build_dense(paths: ProjectPaths, config: ModelConfig) -> None:
         device=config.resolved_device(),
         max_sequence_length=config.max_sequence_length,
     )
-    count = index.build(paths.table_assets_path, batch_size=config.embedding_batch_size)
+    started_at = time.monotonic()
+
+    def report_progress(indexed_tables: int, elapsed_seconds: float) -> None:
+        payload = {
+            "indexed_tables": indexed_tables,
+            "elapsed_seconds": round(elapsed_seconds, 3),
+            "batch_size": config.embedding_batch_size,
+            "encode_chunk_size": encode_chunk_size,
+            "max_wall_seconds": max_wall_seconds,
+        }
+        print(json.dumps({"dense_progress": payload}), flush=True)
+        if progress_path is not None:
+            progress_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary_path = progress_path.with_suffix(progress_path.suffix + ".tmp")
+            temporary_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            temporary_path.replace(progress_path)
+
+    count = index.build(
+        paths.table_assets_path,
+        batch_size=config.embedding_batch_size,
+        encode_chunk_size=encode_chunk_size,
+        max_wall_seconds=max_wall_seconds,
+        progress_callback=report_progress,
+    )
     print(
         json.dumps(
             {
@@ -98,6 +137,7 @@ def command_build_dense(paths: ProjectPaths, config: ModelConfig) -> None:
                 "device": config.resolved_device(),
                 "index": str(dense_index_path),
                 "uids": str(dense_uids_path),
+                "elapsed_seconds": round(time.monotonic() - started_at, 3),
             },
             indent=2,
         )
@@ -198,7 +238,13 @@ def main() -> None:
     elif args.command == "build-lexical":
         command_build_lexical(paths)
     elif args.command == "build-dense":
-        command_build_dense(paths, load_config(args.config))
+        command_build_dense(
+            paths,
+            load_config(args.config),
+            encode_chunk_size=args.encode_chunk_size,
+            max_wall_seconds=args.max_wall_seconds,
+            progress_path=args.progress_path,
+        )
     elif args.command == "retrieve":
         command_retrieve(
             paths,

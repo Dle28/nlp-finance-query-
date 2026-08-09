@@ -113,12 +113,24 @@ def candidate_bindings(
     retrieved: Iterable[RetrievedTable],
     *,
     max_tables: int = 10,
+    operand: OperandSpec | None = None,
+    allow_composed_operand: bool = False,
 ) -> list[DirectBinding]:
-    if plan.family != "direct_lookup" or not plan.operands:
-        return []
+    """Bind one planned operand to exact source cells.
 
-    metric = plan.operands[0].metric
-    target_year = plan.operands[0].period or (plan.years[0] if len(plan.years) == 1 else None)
+    Complex questions must opt in explicitly with ``allow_composed_operand``
+    and select an operand.  This preserves the old fail-closed direct baseline
+    while allowing a later evidence-set executor to bind each stage separately.
+    """
+    if not plan.operands:
+        return []
+    if plan.family != "direct_lookup" and not allow_composed_operand:
+        return []
+    if operand is None:
+        operand = plan.operands[0]
+
+    metric = operand.metric
+    target_year = operand.period or (plan.years[0] if len(plan.years) == 1 else None)
     candidates = list(retrieved)[:max_tables]
     assets = store.get_assets(candidate.internal_table_uid for candidate in candidates)
     bindings: list[DirectBinding] = []

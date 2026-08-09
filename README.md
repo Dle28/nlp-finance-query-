@@ -46,12 +46,22 @@ Mục tiêu hiện tại chưa phải sinh answer cuối bằng LLM. Mục tiêu
                       LOCAL
                         │
                         ▼
+       raw-HTML table-structure sidecar V2
+       - preserve empty cells / expand spans
+       - table function/purpose + context trace
+       - accounting-side and formula-operand gates
+                        │
+                        ▼
                   diagnostic gate
                         │
                         ▼
              source-aware multi-agent review
                         │
-                 human seed ~12 câu
+               Codex-assisted review
+                        │
+                 human spot-check ~6 câu
+                        │
+                 Codex review lại
                         │
                         ▼
                  review calibrator
@@ -69,6 +79,20 @@ Mục tiêu hiện tại chưa phải sinh answer cuối bằng LLM. Mục tiêu
 ```
 
 Chi tiết kiến trúc nằm trong [`ARCHITECTURE.md`](ARCHITECTURE.md).
+Sửa grid review cục bộ và UI an toàn được mô tả tại
+[`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md); bước này không
+rebuild Kaggle, lexical index hay dense index.
+Formula-aware review và contract EvidenceSet nằm tại
+[`docs/FORMULA_EVIDENCE_SETS.md`](docs/FORMULA_EVIDENCE_SETS.md).
+Tóm tắt thay đổi và kết quả validation nằm tại
+[`docs/CONTEXT_FORMULA_REVIEW_IMPLEMENTATION.md`](docs/CONTEXT_FORMULA_REVIEW_IMPLEMENTATION.md).
+Canary lọc→xếp hạng→truy xuất Q369 và phép tính grounded nằm tại
+[`docs/Q369_GROUNDED_REVIEW.md`](docs/Q369_GROUNDED_REVIEW.md).
+Pilot xếp lại candidate Top-K, provenance policy và evaluation boundary nằm tại
+[`docs/PILOT_CANDIDATE_RERANKER.md`](docs/PILOT_CANDIDATE_RERANKER.md).
+Luồng tự động khi không có human reviewer—raw-table canonicalization, agent
+cross-check và machine-silver training gate—nằm tại
+[`docs/AUTONOMOUS_RAW_REVIEW.md`](docs/AUTONOMOUS_RAW_REVIEW.md).
 
 ---
 
@@ -214,6 +238,21 @@ cd ~/Downloads
 sha256sum -c vifinqa_review_bundle_v3.tar.gz.sha256
 ```
 
+### 6.1 Khôi phục cấu trúc bảng cho local review
+
+Trước khi xác minh số liệu bằng widget, dựng sidecar V2 từ raw HTML local:
+
+```bash
+python local/run_local_review_stage.py repair-tables \
+    --bundle-dir ~/ViFinQA_review/run_002 \
+    --repair-force
+```
+
+Lệnh tạo `tables_structured_v2.jsonl` và manifest ngay trong bundle local.
+Archive V3, Kaggle corpus và dense/lexical index không bị sửa. Widget tự nhận
+sidecar này; `--repair-force` chỉ thay sidecar cũ nếu đã có, không rebuild
+index. Xem chi tiết tại [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md).
+
 ---
 
 # 7. Diagnostic trước khi review
@@ -283,7 +322,7 @@ Reviewer này có grounding guard để recovered adjacent table không được
 
 ---
 
-# 9. Human review: Bash và Jupyter là hai môi trường khác nhau
+# 9. Collaborative review: Codex đề xuất, human xác nhận
 
 `local/review_bundle_widget.py` dùng `ipywidgets`, vì vậy UI phải chạy trong **Jupyter Notebook/JupyterLab**.
 
@@ -317,7 +356,27 @@ Nếu không muốn JupyterLab:
 jupyter notebook
 ```
 
-## 9.2 Trong một Jupyter code cell: chạy widget
+## 9.2 Tạo ledger và human check queue
+
+Codex review không được ghi thành `human_verified`. Mỗi recommendation phải giữ candidate UID, rank, exact source rows, completeness, confidence và reason codes.
+
+```bash
+python local/run_local_review_stage.py collaborate \
+    --bundle-dir ~/ViFinQA_review/run_002 \
+    --assistant-labels data/labels/codex_assisted_reviews.jsonl \
+    --human-check-size 6
+```
+
+Output:
+
+```text
+data/labels/review_ledger_60.jsonl
+data/labels/human_check_queue.jsonl
+```
+
+Ledger luôn giữ đủ 60 câu; queue chỉ chứa spot-check của vòng hiện tại.
+
+## 9.3 Trong một Jupyter code cell: chạy widget
 
 ```python
 %cd ~/Documents/AI_guru
@@ -325,22 +384,87 @@ jupyter notebook
 %run local/review_bundle_widget.py \
     --bundle-dir ~/ViFinQA_review/run_002 \
     --machine-reviews data/labels/machine_reviews_60.jsonl \
-    --queue data/labels/human_seed_queue_12.jsonl \
+    --assistant-reviews data/labels/codex_assisted_reviews.jsonl \
+    --queue data/labels/human_check_queue.jsonl \
     --output data/labels/retriever_verified_60.jsonl
 ```
 
-Bạn chỉ review seed queue, không review toàn bộ 60 câu.
+Bạn có thể dừng sau vài câu. Output được ghi atomically; Codex đọc các xác nhận/bất đồng, review lại phần còn lại và tạo queue vòng sau.
 
 UI ưu tiên hiển thị:
 
 ```text
 Question
-Machine recommendation
-One-line table summary
-Exact direct evidence
-Agent votes
-Aligned source rows khi cần
+Machine/Codex recommendation đã rút gọn
+Chức năng bảng và phần kế toán
+Chức năng sử dụng nhanh + tiêu đề mục nguồn gần nhất
+Mức phù hợp hoặc cảnh báo mismatch
+Preview tối đa 4 exact rows; full grid chỉ mở khi cần
+Formula + operand coverage cho câu hệ số/derived
+One-line summary grounded
 ```
+
+Nút `Accept Codex` là thao tác xác nhận của human. Chỉ sau thao tác này record mới thành `human_verified`; recommendation Codex ban đầu vẫn được giữ trong ledger để audit.
+
+Với evidence set `partial`, nút đổi thành `Confirm partial` và lưu `human_verified_partial`. Trạng thái này xác nhận các bảng đã chọn là relevant nhưng không biến toàn câu thành training gold.
+
+Khi grid V2 đã xác minh, calibrator có thể dùng các bảng được chọn từ partial
+review như **positive-only** candidate evidence; các candidate không được chọn
+vẫn là unknown, tuyệt đối không bị tạo thành negative label. Partial vẫn không
+được export vào final retrieval training labels.
+
+Với câu ratio/temporal/derived, `Save EvidenceSet` lưu riêng từng operand với
+candidate UID, rank, exact source rows và column labels. Multi-table evidence
+được phép và thường là bắt buộc. Nếu công thức thuộc loại `ambiguous` hoặc
+`review_required`, checkbox xác nhận công thức của human là gate độc lập;
+không có xác nhận thì không nâng thành complete.
+
+Nếu chưa có grid V2 đã xác minh từ raw HTML, quick numeric view và
+`Accept machine` bị khóa; lựa chọn positive mới chỉ có thể lưu partial.
+
+## 9.4 Autonomous raw-source review (không cần human reviewer)
+
+Khi không có người review, không dùng `Accept Codex`, không nâng machine label
+thành `human_verified`, và không train từ `machine_provisional`. Thay vào đó:
+
+```bash
+python local/run_local_review_stage.py preprocess \
+    --bundle-dir ~/ViFinQA_review/run_002
+
+python local/run_local_review_stage.py autonomous \
+    --bundle-dir ~/ViFinQA_review/run_002
+```
+
+`preprocess` tạo sidecar riêng từ V2 raw-HTML grid: khôi phục path tiêu đề
+cha–con theo span provenance, bind period/unit vào cột nguồn và quarantine
+bảng không đủ dữ kiện. `autonomous` cho retrieval/semantic/evidence/metadata/
+challenger/critic views review chéo. Chỉ direct lookup qua toàn bộ source gate
+mới là `machine_calibrated` silver; phần còn lại vẫn là `machine_provisional`
+hoặc `needs_human` và bị loại khỏi train.
+
+Sau khi tích luỹ đủ 200 machine-silver pairs, chạy:
+
+```bash
+python local/run_local_review_stage.py autotrain \
+    --bundle-dir ~/ViFinQA_review/run_002
+```
+
+Nếu chưa đủ, lệnh trả `deferred` và không ghi model. Không có bước nào rebuild
+corpus, lexical index, dense embeddings hay FAISS. Chi tiết safety contract tại
+[`docs/AUTONOMOUS_RAW_REVIEW.md`](docs/AUTONOMOUS_RAW_REVIEW.md).
+
+Câu lọc/xếp hạng nhiều giai đoạn không thể bị hiểu nhầm thành một công thức đơn
+lẻ theo keyword đầu tiên. Q369 có plan ba stage và EvidenceSet riêng theo
+entity; các dạng chưa có controlled rule vẫn được gắn
+`multi_stage_selection_unresolved`.
+
+Positive labels đã tạo bằng UI cũ vẫn nằm nguyên trong audit file nhưng được
+đưa lại vào review queue và bị loại khỏi calibration/training export cho đến
+khi human xác minh lại trên grid V2.
+
+Ở lần baseline/rerun kế tiếp, V3.1 reviewer cũng chỉ vote trên candidate có
+`VALUE/ANCHOR` khớp đúng exact V2 row. Machine label không có gate này không
+được final training export.
 
 ---
 
@@ -371,7 +495,7 @@ data/labels/machine_reviews_60_calibrated.jsonl
 data/labels/needs_human_after_calibration.jsonl
 ```
 
-Bạn chỉ review `needs_human_after_calibration.jsonl` nếu còn case bất định.
+Resolution queue phải bao gồm cả `needs_human`, `retrieval_failure`, `machine_provisional` chưa đủ điều kiện training và complex evidence set còn thiếu operand. Provisional vẫn được giữ trong ledger ngay cả khi không được export để train.
 
 ---
 
@@ -385,8 +509,11 @@ python local/run_local_review_stage.py final \
 Output:
 
 ```text
+data/labels/review_ledger_60.jsonl
 data/labels/retriever_labels_v2.jsonl
 ```
+
+`review_ledger_60.jsonl` là audit/provenance đầy đủ. `retriever_labels_v2.jsonl` chỉ là training subset đã qua eligibility gate.
 
 Provenance được giữ riêng:
 
@@ -400,6 +527,25 @@ retrieval_failure
 ```
 
 Machine label không được giả mạo thành human gold.
+
+---
+
+## 11.1 Pilot reranker sau final labels (shadow-only)
+
+Sau khi có final labels, có thể chạy pilot nhỏ mà không rebuild corpus hay
+dense/FAISS index:
+
+```bash
+python local/run_local_review_stage.py pilot \
+    --bundle-dir ~/ViFinQA_review/run_002
+```
+
+Pilot chỉ re-rank những table đã nằm trong `review_items.jsonl` Top-K. Complete
+`human_verified` labels tạo positive và negative; `machine_calibrated` chỉ là
+positive pseudo-label có weight, không suy diễn candidate không được chọn là
+negative. Output là artifact, metadata có grouped OOF MRR/recall@K và shadow
+ranking để audit; script không tự động thay đổi retriever/index. Xem contract
+đầy đủ tại [`docs/PILOT_CANDIDATE_RERANKER.md`](docs/PILOT_CANDIDATE_RERANKER.md).
 
 ---
 
@@ -464,6 +610,7 @@ Recovered adjacent candidate phải qua strict grounding guard trước khi đư
 src/finance_query/
 ├── config.py
 ├── corpus.py
+├── table_structure.py
 ├── questions.py
 ├── retrieval.py
 ├── binding.py
@@ -483,6 +630,7 @@ scripts/
 ├── auto_review_bundle.py
 ├── auto_review_bundle_v3.py
 ├── auto_review_bundle_v31.py
+├── repair_review_bundle_tables.py
 ├── train_review_calibrator.py
 ├── export_review_labels.py
 ├── train_question_router.py
@@ -499,7 +647,11 @@ docs/
 ├── REVIEW_PIPELINE_V2.md
 ├── REVIEW_FIX_V3.md
 ├── LOCAL_DIAGNOSTIC.md
-└── V3_BUNDLE_VALIDATION_AND_NEXT.md
+├── V3_BUNDLE_VALIDATION_AND_NEXT.md
+├── TABLE_STRUCTURE_V2.md
+├── FORMULA_EVIDENCE_SETS.md
+├── CONTEXT_FORMULA_REVIEW_IMPLEMENTATION.md
+└── Q369_GROUNDED_REVIEW.md
 ```
 
 ---

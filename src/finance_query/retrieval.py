@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 import faiss
 import numpy as np
@@ -67,7 +68,15 @@ class AssetStore:
                     headers_json TEXT NOT NULL,
                     rows_json TEXT NOT NULL,
                     context_before TEXT,
-                    search_text TEXT NOT NULL
+                    search_text TEXT NOT NULL,
+                    structure_version INTEGER NOT NULL DEFAULT 1,
+                    context_schema_version INTEGER NOT NULL DEFAULT 1,
+                    header_row_indices_json TEXT NOT NULL DEFAULT '[]',
+                    table_function_json TEXT NOT NULL DEFAULT '{}',
+                    table_section_json TEXT NOT NULL DEFAULT '{}',
+                    table_purpose_json TEXT NOT NULL DEFAULT '{}',
+                    context_trace_json TEXT NOT NULL DEFAULT '{}',
+                    structure_quality_json TEXT NOT NULL DEFAULT '{}'
                 );
                 CREATE INDEX idx_assets_ticker_year_scope
                     ON assets(ticker, report_year, scope);
@@ -100,6 +109,14 @@ class AssetStore:
                         json.dumps(asset.get("rows") or [], ensure_ascii=False),
                         asset.get("context_before", ""),
                         asset.get("search_text", ""),
+                        int(asset.get("structure_version") or 1),
+                        int(asset.get("context_schema_version") or 1),
+                        json.dumps(asset.get("header_row_indices") or []),
+                        json.dumps(asset.get("table_function") or {}, ensure_ascii=False),
+                        json.dumps(asset.get("table_section") or {}, ensure_ascii=False),
+                        json.dumps(asset.get("table_purpose") or {}, ensure_ascii=False),
+                        json.dumps(asset.get("context_trace") or {}, ensure_ascii=False),
+                        json.dumps(asset.get("structure_quality") or {}, ensure_ascii=False),
                     )
                 )
                 fts_rows.append((uid, asset.get("search_text", "")))
@@ -107,7 +124,7 @@ class AssetStore:
 
                 if len(asset_rows) >= 2000:
                     connection.executemany(
-                        "INSERT INTO assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         asset_rows,
                     )
                     connection.executemany(
@@ -119,7 +136,7 @@ class AssetStore:
 
             if asset_rows:
                 connection.executemany(
-                    "INSERT INTO assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     asset_rows,
                 )
                 connection.executemany(
@@ -218,18 +235,46 @@ class DenseIndex:
             self._model.max_seq_length = self.max_sequence_length
         return self._model
 
-    def build(self, assets_path: Path, batch_size: int = 32) -> int:
+    def build(
+        self,
+        assets_path: Path,
+        batch_size: int = 32,
+        encode_chunk_size: int = 4096,
+        max_wall_seconds: float | None = None,
+        progress_callback: Callable[[int, float], None] | None = None,
+    ) -> int:
+        """Build a dense index without paying model-startup overhead per mini-batch.
+
+        ``SentenceTransformer.encode`` already micro-batches according to
+        ``batch_size``.  Accumulating only one such micro-batch before each
+        call made a full ViFinQA corpus issue thousands of encode calls.  A
+        bounded outer chunk keeps memory predictable while letting the model
+        process many micro-batches in one invocation.
+        """
+        if batch_size < 1:
+            raise ValueError("batch_size must be positive")
+        if encode_chunk_size < batch_size:
+            raise ValueError("encode_chunk_size must be at least batch_size")
+        if max_wall_seconds is not None and max_wall_seconds <= 0:
+            raise ValueError("max_wall_seconds must be positive when supplied")
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
         uid_file = self.uids_path.open("w", encoding="utf-8")
         index: faiss.IndexFlatIP | None = None
         batch_texts: list[str] = []
         batch_uids: list[str] = []
         count = 0
+        started_at = time.monotonic()
 
         def flush() -> None:
             nonlocal index, count
             if not batch_texts:
                 return
+            elapsed = time.monotonic() - started_at
+            if max_wall_seconds is not None and elapsed >= max_wall_seconds:
+                raise TimeoutError(
+                    "Dense build time budget exhausted before a complete index "
+                    f"was written ({elapsed:.1f}s >= {max_wall_seconds:.1f}s)."
+                )
             embeddings = self.model.encode(
                 batch_texts,
                 batch_size=min(batch_size, len(batch_texts)),
@@ -245,6 +290,8 @@ class DenseIndex:
             count += len(batch_uids)
             batch_texts.clear()
             batch_uids.clear()
+            if progress_callback is not None:
+                progress_callback(count, time.monotonic() - started_at)
 
         try:
             for asset in tqdm(iter_assets(assets_path), desc="Building dense index"):
@@ -256,7 +303,7 @@ class DenseIndex:
                         query=False,
                     )
                 )
-                if len(batch_texts) >= batch_size:
+                if len(batch_texts) >= encode_chunk_size:
                     flush()
             flush()
         finally:

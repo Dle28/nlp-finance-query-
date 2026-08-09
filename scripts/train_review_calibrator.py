@@ -49,6 +49,9 @@ def build_dataset(
     used_questions: set[int] = set()
     positive_not_in_bundle: list[int] = []
     skipped_status: list[int] = []
+    skipped_unvalidated_structure: list[int] = []
+    partial_positive_only: list[int] = []
+    partial_positive_count = 0
 
     for item in items:
         qid = int(item["id"])
@@ -57,16 +60,23 @@ def build_dataset(
             continue
 
         status = str(annotation.get("annotation_status") or "")
-        if status not in {
+        is_complete_or_negative = status in {
             "verified",
             "verified_assisted",
             "human_verified",
             "verified_no_candidate",
-        }:
+        }
+        is_partial = status == "human_verified_partial"
+        if not is_complete_or_negative and not is_partial:
             skipped_status.append(qid)
             continue
 
         positives = set(annotation.get("positive_table_uids") or [])
+        if positives and not bool(
+            (annotation.get("structure_validation") or {}).get("complete")
+        ):
+            skipped_unvalidated_structure.append(qid)
+            continue
         candidates = list(item.get("candidates") or [])
         candidate_uids = {str(c["internal_table_uid"]) for c in candidates}
 
@@ -81,6 +91,21 @@ def build_dataset(
             continue
 
         used_questions.add(qid)
+        if is_partial:
+            # A partial EvidenceSet confirms only its selected exact V2 tables.
+            # The omitted Top-K candidates are unknown, not negatives.  They
+            # must never be used as negative supervision for the calibrator.
+            partial_positive_only.append(qid)
+            for candidate in candidates:
+                candidate_uid = str(candidate["internal_table_uid"])
+                if candidate_uid not in positives:
+                    continue
+                x.append(feature_vector(candidate, FEATURE_NAMES))
+                y.append(1)
+                groups.append(qid)
+                partial_positive_count += 1
+            continue
+
         for candidate in candidates:
             candidate_uid = str(candidate["internal_table_uid"])
             x.append(feature_vector(candidate, FEATURE_NAMES))
@@ -91,6 +116,11 @@ def build_dataset(
         "used_question_ids": sorted(used_questions),
         "positive_not_in_bundle": sorted(set(positive_not_in_bundle)),
         "skipped_status_question_ids": sorted(set(skipped_status)),
+        "skipped_unvalidated_structure_question_ids": sorted(
+            set(skipped_unvalidated_structure)
+        ),
+        "partial_positive_only_question_ids": sorted(set(partial_positive_only)),
+        "partial_positive_only_candidate_count": partial_positive_count,
     }
 
     return (
@@ -192,6 +222,14 @@ def main() -> None:
     print("Positive candidates:", positive_count)
     print("Negative candidates:", negative_count)
     print("Positive human cases outside bundle Top-K:", data_meta["positive_not_in_bundle"])
+    print(
+        "Legacy positives skipped until V2 revalidation:",
+        data_meta["skipped_unvalidated_structure_question_ids"],
+    )
+    print(
+        "V2-verified partial reviews used as positive-only evidence:",
+        data_meta["partial_positive_only_question_ids"],
+    )
 
     if question_count < args.min_questions:
         raise RuntimeError(

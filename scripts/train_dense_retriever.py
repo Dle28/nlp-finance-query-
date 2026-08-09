@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fine-tune a dense table retriever from verified question/table pairs.
+"""Fine-tune a dense table retriever from provenance-validated question/table pairs.
 
 Required JSONL schema:
 
@@ -7,6 +7,8 @@ Required JSONL schema:
 
 The public ViFinQA question file does not contain these labels. This script
 therefore refuses to infer positives from question IDs or raw offsets.
+``machine_silver`` mode accepts only V4 autonomous labels carrying the raw-V2
+canonical-context consensus protocol; provisional machine guesses are refused.
 
 On multi-GPU notebook runtimes the script exposes a single GPU by default. The
 legacy SentenceTransformers ``fit`` path otherwise uses DataParallel, which can
@@ -31,6 +33,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("artifacts/lexical_index.sqlite3"),
     )
+    parser.add_argument(
+        "--bundle-tables",
+        type=Path,
+        default=None,
+        help="Immutable bundle tables.jsonl; use this when its UID namespace differs from asset-db.",
+    )
     parser.add_argument("--model", default="BAAI/bge-m3")
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/retriever_finetuned"))
     parser.add_argument("--epochs", type=int, default=3)
@@ -54,6 +62,23 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Reduce activation memory at the cost of extra compute.",
     )
+    parser.add_argument(
+        "--label-provenance",
+        choices=["human_verified", "machine_silver"],
+        default="human_verified",
+        help="Validate the declared supervision source before training.",
+    )
+    parser.add_argument(
+        "--min-pairs",
+        type=int,
+        default=1,
+        help="Refuse/defer training below this many source-validated pairs.",
+    )
+    parser.add_argument(
+        "--defer-below-min",
+        action="store_true",
+        help="Report insufficient input without writing a model.",
+    )
     return parser.parse_args()
 
 
@@ -63,9 +88,31 @@ def model_text(model_name: str, text: str, *, query: bool) -> str:
     return text
 
 
-def load_examples(path: Path, store: AssetStore, model_name: str, input_example_cls) -> list:
+def validate_provenance(row: dict, provenance: str, line_number: int) -> None:
+    if provenance == "human_verified":
+        if str(row.get("annotation_status") or "") != "human_verified":
+            raise ValueError(f"Line {line_number} is not a complete human_verified label")
+        if str(row.get("label_source") or "") != "human":
+            raise ValueError(f"Line {line_number} does not declare human label_source")
+        if not bool((row.get("structure_validation") or {}).get("complete")):
+            raise ValueError(f"Line {line_number} lacks complete V2 human validation")
+        return
+
+    self_review = row.get("machine_self_review") or {}
+    if str(row.get("annotation_status") or "") != "machine_calibrated":
+        raise ValueError(f"Line {line_number} is not machine_calibrated silver")
+    if str(row.get("label_source") or "") != "machine":
+        raise ValueError(f"Line {line_number} does not declare machine label_source")
+    if not bool((row.get("structure_validation") or {}).get("validated")):
+        raise ValueError(f"Line {line_number} lacks exact V2 row validation")
+    if str(self_review.get("protocol") or "") != "raw_v2_canonical_context_v1":
+        raise ValueError(f"Line {line_number} lacks the autonomous V4 source protocol")
+    if not bool(self_review.get("training_eligible")):
+        raise ValueError(f"Line {line_number} is not training-eligible autonomous silver")
+
+
+def load_label_rows(path: Path, provenance: str) -> list[dict]:
     rows: list[dict] = []
-    required_uids: list[str] = []
     with path.open(encoding="utf-8-sig") as file:
         for line_number, line in enumerate(file, start=1):
             if not line.strip():
@@ -76,17 +123,68 @@ def load_examples(path: Path, store: AssetStore, model_name: str, input_example_
                 raise ValueError(
                     f"Line {line_number} must contain question and positive_table_uids"
                 )
+            validate_provenance(row, provenance, line_number)
             rows.append(row)
-            required_uids.extend(str(uid) for uid in positives)
+    return rows
 
-    assets = store.get_assets(required_uids)
+
+def bundle_search_text(table: dict) -> str:
+    rows = table.get("rows") or []
+    return " ".join(
+        str(value)
+        for value in [
+            table.get("document_id"),
+            table.get("ticker"),
+            table.get("report_year"),
+            table.get("scope"),
+            table.get("context_before"),
+            *(table.get("headers") or table.get("column_labels") or []),
+            *(cell for row in rows for cell in row),
+        ]
+        if value is not None
+    )
+
+
+def bundle_assets(path: Path) -> dict[str, dict]:
+    output: dict[str, dict] = {}
+    with path.open(encoding="utf-8-sig") as file:
+        for line_number, line in enumerate(file, start=1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            uid = str(row.get("internal_table_uid") or "")
+            if not uid:
+                raise ValueError(f"Bundle table line {line_number} lacks internal_table_uid")
+            if uid in output:
+                raise ValueError(f"Duplicate table UID {uid} in {path}")
+            output[uid] = {"search_text": bundle_search_text(row)}
+    return output
+
+
+def load_examples(
+    rows: list[dict],
+    store: AssetStore | None,
+    bundle_tables: Path | None,
+    model_name: str,
+    input_example_cls,
+) -> list:
+    required_uids = [
+        str(uid) for row in rows for uid in row.get("positive_table_uids") or []
+    ]
+    if bundle_tables is not None:
+        assets = bundle_assets(bundle_tables)
+    elif store is not None:
+        assets = store.get_assets(required_uids)
+    else:  # pragma: no cover - guarded by the CLI default
+        raise ValueError("Either asset-db or bundle-tables must be available")
+
     examples: list = []
     for row in rows:
         query = model_text(model_name, str(row["question"]), query=True)
         for uid in row["positive_table_uids"]:
             asset = assets.get(str(uid))
             if asset is None:
-                raise KeyError(f"Positive table UID not found in asset DB: {uid}")
+                raise KeyError(f"Positive table UID not found in the selected source: {uid}")
             passage = model_text(model_name, asset["search_text"], query=False)
             examples.append(input_example_cls(texts=[query, passage]))
 
@@ -97,7 +195,20 @@ def load_examples(path: Path, store: AssetStore, model_name: str, input_example_
 
 def main() -> None:
     args = parse_args()
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    label_rows = load_label_rows(args.train_jsonl, args.label_provenance)
+    pair_count = sum(
+        len(row.get("positive_table_uids") or []) for row in label_rows
+    )
+    if pair_count < args.min_pairs:
+        message = (
+            f"Need at least {args.min_pairs} {args.label_provenance} pairs; "
+            f"only {pair_count} passed provenance validation."
+        )
+        if args.defer_below_min:
+            print(json.dumps({"status": "deferred", "reason": message}, ensure_ascii=False))
+            return
+        raise RuntimeError(message)
 
     requested_cuda = args.device is None or str(args.device).startswith("cuda")
     if requested_cuda and not args.allow_multi_gpu:
@@ -108,8 +219,15 @@ def main() -> None:
     from sentence_transformers.losses import MultipleNegativesRankingLoss
     from torch.utils.data import DataLoader
 
-    store = AssetStore(args.asset_db)
-    examples = load_examples(args.train_jsonl, store, args.model, InputExample)
+    store = None if args.bundle_tables else AssetStore(args.asset_db)
+    examples = load_examples(
+        label_rows,
+        store,
+        args.bundle_tables,
+        args.model,
+        InputExample,
+    )
+    args.output_dir.mkdir(parents=True, exist_ok=True)
 
     model = SentenceTransformer(args.model, device=args.device)
     model.max_seq_length = args.max_seq_length
@@ -152,7 +270,9 @@ def main() -> None:
         "visible_cuda_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
         "loss": "MultipleNegativesRankingLoss",
         "mixed_precision": use_amp,
-        "label_requirement": "manually verified positive_table_uids",
+        "label_provenance": args.label_provenance,
+        "min_pairs": args.min_pairs,
+        "bundle_tables": str(args.bundle_tables) if args.bundle_tables else None,
     }
     (args.output_dir / "training_metadata.json").write_text(
         json.dumps(metadata, indent=2),
