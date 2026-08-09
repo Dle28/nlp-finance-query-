@@ -104,9 +104,10 @@ SOURCE_ROOT = Path('/kaggle/input/vifinqa-source-snapshot')
 # The initial private dataset version was created from this exact Git revision.
 # Keep it in checkpoint provenance because Kaggle inputs deliberately exclude
 # the repository's .git directory.
-SOURCE_SNAPSHOT_GIT_COMMIT = '3861638cc8d946636b9c51194b7da7dd5c31d503'
+SOURCE_SNAPSHOT_GIT_COMMIT = '7c8ff7ae17fc5095227dc47dfe1c3d64f90f8403'
 
 if (SOURCE_ROOT / 'pyproject.toml').is_file():
+    os.environ['VIFINQA_SOURCE_REVISION'] = SOURCE_SNAPSHOT_GIT_COMMIT
     if REPO_DIR.exists():
         shutil.rmtree(REPO_DIR)
     shutil.copytree(SOURCE_ROOT, REPO_DIR)
