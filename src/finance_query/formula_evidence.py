@@ -229,6 +229,25 @@ def formula_evidence_set(
             key=lambda value: (int(value["candidate_rank"]), str(value["internal_table_uid"]), int(value["row_index"])),
         )[:max_matches_per_operand]
     missing = [operand_id for operand_id, matches in coverage.items() if not matches]
+    operand_coverage_status = "complete" if not missing else "partial"
+    question_plan = item.get("question_plan") or {}
+    family = str(question_plan.get("family") or item.get("weak_family") or "")
+    reason_codes: list[str] = []
+    if str(formula.get("definition_status") or "defined") != "defined":
+        reason_codes.append("formula_definition_requires_confirmation")
+    if str(formula.get("execution_status") or "") == "stage_binding_required":
+        reason_codes.append("formula_requires_stage_binding")
+    if family in {
+        "conditional_analytical",
+        "cross_entity_comparison",
+        "multi_entity_or_period_aggregation",
+    }:
+        reason_codes.append("question_family_requires_composed_execution")
+    evidence_completeness = (
+        "complete"
+        if operand_coverage_status == "complete" and not reason_codes
+        else "partial"
+    )
     return {
         "id": int(item["id"]),
         "question": item.get("question"),
@@ -237,6 +256,8 @@ def formula_evidence_set(
         "required_operand_count": len(operands),
         "covered_operand_count": len(operands) - len(missing),
         "missing_operand_ids": missing,
-        "evidence_completeness": "complete" if not missing else "partial" if coverage else "missing",
+        "operand_coverage_status": operand_coverage_status,
+        "evidence_completeness": evidence_completeness,
+        "reason_codes": reason_codes,
         "execution_status": "not_executed_source_evidence_only",
     }

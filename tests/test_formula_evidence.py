@@ -74,3 +74,24 @@ class FormulaEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence["evidence_completeness"], "partial")
         self.assertEqual(evidence["missing_operand_ids"], ["inventory"])
 
+    def test_complete_operands_do_not_complete_a_conditional_question(self):
+        table = _table()
+        context = build_evidence_context(table)
+        formula = {
+            "formula_id": "ratio",
+            "definition_status": "defined",
+            "operands": [
+                {"operand_id": "assets", "metric_hints": ["tài sản ngắn hạn"], "years": [2023], "required": True},
+                {"operand_id": "liabilities", "metric_hints": ["nợ ngắn hạn"], "years": [2023], "required": True},
+            ],
+        }
+        item = {
+            "id": 1,
+            "question": "test",
+            "question_plan": {"family": "conditional_analytical"},
+            "candidates": [{"internal_table_uid": "u1", "rank": 1, "ticker": "ABC", "report_year": 2023}],
+        }
+        evidence = formula_evidence_set(formula, item, {"u1": table}, {"u1": context})
+        self.assertEqual(evidence["operand_coverage_status"], "complete")
+        self.assertEqual(evidence["evidence_completeness"], "partial")
+        self.assertIn("question_family_requires_composed_execution", evidence["reason_codes"])
