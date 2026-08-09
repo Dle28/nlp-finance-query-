@@ -6,6 +6,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from finance_query.semantic_rerank import (
+    SEMANTIC_INPUT_RENDERER_VERSION,
+    semantic_candidate_input,
+    semantic_input_digest,
+)
+
 
 ROOT = Path(__file__).parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -41,3 +47,38 @@ class AnalyzeSemanticRerankTests(unittest.TestCase):
             path.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
             self.assertEqual(mod.complete_human_uids(path), {1: {"u1"}})
 
+    def test_v2_audit_rejects_input_not_regenerable_from_raw_row(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory)
+            candidate = {
+                "internal_table_uid": "u1",
+                "rank": 1,
+                "value_row_index": 1,
+                "evidence_window": [{"index": 1, "row": ["Tiền", "100"]}],
+            }
+            item = {"id": 1, "question": "Tiền cuối năm là bao nhiêu?", "candidates": [candidate]}
+            table = {"internal_table_uid": "u1", "rows": [["", "Cuối năm"], ["Tiền", "100"]]}
+            context = {
+                "internal_table_uid": "u1",
+                "canonical_headers": {"columns": [{"source_label": "Chỉ tiêu"}, {"source_label": "Cuối năm"}]},
+            }
+            (bundle / "tables_structured_v2.jsonl").write_text(json.dumps(table) + "\n", encoding="utf-8")
+            (bundle / "tables_evidence_context_v1.jsonl").write_text(json.dumps(context) + "\n", encoding="utf-8")
+            source_input = semantic_candidate_input(item["question"], candidate, table, context)
+            score_rows = {
+                1: {
+                    "candidate_scores": [
+                        {
+                            "internal_table_uid": "u1",
+                            "rank": 1,
+                            "source_input": source_input,
+                            "input_sha256": semantic_input_digest(item["question"], source_input),
+                        }
+                    ]
+                }
+            }
+            manifest = {"schema_version": 2, "input_renderer_version": SEMANTIC_INPUT_RENDERER_VERSION}
+            mod.validate_v2_source_inputs(bundle, manifest, score_rows, {1: item})
+            score_rows[1]["candidate_scores"][0]["source_input"] = "not source grounded"
+            with self.assertRaises(ValueError):
+                mod.validate_v2_source_inputs(bundle, manifest, score_rows, {1: item})
