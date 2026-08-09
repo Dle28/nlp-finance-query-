@@ -37,6 +37,24 @@ def sha(p):
     return h.hexdigest()
 def count(p): return sum(1 for x in p.open(encoding="utf-8") if x.strip()) if p.is_file() else 0
 
+def source_revision(root):
+    """Return an auditable source revision before the costly bundle loop.
+
+    A normal clone provides ``.git``.  Kaggle's private source snapshot does
+    not include Git metadata, so its bootstrap must explicitly supply the
+    immutable revision through ``VIFINQA_SOURCE_REVISION``.  Refuse an
+    unversioned snapshot early rather than failing after generating a full
+    bundle.
+    """
+    snapshot_revision=os.environ.get("VIFINQA_SOURCE_REVISION", "").strip()
+    if snapshot_revision:
+        return snapshot_revision
+    if not (root/".git").is_dir():
+        raise RuntimeError(
+            "Source has no .git directory. Set VIFINQA_SOURCE_REVISION to an immutable source revision."
+        )
+    return subprocess.check_output(["git","-C",str(root),"rev-parse","HEAD"],text=True).strip()
+
 def plan_metric(plan):
     op=plan.get("operands") or []; return str((op[0] if op else {}).get("metric") or "").strip()
 def effective_metric(q,plan,fam=None):
@@ -142,6 +160,7 @@ def health(root,minn,dense):
 
 def main():
     a=args(); root=a.repo_root.resolve(); qp=a.questions if a.questions.is_absolute() else root/a.questions; cp=a.config if a.config.is_absolute() else root/a.config; out=a.output_dir.resolve()
+    commit=source_revision(root)
     if out.exists() and any(out.iterdir()):
         if not a.force:raise RuntimeError(f"Output not empty: {out}")
         shutil.rmtree(out)
@@ -167,7 +186,7 @@ def main():
             errs.append({"id":qid,"question":q,"error":repr(e)}); print("ERROR",qid,e)
             if not a.allow_errors:break
     rp,tp,ep=out/"review_items.jsonl",out/"tables.jsonl",out/"errors.jsonl"; writej(rp,items); writej(tp,cache.values()); writej(ep,errs)
-    commit=subprocess.check_output(["git","-C",str(root),"rev-parse","HEAD"],text=True).strip(); man={"schema_version":3,"created_at_utc":datetime.now(timezone.utc).isoformat(),"git_commit":commit,"config_path":str(cp),"config_sha256":sha(cp),"questions_path":str(qp),"questions_sha256":sha(qp),"question_count":len(loadj(qp)),"review_item_count":len(items),"unique_table_count":len(cache),"retrieval_top_k":a.top_k,"max_review_candidates":a.max_review_candidates,"neighbor_radius":a.neighbor_radius,"recovered_adjacent_candidates":rec,"use_dense":not a.no_dense,"artifact_health":h,"error_count":len(errs)}; mp=out/"manifest.json"; mp.write_text(json.dumps(man,ensure_ascii=False,indent=2),encoding="utf-8"); (out/"SHA256SUMS").write_text("".join(f"{sha(out/n)}  {n}\n" for n in ["manifest.json","review_items.jsonl","tables.jsonl","errors.jsonl"]),encoding="utf-8")
+    man={"schema_version":3,"created_at_utc":datetime.now(timezone.utc).isoformat(),"git_commit":commit,"config_path":str(cp),"config_sha256":sha(cp),"questions_path":str(qp),"questions_sha256":sha(qp),"question_count":len(loadj(qp)),"review_item_count":len(items),"unique_table_count":len(cache),"retrieval_top_k":a.top_k,"max_review_candidates":a.max_review_candidates,"neighbor_radius":a.neighbor_radius,"recovered_adjacent_candidates":rec,"use_dense":not a.no_dense,"artifact_health":h,"error_count":len(errs)}; mp=out/"manifest.json"; mp.write_text(json.dumps(man,ensure_ascii=False,indent=2),encoding="utf-8"); (out/"SHA256SUMS").write_text("".join(f"{sha(out/n)}  {n}\n" for n in ["manifest.json","review_items.jsonl","tables.jsonl","errors.jsonl"]),encoding="utf-8")
     ar=out.parent/f"{out.name}.tar.gz"; ar.unlink(missing_ok=True)
     with tarfile.open(ar,"w:gz") as t:
         for n in ["manifest.json","review_items.jsonl","tables.jsonl","errors.jsonl","SHA256SUMS"]:t.add(out/n,arcname=n)

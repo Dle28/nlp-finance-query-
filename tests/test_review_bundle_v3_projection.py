@@ -1,6 +1,9 @@
 import importlib.util
+import os
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location(
     "bundle_v3",
@@ -11,6 +14,15 @@ spec.loader.exec_module(mod)
 
 
 class ReviewBundleV3ProjectionTests(unittest.TestCase):
+    def test_snapshot_revision_is_explicit_and_fails_fast_when_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with patch.dict(os.environ, {"VIFINQA_SOURCE_REVISION": "snapshot-abc"}):
+                self.assertEqual(mod.source_revision(root), "snapshot-abc")
+            with patch.dict(os.environ, {}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, "VIFINQA_SOURCE_REVISION"):
+                    mod.source_revision(root)
+
     def test_direct_lookup_effective_metric_strips_entity(self):
         q = (
             "Giá trị còn lại của bất động sản đầu tư của công ty mẹ IJC "
