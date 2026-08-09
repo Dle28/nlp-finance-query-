@@ -949,6 +949,20 @@ model mới và không rebuild/rewrite existing dense index. Nếu chưa đủ p
 pipeline trả `deferred` thay vì tự nới evidence threshold. Xem
 [`docs/AUTONOMOUS_RAW_REVIEW.md`](docs/AUTONOMOUS_RAW_REVIEW.md).
 
+Semantic cross-encoder được chạy ở lớp audit sidecar V2, không nằm trong
+contract promotion. Một score chỉ tồn tại khi `value_row_index`,
+`best_row_index` hoặc `anchor_row_index` của candidate có mặt trong
+`evidence_window` và row đó khớp nguyên văn raw V2. Input đã chấm được lưu
+cùng SHA-256, rồi audit render lại từ V2/canonical context trước khi báo cáo
+margin. Vì vậy score semantic không thể thay thế exact row/cell, period/unit
+binding hay critic; nó chỉ có thể trở thành signal hạ mức sau một audit độc
+lập.
+
+Formula EvidenceSet V2 dùng cùng parser fail-closed với execution ledger: một
+cell có nhiều nhóm số OCR ghép không phải numeric operand. `complete` đòi hỏi
+mỗi operand là đúng một raw V2 number có thể parse, ngoài các gate entity,
+scope, period và definition hiện có.
+
 ---
 
 # 20. Question-family-specific evidence requirements

@@ -469,12 +469,20 @@ và không thay đổi label:
 ```bash
 python scripts/build_formula_evidence_sets.py \
   --bundle-dir ~/ViFinQA_review/run_002 \
-  --output ~/ViFinQA_review/run_002/formula_evidence_sets_v1.jsonl
+  --output ~/ViFinQA_review/run_002/formula_evidence_sets_v2.jsonl
 ```
 
 `complete` chỉ có nghĩa tất cả operand của formula đã có exact raw row/cell,
 cùng entity/scope và không mơ hồ; câu có lọc nhóm, xếp hạng hoặc công thức
-ambiguous vẫn giữ `partial` cho đến khi có executor theo stage.
+ambiguous vẫn giữ `partial` cho đến khi có executor theo stage. Mỗi cell còn
+phải parse thành đúng **một** số nguồn tin cậy; cell OCR ghép hai nhóm số bị
+giữ `partial`, không thể tạo answer.
+
+Semantic rerank V2 là sidecar audit riêng: model chỉ thấy question, exact V2
+row đã đối chiếu với `evidence_window`, header/function/unit gọn; nó lưu
+`source_input` + hash và audit render lại từ raw source. Điểm semantic không
+tự nâng bất kỳ provenance nào; các gate exact-row/exact-column/unit/critic vẫn
+bắt buộc.
 
 Sau khi tích luỹ đủ 200 machine-silver pairs, chạy:
 

@@ -139,7 +139,7 @@ coverage sidecar:
 ```bash
 python scripts/build_formula_evidence_sets.py \
   --bundle-dir ~/ViFinQA_review/run_002 \
-  --output ~/ViFinQA_review/run_002/formula_evidence_sets_v1.jsonl
+  --output ~/ViFinQA_review/run_002/formula_evidence_sets_v2.jsonl
 ```
 
 An operand is recorded only when its metric has an exact V2 data row and a
@@ -149,7 +149,26 @@ unambiguous binding per required operand. `complete` therefore means that the
 controlled input EvidenceSet is source-complete; it still cannot execute when
 the formula is ambiguous, needs a stage selection, or the question family is a
 group/comparison/conditional program. The collector never changes a review
-status or produces an answer.
+status or produces an answer. V2 also parses each bound source cell with the
+execution parser: an OCR cell containing multiple numeric groups (for example
+two parenthesized values concatenated into one cell) is rejected, not treated
+as a formula operand.
+
+### Semantic rerank V2 is diagnostic, exact-row and reproducible
+
+The semantic cross-encoder is a separate audit sidecar, never a label
+promoter. A candidate is scored only if its declared
+`value_row_index`/`best_row_index`/`anchor_row_index` is present in the stored
+candidate window **and** that window row equals the V2 raw row exactly. The
+bounded input puts the question and cell-indexed V2 row before compact source
+headers/function/unit context, so the model window cannot replace the row with
+an OCR title or a projected evidence string.
+
+The V2 sidecar stores the actual `source_input` alongside its SHA-256. Its
+audit regenerates that input from the immutable V2 table and canonical context;
+a mismatch fails the audit. Semantic score or margin can later be used as a
+veto/demotion signal only after the raw-row, header, unit and critic gates; it
+cannot promote `machine_provisional` or `needs_human` by itself.
 
 ## Current run on `run_002`
 
