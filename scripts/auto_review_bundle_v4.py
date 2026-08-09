@@ -31,6 +31,7 @@ import auto_review_bundle_v31 as v31
 v3 = v31.v3
 END_RE = re.compile(r"cuối\s+năm|31\s*[/.-]\s*12|cuối\s+kỳ", re.IGNORECASE)
 START_RE = re.compile(r"đầu\s+năm|0?1\s*[/.-]\s*0?1|đầu\s+kỳ", re.IGNORECASE)
+YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 
 
 def parse_args() -> argparse.Namespace:
@@ -83,6 +84,47 @@ def matching_period_columns(context: dict[str, Any], requirement: str) -> set[in
     }
 
 
+def question_years(question: str) -> list[int]:
+    """Return distinct explicitly mentioned calendar years, in source order."""
+    output: list[int] = []
+    for value in YEAR_RE.findall(question):
+        year = int(value)
+        if year not in output:
+            output.append(year)
+    return output
+
+
+def matching_year_columns(context: dict[str, Any], year: int) -> set[int]:
+    """Find source-header columns explicitly labelled with one requested year.
+
+    A report's metadata year is deliberately *not* sufficient to bind a
+    comparison column: the raw table header itself has to name the requested
+    year.  This prevents an adjacent/current-period value being treated as a
+    historical value merely because it came from the right annual report.
+    """
+    token = str(year)
+    return {
+        int(column["column_index"])
+        for column in (context.get("canonical_headers") or {}).get("columns") or []
+        if token in str(column.get("source_label") or "")
+    }
+
+
+def matching_current_report_columns(context: dict[str, Any]) -> set[int]:
+    """Find an unambiguously labelled current-period column.
+
+    This fallback is only used when the question year equals the candidate
+    report year and no header names that year.  Labels such as ``Năm nay`` are
+    still raw source evidence; unlabeled numeric columns are never guessed.
+    """
+    markers = ("năm nay", "kỳ này", "hiện tại", "current year", "current period")
+    return {
+        int(column["column_index"])
+        for column in (context.get("canonical_headers") or {}).get("columns") or []
+        if any(marker in str(column.get("source_label") or "").casefold() for marker in markers)
+    }
+
+
 def bind_value_row(
     item: dict[str, Any], candidate: dict[str, Any], table: dict[str, Any], context: dict[str, Any]
 ) -> dict[str, Any]:
@@ -105,16 +147,51 @@ def bind_value_row(
             "reason": "projected evidence row is not a canonical data row",
         }
     numeric_columns = [int(column) for column in profile.get("numeric_columns") or []]
-    requirement = period_requirement(str(item.get("question") or ""))
+    question = str(item.get("question") or "")
+    requirement = period_requirement(question)
     period_columns = matching_period_columns(context, requirement)
-    if requirement == "unspecified":
-        return {
-            "status": "row_bound",
-            "row_index": row_index,
-            "numeric_columns": numeric_columns,
-            "reason": "question does not request an opening/closing period column",
-        }
-    selected = sorted(set(numeric_columns) & period_columns)
+    years = question_years(question)
+    year_columns: set[int] = set()
+    if len(years) == 1:
+        year_columns = matching_year_columns(context, years[0])
+
+    # Prefer an explicitly named year.  If the wording also asks for an
+    # opening/closing date, both source-header constraints must identify the
+    # same unique cell.
+    selected = sorted(set(numeric_columns) & year_columns)
+    selection_reason = "explicit_year_header" if selected else ""
+    if requirement != "unspecified" and selected:
+        endpoint_selected = sorted(set(selected) & period_columns)
+        if len(endpoint_selected) == 1:
+            selected = endpoint_selected
+            selection_reason = "explicit_year_and_endpoint_header"
+        elif endpoint_selected:
+            selected = endpoint_selected
+        elif period_columns:
+            return {
+                "status": "ambiguous_period_column",
+                "row_index": row_index,
+                "numeric_columns": numeric_columns,
+                "matching_year_columns": sorted(year_columns),
+                "matching_period_columns": sorted(period_columns),
+                "reason": "year and opening/closing raw headers do not identify one common cell",
+            }
+
+    if not selected and requirement != "unspecified":
+        selected = sorted(set(numeric_columns) & period_columns)
+        selection_reason = "opening_or_closing_header" if selected else ""
+
+    # A source table can use ``Năm nay`` / ``Kỳ này`` rather than an absolute
+    # year.  Use it only if the candidate's report year exactly agrees with
+    # the sole question year, retaining a concrete raw-header binding.
+    if (
+        not selected
+        and len(years) == 1
+        and int(candidate.get("report_year") or 0) == years[0]
+    ):
+        selected = sorted(set(numeric_columns) & matching_current_report_columns(context))
+        selection_reason = "current_period_header_matches_report_year" if selected else ""
+
     if len(selected) == 1:
         column_index = selected[0]
         headers = (context.get("canonical_headers") or {}).get("columns") or []
@@ -130,13 +207,43 @@ def bind_value_row(
             "column_label": header.get("source_label"),
             "value": str(rows[row_index][column_index]),
             "source_cell": provenance,
+            "binding_reason": selection_reason,
+        }
+
+    # One numeric source cell needs no period inference; binding it is safer
+    # than retaining a row-only answer and is independently reproducible from
+    # its exact raw coordinate.
+    if requirement == "unspecified" and not years and len(numeric_columns) == 1:
+        column_index = numeric_columns[0]
+        headers = (context.get("canonical_headers") or {}).get("columns") or []
+        header = next(
+            (column for column in headers if int(column.get("column_index") or -1) == column_index),
+            {},
+        )
+        provenance = ((table.get("cell_provenance") or [])[row_index] or [])[column_index]
+        return {
+            "status": "cell_bound",
+            "row_index": row_index,
+            "column_index": column_index,
+            "column_label": header.get("source_label"),
+            "value": str(rows[row_index][column_index]),
+            "source_cell": provenance,
+            "binding_reason": "only_numeric_source_cell",
+        }
+    if requirement == "unspecified" and not years:
+        return {
+            "status": "row_bound",
+            "row_index": row_index,
+            "numeric_columns": numeric_columns,
+            "reason": "question does not request a uniquely bindable source period column",
         }
     return {
         "status": "ambiguous_period_column",
         "row_index": row_index,
         "numeric_columns": numeric_columns,
+        "matching_year_columns": sorted(year_columns),
         "matching_period_columns": sorted(period_columns),
-        "reason": "no unique raw-header period column can be bound",
+        "reason": "no unique raw-header year or period column can be bound",
     }
 
 

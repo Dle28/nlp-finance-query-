@@ -17,6 +17,65 @@ spec.loader.exec_module(mod)
 
 
 class AutonomousReviewV4Tests(unittest.TestCase):
+    def test_explicit_year_binds_only_matching_raw_header(self):
+        table = {
+            "internal_table_uid": "u1",
+            "rows": [["", "Năm 2023", "Năm 2022"], ["Tiền", "100", "80"]],
+            "header_row_indices": [0],
+            "cell_provenance": [
+                [
+                    {"anchor_row": 0, "anchor_column": 0, "covered_by_span": False},
+                    {"anchor_row": 0, "anchor_column": 1, "covered_by_span": False},
+                    {"anchor_row": 0, "anchor_column": 2, "covered_by_span": False},
+                ],
+                [
+                    {"anchor_row": 1, "anchor_column": 0, "covered_by_span": False},
+                    {"anchor_row": 1, "anchor_column": 1, "covered_by_span": False},
+                    {"anchor_row": 1, "anchor_column": 2, "covered_by_span": False},
+                ],
+            ],
+            "source_provenance": {},
+        }
+        context = build_evidence_context(table)
+        binding = mod.bind_value_row(
+            {"question": "Tiền năm 2023 là bao nhiêu?"},
+            {"report_year": 2023, "structure_validation": {"row_index": 1}},
+            table,
+            context,
+        )
+        self.assertEqual(binding["status"], "cell_bound")
+        self.assertEqual(binding["column_index"], 1)
+        self.assertEqual(binding["value"], "100")
+        self.assertEqual(binding["binding_reason"], "explicit_year_header")
+
+    def test_year_without_matching_raw_header_remains_unbound(self):
+        table = {
+            "internal_table_uid": "u1",
+            "rows": [["", "Năm 2023", "Năm 2022"], ["Tiền", "100", "80"]],
+            "header_row_indices": [0],
+            "cell_provenance": [
+                [
+                    {"anchor_row": 0, "anchor_column": 0, "covered_by_span": False},
+                    {"anchor_row": 0, "anchor_column": 1, "covered_by_span": False},
+                    {"anchor_row": 0, "anchor_column": 2, "covered_by_span": False},
+                ],
+                [
+                    {"anchor_row": 1, "anchor_column": 0, "covered_by_span": False},
+                    {"anchor_row": 1, "anchor_column": 1, "covered_by_span": False},
+                    {"anchor_row": 1, "anchor_column": 2, "covered_by_span": False},
+                ],
+            ],
+            "source_provenance": {},
+        }
+        context = build_evidence_context(table)
+        binding = mod.bind_value_row(
+            {"question": "Tiền năm 2021 là bao nhiêu?"},
+            {"report_year": 2023, "structure_validation": {"row_index": 1}},
+            table,
+            context,
+        )
+        self.assertEqual(binding["status"], "ambiguous_period_column")
+
     def test_direct_lookup_requires_exact_row_and_period_cell_binding(self):
         table = {
             "internal_table_uid": "u1",
