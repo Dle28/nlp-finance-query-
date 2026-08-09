@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from finance_query.questions import RuleQuestionPlanner, weak_family_from_id
+from finance_query.questions import RuleQuestionPlanner, load_ticker_aliases, weak_family_from_id
 
 
 class QuestionRouterTests(unittest.TestCase):
@@ -63,6 +65,34 @@ class QuestionRouterTests(unittest.TestCase):
             question_id=991,
         )
         self.assertNotEqual(plan.family, "direct_lookup")
+
+    def test_alias_can_drop_only_terminal_legal_suffix(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "stocks.csv"
+            path.write_text(
+                "Mã CK,Tên công ty\nACV,Tổng Công ty Cảng Hàng không Việt Nam - CTCP\n",
+                encoding="utf-8",
+            )
+            aliases = load_ticker_aliases(path)
+        self.assertEqual(aliases["tổng công ty cảng hàng không việt nam"], "ACV")
+
+    def test_alias_collision_is_not_assigned_to_an_arbitrary_ticker(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "stocks.csv"
+            path.write_text(
+                "Mã CK,Tên công ty\nAAA,Công ty Ví dụ - CTCP\nBBB,Công ty Ví dụ - TMCP\n",
+                encoding="utf-8",
+            )
+            aliases = load_ticker_aliases(path)
+        self.assertNotIn("công ty ví dụ", aliases)
+
+    def test_real_question_can_resolve_company_without_ctcp_suffix(self) -> None:
+        planner = RuleQuestionPlanner(Path("data/ViFinQA/code_stock.csv"))
+        plan = planner.plan(
+            "Tốc độ tăng trưởng tiền và các khoản tương đương tiền của Tổng Công ty Cảng Hàng không Việt Nam từ cuối năm 2021 đến cuối năm 2022 là bao nhiêu phần trăm?",
+            question_id=586,
+        )
+        self.assertIn("ACV", plan.tickers)
 
 
 if __name__ == "__main__":

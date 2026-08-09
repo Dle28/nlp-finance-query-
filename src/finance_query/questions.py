@@ -107,6 +107,11 @@ MULTI_SUBJECT_RE = re.compile(
 )
 TICKER_TOKEN_RE = re.compile(r"\(([A-Z]{2,6})\)|\b([A-Z]{2,6})\b")
 NON_TICKER_TOKENS = {"CP", "CTCP", "TMCP", "TNDN", "VND", "HĐQT", "BTC"}
+LEGAL_SUFFIX_RE = re.compile(
+    r"\s*[-–—]\s*(?:ctcp|tmcp|công\s+ty\s+cổ\s+phần|"
+    r"công\s+ty\s+tnhh|joint\s+stock\s+company)\s*$",
+    re.IGNORECASE,
+)
 
 
 def normalize_text(text: str) -> str:
@@ -140,6 +145,7 @@ def load_ticker_aliases(code_stock_path: Path) -> dict[str, str]:
     treated as the ticker.
     """
     aliases: dict[str, str] = {}
+    ambiguous_aliases: set[str] = set()
     if not code_stock_path.is_file():
         return aliases
 
@@ -156,10 +162,28 @@ def load_ticker_aliases(code_stock_path: Path) -> dict[str, str]:
             )
             if ticker is None:
                 continue
-            aliases[ticker.casefold()] = ticker
+            def add_alias(alias: str) -> None:
+                normalized = normalize_text(alias).casefold()
+                if len(normalized) < 2 or normalized in ambiguous_aliases:
+                    return
+                previous = aliases.get(normalized)
+                if previous is not None and previous != ticker:
+                    aliases.pop(normalized, None)
+                    ambiguous_aliases.add(normalized)
+                    return
+                aliases[normalized] = ticker
+
+            add_alias(ticker)
             for value in values:
                 if len(value) >= 2:
-                    aliases[normalize_text(value).casefold()] = ticker
+                    add_alias(value)
+                    # Report questions often omit only a terminal legal form
+                    # (for example, ``... Việt Nam`` vs ``... Việt Nam -
+                    # CTCP``).  Keep this high-precision variant, but do not
+                    # remove meaningful interior words or shorten a name.
+                    stripped = LEGAL_SUFFIX_RE.sub("", normalize_text(value)).strip()
+                    if stripped != normalize_text(value) and len(stripped.split()) >= 3:
+                        add_alias(stripped)
     return aliases
 
 
