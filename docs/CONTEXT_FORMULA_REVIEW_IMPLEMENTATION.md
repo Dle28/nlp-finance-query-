@@ -4,6 +4,20 @@ Ngày kiểm tra: 2026-08-08.
 
 ## Đã triển khai
 
+### Checkpoint context V3 (autonomous path hiện hành)
+
+- Context V3 vẫn dùng immutable raw-HTML grid V2, nhưng thêm recovery rất hẹp
+  cho header bị OCR xuất thành hàng `td`: chỉ tối đa ba hàng trước data, từng
+  cột số phải có source text/provenance và cue kỳ, đơn vị hoặc tham chiếu.
+  Heading nhóm và ô số trần bị loại. Vì vậy V3 không dịch cột, không điền OCR
+  thiếu và không suy diễn content bảng.
+- Machine-silver phải có `raw_metric_identity.exact=true` ngoài exact row/cell
+  và period binding. Chuẩn hóa chỉ cho mã dòng cấu trúc, reference thuyết minh
+  độc lập và `TNDN`; các nhãn gần nghĩa vẫn `machine_provisional`.
+- Artifact mới mang suffix `_context_v3` và protocol
+  `raw_v2_canonical_context_v3`. V1/V2 tiếp tục được giữ cho audit lịch sử,
+  không được đưa vào autonomous training.
+
 - Dựng grid V2 từ raw HTML, giữ ô trống, mở rộng `rowspan`/`colspan` và giữ
   cell provenance.
 - Thêm context schema V2: exact source title, nearest numbered topic, period,

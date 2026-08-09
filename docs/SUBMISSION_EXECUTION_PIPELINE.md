@@ -6,7 +6,7 @@ without silently treating a machine recommendation as a human label.
 ```text
 full V3 bundle
   -> repair-tables (immutable V2 raw-HTML grid)
-  -> preprocess (numeric-safe V2 canonical header / period context)
+  -> preprocess (numeric-safe V3 canonical header / period context)
   -> autonomous (independent source + semantic + critic views)
   -> machine execution ledger (exact-cell direct answers + tiny formula allow-list)
   -> submission compiler (all questions only)
@@ -47,15 +47,16 @@ Assuming Kaggle output was extracted at `/path/to/run_full_001`:
 ```
 
 The runner derives file names from the bundle's question count and context
-contract. Therefore a 1,012-question V2 run writes
-`machine_reviews_1012_autonomous_context_v2.jsonl` (or
-`machine_reviews_1012_autonomous_replanned_context_v2.jsonl` with an override)
-and does not overwrite V1 or 60-question pilot artifacts.
+contract. Therefore a 1,012-question V3 run writes
+`machine_reviews_1012_autonomous_context_v3.jsonl` (or
+`machine_reviews_1012_autonomous_replanned_context_v3.jsonl` with an override)
+and does not overwrite V1/V2 or 60-question pilot artifacts.
 
-`preprocess` writes `tables_evidence_context_v2.jsonl`; new autonomous and
+`preprocess` writes `tables_evidence_context_v3.jsonl`; new autonomous and
 ledger stages default to it and require its exactly-one-reliable-number binding
-policy. `tables_evidence_context_v1.jsonl` is retained only to audit historic
-sidecars, never overwritten by this flow.
+policy, conservative inline-header provenance and exact raw metric identity for
+machine-silver promotion. `tables_evidence_context_v1.jsonl` and `v2` are
+retained only to audit historic sidecars, never overwritten by this flow.
 
 `submission` is deliberately fail-closed: it creates a ZIP only when the
 execution ledger covers every public question with allowed provenance.  The

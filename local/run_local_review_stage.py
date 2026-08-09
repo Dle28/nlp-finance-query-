@@ -174,7 +174,7 @@ def main() -> None:
     final_labels = labels / f"retriever_labels_v2_{run_tag}.jsonl"
     review_ledger = labels / f"review_ledger_{run_tag}.jsonl"
     human_check_queue = labels / f"human_check_queue_{run_tag}.jsonl"
-    evidence_context = bundle / "tables_evidence_context_v2.jsonl"
+    evidence_context = bundle / "tables_evidence_context_v3.jsonl"
     overrides = (
         args.question_plan_overrides.resolve()
         if args.question_plan_overrides is not None
@@ -183,16 +183,16 @@ def main() -> None:
     if overrides is not None and not overrides.is_file():
         raise FileNotFoundError(overrides)
     plan_variant = "_replanned" if overrides is not None else ""
-    # Context V1 files remain auditable history.  New default reviews must be
+    # Context V1/V2 files remain auditable history. New default reviews must be
     # physically distinguishable, otherwise autotrain/submission could consume
     # a result made before the numeric-safety contract existed.
-    artifact_variant = f"{plan_variant}_context_v2"
+    artifact_variant = f"{plan_variant}_context_v3"
     autonomous_reviews = labels / f"machine_reviews_{run_tag}_autonomous{artifact_variant}.jsonl"
     autonomous_quarantine = labels / f"autonomous_quarantine_{run_tag}{artifact_variant}.jsonl"
     autonomous_silver = labels / f"machine_silver_labels_{run_tag}{artifact_variant}.jsonl"
     execution_ledger = labels / f"machine_execution_ledger_{run_tag}{artifact_variant}.jsonl"
-    formula_evidence = bundle / "formula_evidence_sets_context_v2_discovered.jsonl"
-    direct_evidence = bundle / "direct_evidence_sets_context_v2_discovered.jsonl"
+    formula_evidence = bundle / "formula_evidence_sets_context_v3_discovered.jsonl"
+    direct_evidence = bundle / "direct_evidence_sets_context_v3_discovered.jsonl"
 
     if args.mode == "preprocess":
         command = [

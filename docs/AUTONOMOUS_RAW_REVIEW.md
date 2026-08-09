@@ -15,8 +15,9 @@ immutable review bundle
         │       - rowspan / colspan provenance preserved
         │       - raw source UID / hash checked
         │
-        └── V2 canonical evidence context
+        └── V3 canonical evidence context
                 - parent + child header paths reconstructed from span provenance
+                - limited inline-`td` header recovery when raw source proves it
                 - period and unit labels per source column
                 - row roles and reliable-numeric profiles
                 - exactly-one-number binding policy per source cell
@@ -71,12 +72,22 @@ as an answer or formula operand. A row with no remaining reliable number is
 `data_with_unreliable_numeric`, not a usable data row; a sibling valid cell in
 the same row remains available. No OCR text is split, replaced, or inferred.
 
-The old `tables_evidence_context_v1.jsonl` remains immutable for historical
-sidecar audits. New preprocessing writes `tables_evidence_context_v2.jsonl`
-and `table_evidence_context_v2.manifest.json`; every new review, formula
-EvidenceSet and execution ledger must name or default to that V2 sidecar.
-The convenience runner includes `_context_v2` in its generated review, silver
-label and execution-ledger filenames for the same reason.
+V3 adds one narrow recovery for OCR exports whose header was emitted as leading
+`td` rows rather than HTML `th`: it inspects at most three contiguous rows
+before the first data row, accepts them only when every observed numeric column
+has source text with valid provenance and a period/unit/reference cue, then
+records the exact source cells used. It never uses a bare number as a header
+and deliberately excludes section/group headings without those cues. Thus it
+does not shift data, invent missing header text, or turn a table with an
+unproven header into a review-ready table.
+
+The old `tables_evidence_context_v1.jsonl` and `v2` remain immutable for
+historical sidecar audits. New preprocessing writes
+`tables_evidence_context_v3.jsonl` and
+`table_evidence_context_v3.manifest.json`; every new review, formula
+EvidenceSet and execution ledger must name or default to that V3 sidecar. The
+convenience runner includes `_context_v3` in its generated review, silver label
+and execution-ledger filenames for the same reason.
 
 ## Independent autonomous gates
 
@@ -91,7 +102,11 @@ A selected candidate must pass all of these before it can be machine silver:
    period/year. A report metadata year alone never binds a comparison column.
    ``Năm nay`` is allowed only when the candidate report year exactly equals
    the question year and the raw header says so.
-5. Semantic grounding, metadata and multiple candidate-selection views agree;
+5. The raw value-row metric has the exact significant-token identity of the
+   planned metric. Structural row codes, standalone accounting-note references
+   and the standard acronym `TNDN` may be normalized only as recorded audit
+   transforms; words such as `tổng`, `số dư` or `nguyên giá` are never dropped.
+6. Semantic grounding, metadata and multiple candidate-selection views agree;
    the critic must not find a near-tied alternative.
 
 The views are deliberately not treated as independent ground truth.  They are
@@ -128,7 +143,7 @@ a review record cannot bypass the critic merely by carrying the policy name.
 
 Top-K retrieval can omit a table even when the local V2 corpus contains an
 exact raw row for a direct lookup. Before V4 review, the autonomous runner now
-builds `direct_evidence_sets_context_v2_discovered.jsonl`. It filters only by
+builds `direct_evidence_sets_context_v3_discovered.jsonl`. It filters only by
 the effective plan's ticker/year/scope, requires a `review_ready` canonical
 context, an exact significant metric-token sequence in one raw row, no explicit
 opposite `đầu`/`cuối` row endpoint, and exactly one reliable raw-header-bound
@@ -206,9 +221,9 @@ coverage sidecar:
 ```bash
 python scripts/build_formula_evidence_sets.py \
   --bundle-dir ~/ViFinQA_review/run_002 \
-  --evidence-context ~/ViFinQA_review/run_002/tables_evidence_context_v2.jsonl \
+  --evidence-context ~/ViFinQA_review/run_002/tables_evidence_context_v3.jsonl \
   --discover-source-operands \
-  --output ~/ViFinQA_review/run_002/formula_evidence_sets_context_v2_discovered.jsonl
+  --output ~/ViFinQA_review/run_002/formula_evidence_sets_context_v3_discovered.jsonl
 ```
 
 An operand is recorded only when its metric has an exact V2 data row and a
@@ -235,8 +250,8 @@ Audit the generated sidecar before considering executor work:
 ```bash
 python scripts/analyze_formula_evidence.py \
   --bundle-dir ~/ViFinQA_review/run_002 \
-  --formula-evidence ~/ViFinQA_review/run_002/formula_evidence_sets_context_v2_discovered.jsonl \
-  --output ~/ViFinQA_review/run_002/formula_evidence_sets_context_v2_discovered.audit.json
+  --formula-evidence ~/ViFinQA_review/run_002/formula_evidence_sets_context_v3_discovered.jsonl \
+  --output ~/ViFinQA_review/run_002/formula_evidence_sets_context_v3_discovered.audit.json
 ```
 
 The audit verifies each stored operand row/cell/header against V2 again and

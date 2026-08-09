@@ -51,7 +51,7 @@ def parse_args() -> argparse.Namespace:
         "--evidence-context",
         type=Path,
         default=None,
-        help="Canonical context sidecar; defaults to tables_evidence_context_v2.jsonl in the bundle.",
+        help="Canonical context sidecar; defaults to tables_evidence_context_v3.jsonl in the bundle.",
     )
     parser.add_argument(
         "--formula-evidence",
@@ -688,7 +688,7 @@ def main() -> None:
     if unexpected:
         raise ValueError(f"Machine reviews contain IDs outside bundle: {unexpected[:10]}")
     tables = load_v2_tables(bundle)
-    context_path = (args.evidence_context or bundle / "tables_evidence_context_v2.jsonl").resolve()
+    context_path = (args.evidence_context or bundle / "tables_evidence_context_v3.jsonl").resolve()
     if context_path.parent != bundle:
         raise ValueError("Execution context sidecar must reside in the review bundle")
     contexts = load_evidence_contexts(bundle, context_path)

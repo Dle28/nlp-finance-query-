@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 from typing import Any, Iterable
 
+from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -76,10 +78,27 @@ def machine_training_eligible(
     allowed = {"machine_calibrated", "machine_high_confidence"}
     if include_provisional:
         allowed.add("machine_provisional")
+    self_review = row.get("machine_self_review") or {}
+    selected_assessment = self_review.get("selected_assessment") or {}
+    raw_metric_identity = selected_assessment.get("raw_metric_identity") or {}
     return bool(
         status in allowed
         and row.get("machine_candidate_uid")
         and (row.get("structure_validation") or {}).get("validated")
+        # Export is the first machine-silver boundary, rather than relying on
+        # the later dense trainer to reject an ordinary/legacy machine label.
+        # Provisional labels can be exported only through the explicit legacy
+        # debug flag and still never pass the machine-silver trainer gate.
+        and (
+            include_provisional
+            and status == "machine_provisional"
+            or (
+                str(self_review.get("protocol") or "")
+                == AUTONOMOUS_REVIEW_PROTOCOL
+                and bool(self_review.get("training_eligible"))
+                and bool(raw_metric_identity.get("exact"))
+            )
+        )
     )
 
 

@@ -59,20 +59,15 @@ flowchart TD
 
     subgraph LOCAL["Local side"]
         DOWNLOAD --> STRUCTURE[Raw-HTML table structure V2]
-        STRUCTURE --> DIAG[Diagnostic gate]
-        DIAG --> AGENTS[Source-aware multi-agent review]
-        AGENTS --> CODEX[Codex-assisted evidence-set review]
-        CODEX --> LEDGER[Full review ledger]
-        LEDGER --> CHECK[Stratified human spot-check]
-        CHECK --> HUMAN[Human verification]
-        HUMAN --> CODEX
-        HUMAN --> CAL[Review calibrator]
-        CAL --> RERUN[Rerun reviewers]
-        RERUN --> AUTO[Machine calibrated]
-        RERUN --> NEED[Needs human]
-        NEED --> HUMAN2[Human resolve uncertainty]
-        AUTO --> LABELS[Retrieval labels]
-        HUMAN2 --> LABELS
+        STRUCTURE --> CONTEXT[Canonical evidence context V3]
+        CONTEXT --> DIAG[Diagnostic gate]
+        DIAG --> AGENTS[Source-aware multi-agent cross-review]
+        AGENTS --> IDENTITY[Exact raw-row / raw-column / metric gate]
+        IDENTITY --> LEDGER[Full review and execution ledger]
+        LEDGER --> AUTO[Machine calibrated silver]
+        LEDGER --> PROV[Machine provisional audit]
+        LEDGER --> NEED[Needs human quarantine]
+        AUTO --> LABELS[Retrieval labels when threshold is met]
     end
 
     LABELS --> TRAIN[Retriever / reranker training & evaluation]
@@ -149,6 +144,22 @@ compact review UI / section gate / formula EvidenceSet
 
 Sidecar không thay raw source, không thay annotation provenance và không rebuild
 Kaggle/FTS/FAISS. Chi tiết contract: [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md).
+
+### 3.4 Canonical evidence context V3 và machine-silver boundary
+
+V2 grid là bằng chứng lossless. Context V3 là sidecar suy dẫn từ grid đó, không
+phải một lớp OCR correction: nó dựng header cha–con từ span provenance và chỉ
+hồi phục header dạng `td` khi bảng không có HTML header, tối đa ba hàng đứng
+trước data đều còn provenance hợp lệ, mỗi cột số có text nguồn và có cue
+kỳ/đơn vị/tham chiếu. Mã/heading nhóm hoặc số trần không được dùng làm header.
+Nếu không chứng minh đủ, bảng vẫn `needs_processing`.
+
+Một label máy chỉ vào tập `machine_calibrated`/machine-silver khi selected
+value row, cell và column header khớp raw V2, đồng thời significant token của
+metric khớp exact với raw row. Chỉ mã dòng cấu trúc, tham chiếu thuyết minh độc
+lập và viết tắt `TNDN` có audit transform hẹp; pipeline không bỏ các từ nghiệp
+vụ như `tổng`, `số dư`, `nguyên giá`. `machine_provisional` và `needs_human`
+vẫn là audit/quarantine và không thể vào training.
 
 ---
 

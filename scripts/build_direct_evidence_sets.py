@@ -160,7 +160,7 @@ def main() -> None:
     if output.parent != bundle:
         raise ValueError("Direct EvidenceSet output must reside in the review bundle")
     context_path = (
-        args.evidence_context or bundle / "tables_evidence_context_v2.jsonl"
+        args.evidence_context or bundle / "tables_evidence_context_v3.jsonl"
     ).resolve()
     if context_path.parent != bundle:
         raise ValueError("Direct EvidenceSet context must reside in the review bundle")

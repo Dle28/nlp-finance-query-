@@ -27,7 +27,7 @@ from .table_structure import normalize_space, sha256_file
 
 
 NUMERIC_CELL_RE = re.compile(r"^[\s()\-+\d.,%/]+$")
-EVIDENCE_CONTEXT_VERSION = 2
+EVIDENCE_CONTEXT_VERSION = 3
 AUTONOMOUS_REVIEW_PROTOCOL = f"raw_v2_canonical_context_v{EVIDENCE_CONTEXT_VERSION}"
 PERIOD_RE = re.compile(
     r"(?:31\s*[/.-]\s*12\s*[/.-]\s*(?:19|20)\d{2}|"
@@ -40,6 +40,19 @@ UNIT_RE = re.compile(
     r"(?:nghìn|ngàn|triệu|tỷ)\s*(?:vnd|đồng)|vnd|%|phần trăm",
     re.IGNORECASE,
 )
+# ``header_row_indices`` is extracted from HTML header elements.  A material
+# subset of reports put a perfectly usable header in ``<td>`` cells instead.
+# These cues are intentionally narrow: an inline recovery must remain a
+# source-preserving header designation, never an OCR correction or a guess at
+# an absent period/unit.
+INLINE_HEADER_CUE_RE = re.compile(
+    r"(?:mã\s*số|thuyết\s*minh|năm\s*(?:nay|trước)|kỳ\s*(?:này|trước)|"
+    r"số\s*(?:đầu|cuối)|đầu\s*(?:năm|kỳ)|cuối\s*(?:năm|kỳ)|"
+    r"(?:31|01|1)\s*[/.-]\s*(?:12|01|1)\s*[/.-]\s*(?:19|20)\d{2}|"
+    r"(?:19|20)\d{2}|vnd|đồng|triệu|tỷ|nghìn|ngàn|%|phần\s*trăm)",
+    re.IGNORECASE,
+)
+INLINE_HEADER_MAX_PREFIX_ROWS = 3
 
 
 def _is_int(value: Any) -> bool:
@@ -141,11 +154,21 @@ def effective_header_row_indices(table: dict[str, Any]) -> tuple[list[int], list
     return effective, excluded
 
 
-def canonical_headers(table: dict[str, Any]) -> dict[str, Any]:
+def canonical_headers(
+    table: dict[str, Any],
+    *,
+    header_indices_override: list[int] | None = None,
+    inline_recovery: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Create per-column source-header paths while preserving header provenance."""
     rows = table.get("rows") or []
     provenance = table.get("cell_provenance") or []
-    header_indices, excluded_header_indices = effective_header_row_indices(table)
+    detected_header_indices, excluded_header_indices = effective_header_row_indices(table)
+    header_indices = (
+        detected_header_indices
+        if header_indices_override is None
+        else list(header_indices_override)
+    )
     if not rows:
         return {
             "header_row_indices": [],
@@ -216,6 +239,7 @@ def canonical_headers(table: dict[str, Any]) -> dict[str, Any]:
         "excluded_header_row_indices": excluded_header_indices,
         "columns": columns,
         "span_recoveries": span_recoveries,
+        "inline_recovery": inline_recovery or {},
     }
 
 
@@ -279,6 +303,135 @@ def row_profiles(table: dict[str, Any], header_indices: set[int]) -> list[dict[s
             }
         )
     return profiles
+
+
+def recover_inline_raw_headers(
+    table: dict[str, Any],
+    detected_headers: dict[str, Any],
+    initial_profiles: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Designate a raw ``<td>`` header prefix only under a complete contract.
+
+    The recovery is deliberately local to one V2 table. It is available only
+    when HTML supplied *no* leading header row; every observed numeric data
+    column must have text in the prefix and the complete prefix must expose a
+    period, unit or reference-header cue. Header strings are read through the
+    same span-provenance path as ordinary canonical headers.
+    """
+    detected = list(detected_headers.get("header_row_indices") or [])
+    if detected:
+        return {
+            "status": "not_needed",
+            "reason": "html_header_prefix_present",
+            "header_row_indices": [],
+        }
+    rows = table.get("rows") or []
+    provenance = table.get("cell_provenance") or []
+    if not rows or not source_grid_integrity(table).get("provenance_complete"):
+        return {
+            "status": "not_recovered",
+            "reason": "raw_grid_or_provenance_unavailable",
+            "header_row_indices": [],
+        }
+    data_profiles = [profile for profile in initial_profiles if profile.get("role") == "data"]
+    if not data_profiles:
+        return {
+            "status": "not_recovered",
+            "reason": "no_reliable_numeric_data_row",
+            "header_row_indices": [],
+        }
+    first_data = min(int(profile["row_index"]) for profile in data_profiles)
+    if first_data < 1 or first_data > INLINE_HEADER_MAX_PREFIX_ROWS:
+        return {
+            "status": "not_recovered",
+            "reason": "header_prefix_outside_bounded_leading_rows",
+            "header_row_indices": [],
+        }
+    numeric_columns = sorted(
+        {
+            int(column)
+            for profile in data_profiles
+            for column in profile.get("numeric_columns") or []
+            if _is_int(column) and int(column) > 0
+        }
+    )
+    if not numeric_columns:
+        return {
+            "status": "not_recovered",
+            "reason": "no_non_label_numeric_columns",
+            "header_row_indices": [],
+        }
+
+    # A section/group cell can span every numeric column (for example
+    # ``I. Doanh thu``). It is real source text but not a period/unit/header
+    # label. Restrict recovery rows themselves to an explicit header cue so a
+    # group heading cannot pollute each canonical numeric-column label.
+    qualifying_rows: set[int] = set()
+    width = len(rows[0]) if rows else 0
+    for row_index in range(first_data):
+        for column_index in range(width):
+            text, valid = _source_text(rows, provenance, row_index, column_index)
+            if valid and INLINE_HEADER_CUE_RE.search(text):
+                qualifying_rows.add(row_index)
+                break
+    if not qualifying_rows:
+        return {
+            "status": "not_recovered",
+            "reason": "inline_prefix_has_no_period_unit_or_reference_cue",
+            "header_row_indices": [],
+        }
+
+    contributing_rows: set[int] = set()
+    header_texts: list[str] = []
+    source_cells: list[dict[str, int]] = []
+    for column_index in numeric_columns:
+        texts: list[tuple[int, str, dict[str, Any]]] = []
+        for row_index in sorted(qualifying_rows):
+            text, valid = _source_text(rows, provenance, row_index, column_index)
+            if not valid:
+                return {
+                    "status": "not_recovered",
+                    "reason": "header_span_provenance_unavailable",
+                    "header_row_indices": [],
+                }
+            if text:
+                texts.append((row_index, text, provenance[row_index][column_index]))
+        if not texts:
+            return {
+                "status": "not_recovered",
+                "reason": "numeric_column_has_no_inline_raw_header",
+                "header_row_indices": [],
+            }
+        # A bare numeric cell in the prefix is evidence only when it is itself
+        # a raw period/unit header (for example ``31/12/2023``). Otherwise it
+        # may be an OCR-shifted value and must not be relabelled as a header.
+        if any(
+            _is_reliable_numeric_value(text) and not INLINE_HEADER_CUE_RE.search(text)
+            for _row_index, text, _origin in texts
+        ):
+            return {
+                "status": "not_recovered",
+                "reason": "inline_prefix_contains_unqualified_numeric_cell",
+                "header_row_indices": [],
+            }
+        for row_index, text, origin in texts:
+            contributing_rows.add(row_index)
+            header_texts.append(text)
+            anchor_row = origin.get("anchor_row")
+            anchor_column = origin.get("anchor_column")
+            if _is_int(anchor_row) and _is_int(anchor_column):
+                source_cells.append(
+                    {"row_index": int(anchor_row), "column_index": int(anchor_column)}
+                )
+    header_rows = sorted(contributing_rows)
+    return {
+        "status": "recovered",
+        "method": "bounded_inline_raw_header_prefix_v1",
+        "header_row_indices": header_rows,
+        "first_data_row_index": first_data,
+        "numeric_columns": numeric_columns,
+        "header_source_cells": source_cells,
+    }
 
 
 def evidence_quality(
@@ -359,7 +512,20 @@ def evidence_quality(
 def build_evidence_context(table: dict[str, Any]) -> dict[str, Any]:
     """Build one independent V3 context row from one V2 raw-HTML structure."""
     grid = source_grid_integrity(table)
-    headers = canonical_headers(table)
+    detected_headers = canonical_headers(table)
+    initial_profiles = row_profiles(table, set(detected_headers["header_row_indices"]))
+    inline_recovery = recover_inline_raw_headers(
+        table, detected_headers, initial_profiles
+    )
+    headers = (
+        canonical_headers(
+            table,
+            header_indices_override=list(inline_recovery["header_row_indices"]),
+            inline_recovery=inline_recovery,
+        )
+        if inline_recovery.get("status") == "recovered"
+        else {**detected_headers, "inline_recovery": inline_recovery}
+    )
     profiles = row_profiles(table, set(headers["header_row_indices"]))
     quality = evidence_quality(table, grid, headers, profiles)
     provenance = table.get("source_provenance") or {}
@@ -497,7 +663,9 @@ def validate_evidence_context_sidecar(
         raise FileNotFoundError("Evidence-context sidecar or manifest is missing")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     version = int(manifest.get("evidence_context_version") or 0)
-    if version not in {1, EVIDENCE_CONTEXT_VERSION}:
+    # V1/V2 remain readable only as auditable history. New autonomous review
+    # uses V3 so an inline raw-header designation is visible in its protocol.
+    if version not in {1, 2, EVIDENCE_CONTEXT_VERSION}:
         raise ValueError("Unsupported evidence-context sidecar version")
     if version >= 2 and str(manifest.get("numeric_binding_policy") or "") != "one_reliable_raw_v2_number_per_cell":
         raise ValueError("Evidence-context V2 lacks its numeric binding policy")

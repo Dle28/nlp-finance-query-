@@ -11,7 +11,7 @@ from finance_query.evidence_context import (
 
 class EvidenceContextTests(unittest.TestCase):
     def test_context_version_and_manifest_names_are_sidecar_specific(self):
-        self.assertEqual(EVIDENCE_CONTEXT_VERSION, 2)
+        self.assertEqual(EVIDENCE_CONTEXT_VERSION, 3)
         self.assertEqual(
             evidence_context_manifest_path(Path("tables_evidence_context_v1.jsonl")),
             Path("table_evidence_context_v1.manifest.json"),
@@ -20,6 +20,75 @@ class EvidenceContextTests(unittest.TestCase):
             evidence_context_manifest_path(Path("tables_evidence_context_v2.jsonl")),
             Path("table_evidence_context_v2.manifest.json"),
         )
+        self.assertEqual(
+            evidence_context_manifest_path(Path("tables_evidence_context_v3.jsonl")),
+            Path("table_evidence_context_v3.manifest.json"),
+        )
+
+    def test_inline_raw_td_header_prefix_recovers_only_its_own_source_cells(self):
+        table = {
+            "internal_table_uid": "inline_header",
+            "rows": [
+                ["", "Miền Bắc triệu đồng", "Tổng cộng triệu đồng"],
+                ["I. Doanh thu", "", ""],
+                ["Doanh thu lãi", "100", "120"],
+            ],
+            # The source used <td>, not <th>; no parser header is available.
+            "header_row_indices": [],
+            "cell_provenance": [
+                [
+                    {"anchor_row": 0, "anchor_column": column, "covered_by_span": False}
+                    for column in range(3)
+                ],
+                [
+                    {"anchor_row": 1, "anchor_column": 0, "covered_by_span": False},
+                    {"anchor_row": 1, "anchor_column": 0, "covered_by_span": True},
+                    {"anchor_row": 1, "anchor_column": 0, "covered_by_span": True},
+                ],
+                [
+                    {"anchor_row": 2, "anchor_column": column, "covered_by_span": False}
+                    for column in range(3)
+                ],
+            ],
+            "source_provenance": {},
+        }
+
+        context = build_evidence_context(table)
+
+        headers = context["canonical_headers"]
+        recovery = headers["inline_recovery"]
+        self.assertEqual(recovery["status"], "recovered")
+        self.assertEqual(headers["header_row_indices"], [0])
+        self.assertEqual(headers["columns"][1]["source_label"], "Miền Bắc triệu đồng")
+        self.assertEqual(headers["columns"][2]["source_label"], "Tổng cộng triệu đồng")
+        self.assertNotIn("I. Doanh thu", headers["columns"][1]["source_label"])
+        self.assertEqual(context["row_profiles"][1]["role"], "group_or_note")
+        self.assertEqual(context["row_profiles"][2]["role"], "data")
+        self.assertEqual(context["quality"]["status"], "review_ready")
+
+    def test_inline_prefix_bare_number_is_not_relabelled_as_a_header(self):
+        table = {
+            "internal_table_uid": "inline_numeric_reject",
+            "rows": [["", "100", "Năm 2023"], ["Tiền", "200", "300"]],
+            "header_row_indices": [],
+            "cell_provenance": [
+                [
+                    {"anchor_row": row, "anchor_column": column, "covered_by_span": False}
+                    for column in range(3)
+                ]
+                for row in range(2)
+            ],
+            "source_provenance": {},
+        }
+
+        context = build_evidence_context(table)
+
+        self.assertEqual(
+            context["canonical_headers"]["inline_recovery"]["status"],
+            "not_recovered",
+        )
+        self.assertEqual(context["canonical_headers"]["header_row_indices"], [])
+        self.assertEqual(context["quality"]["status"], "needs_processing")
 
     def test_span_parent_header_is_recovered_without_changing_grid_cells(self):
         table = {

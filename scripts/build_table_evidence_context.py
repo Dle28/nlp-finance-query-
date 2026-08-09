@@ -92,6 +92,10 @@ def build_context_sidecar(
     continuation_recovery = recover_continuation_headers(rows)
     atomic_write_jsonl(output_path, rows)
     quality_counts = Counter(str((row.get("quality") or {}).get("status")) for row in rows)
+    inline_header_recovery = Counter(
+        str(((row.get("canonical_headers") or {}).get("inline_recovery") or {}).get("status") or "not_recorded")
+        for row in rows
+    )
     manifest = {
         "evidence_context_version": EVIDENCE_CONTEXT_VERSION,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -104,6 +108,7 @@ def build_context_sidecar(
         "quality_status_counts": dict(sorted(quality_counts.items())),
         "numeric_binding_policy": "one_reliable_raw_v2_number_per_cell",
         "continuation_header_recovery": continuation_recovery,
+        "inline_raw_header_recovery": dict(sorted(inline_header_recovery.items())),
         "sidecar_sha256": sha256_file(output_path),
         "errors": errors,
     }
@@ -115,7 +120,7 @@ def main() -> None:
     args = parse_args()
     bundle = args.bundle_dir.resolve()
     structure = args.structure or bundle / "tables_structured_v2.jsonl"
-    output = args.output or bundle / "tables_evidence_context_v2.jsonl"
+    output = args.output or bundle / f"tables_evidence_context_v{EVIDENCE_CONTEXT_VERSION}.jsonl"
     manifest = build_context_sidecar(bundle, structure, output, force=args.force)
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
     print("No Kaggle corpus, lexical index, dense embeddings, or FAISS index was rebuilt.")

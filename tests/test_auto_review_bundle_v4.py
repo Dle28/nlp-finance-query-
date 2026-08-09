@@ -188,6 +188,65 @@ class AutonomousReviewV4Tests(unittest.TestCase):
             "ordinary_multi_view_consensus",
         )
 
+    def test_related_raw_row_cannot_become_machine_calibrated_silver(self):
+        table = {
+            "internal_table_uid": "u_related",
+            "rows": [["", "Năm 2023"], ["Tổng tài sản", "100"]],
+            "header_row_indices": [0],
+            "cell_provenance": [
+                [
+                    {"anchor_row": row, "anchor_column": column, "covered_by_span": False}
+                    for column in range(2)
+                ]
+                for row in range(2)
+            ],
+            "source_provenance": {},
+        }
+        item = {
+            "id": 98,
+            "question": "Tài sản năm 2023 là bao nhiêu?",
+            "weak_family": "direct_lookup",
+            "effective_metric": "Tài sản",
+            "question_plan": {"family": "direct_lookup", "operands": [{"metric": "Tài sản"}]},
+            "candidates": [
+                {
+                    "internal_table_uid": "u_related",
+                    "rank": 1,
+                    "candidate_source": "retrieved",
+                    "metadata_score": 1.0,
+                    "ticker_match": True,
+                    "scope_match": True,
+                    "year_match": True,
+                    "report_year": 2023,
+                    "best_row_index": 1,
+                    "direct_evidence": "VALUE: Tổng tài sản | 100",
+                    "evidence_features": {
+                        "row_score": 1.0,
+                        "metric_overlap": 1.0,
+                        "question_overlap": 1.0,
+                        "numeric": True,
+                    },
+                    "structure_validation": {"validated": True, "row_index": 1},
+                }
+            ],
+        }
+        context = build_evidence_context(table)
+
+        review, _quarantine = mod.autonomous_review_item(
+            item,
+            {"u_related": table},
+            {"u_related": context},
+            token_gate=0.85,
+            bigram_gate=0.45,
+            min_agreement=0.67,
+            silver_threshold=0.84,
+        )
+
+        selected = review["machine_self_review"]["selected_assessment"]
+        self.assertFalse(selected["raw_metric_identity"]["exact"])
+        self.assertEqual(review["consensus_status"], "machine_provisional")
+        self.assertFalse(review["machine_self_review"]["training_eligible"])
+
     def test_strict_identity_tiebreak_needs_exact_raw_value_label(self):
         def table(uid: str, label: str, value: str) -> dict:
             return {
@@ -307,8 +366,8 @@ class AutonomousReviewV4Tests(unittest.TestCase):
         identity = assessment["raw_metric_identity"]
         self.assertTrue(identity["exact"])
         self.assertEqual(identity["ignored_note_references"], ["VI.06"])
-        self.assertEqual(
-            identity["reason"], "exact_after_ignoring_standalone_note_reference"
+        self.assertIn(
+            "structural_row_code_or_expanding_financial_acronym", identity["reason"]
         )
 
         wrong_item = {**item, "effective_metric": "Chi phí tài chính"}
@@ -316,6 +375,50 @@ class AutonomousReviewV4Tests(unittest.TestCase):
             wrong_item, candidate, table, context, token_gate=0.85, bigram_gate=0.45
         )["raw_metric_identity"]
         self.assertFalse(wrong_identity["exact"])
+
+    def test_raw_metric_identity_normalizes_only_structural_code_and_tndn(self):
+        table = {
+            "internal_table_uid": "u_identity",
+            "rows": [
+                ["Mã số", "Chỉ tiêu", "Năm 2023"],
+                ["XIII", "Lợi nhuận sau thuế", "100"],
+                ["16.", "Chi phí thuế TNDN theo thuế suất hiện hành", "50"],
+            ],
+            "header_row_indices": [0],
+            "cell_provenance": [
+                [
+                    {"anchor_row": row, "anchor_column": column, "covered_by_span": False}
+                    for column in range(3)
+                ]
+                for row in range(3)
+            ],
+        }
+        candidate = {"effective_metric": "Lợi nhuận sau thuế"}
+        first = mod.raw_metric_identity(
+            {"effective_metric": "Lợi nhuận sau thuế"},
+            candidate,
+            table,
+            {"row_index": 1},
+        )
+        second = mod.raw_metric_identity(
+            {
+                "effective_metric": (
+                    "Chi phí thuế thu nhập doanh nghiệp theo thuế suất hiện hành"
+                )
+            },
+            {
+                "effective_metric": (
+                    "Chi phí thuế thu nhập doanh nghiệp theo thuế suất hiện hành"
+                )
+            },
+            table,
+            {"row_index": 2},
+        )
+        self.assertTrue(first["exact"])
+        self.assertEqual(len(first["ignored_structural_row_code"]), 1)
+        self.assertIn("XIII", first["ignored_structural_row_code"][0])
+        self.assertTrue(second["exact"])
+        self.assertIn("structural_row_code_or_expanding_financial_acronym", second["reason"])
 
     def test_equivalent_critic_answer_requires_same_declared_source_unit(self):
         def table(uid: str, label: str, *, unit: str) -> dict:

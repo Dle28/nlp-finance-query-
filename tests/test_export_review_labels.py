@@ -4,6 +4,8 @@ import importlib.util
 import unittest
 from pathlib import Path
 
+from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
+
 
 ROOT = Path(__file__).parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -22,6 +24,30 @@ class ExportReviewLabelTests(unittest.TestCase):
             mod.id_preview(list(range(15))),
             "15 [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, …]",
         )
+
+    def test_machine_silver_export_requires_v3_exact_raw_metric(self) -> None:
+        review = {
+            "consensus_status": "machine_calibrated",
+            "machine_candidate_uid": "table-1",
+            "structure_validation": {"validated": True},
+            "machine_self_review": {
+                "protocol": AUTONOMOUS_REVIEW_PROTOCOL,
+                "training_eligible": True,
+                "selected_assessment": {"raw_metric_identity": {"exact": True}},
+            },
+        }
+        self.assertTrue(mod.machine_training_eligible(review))
+
+        review["machine_self_review"]["selected_assessment"]["raw_metric_identity"][
+            "exact"
+        ] = False
+        self.assertFalse(mod.machine_training_eligible(review))
+
+        review["machine_self_review"]["selected_assessment"]["raw_metric_identity"][
+            "exact"
+        ] = True
+        review["machine_self_review"]["protocol"] = "raw_v2_canonical_context_v2"
+        self.assertFalse(mod.machine_training_eligible(review))
 
 
 if __name__ == "__main__":

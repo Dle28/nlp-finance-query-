@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
         "--evidence-context",
         type=Path,
         default=None,
-        help="Canonical context sidecar; defaults to tables_evidence_context_v2.jsonl in the bundle.",
+        help="Canonical context sidecar; defaults to tables_evidence_context_v3.jsonl in the bundle.",
     )
     parser.add_argument("--model", default="BAAI/bge-reranker-v2-m3")
     parser.add_argument("--device", default="cpu")
@@ -79,7 +79,7 @@ def main() -> None:
         raise ValueError("batch-size/top-candidates must be positive and max-length must be at least 32")
     bundle = args.bundle_dir.resolve()
     structured = bundle / "tables_structured_v2.jsonl"
-    contexts_path = (args.evidence_context or bundle / "tables_evidence_context_v2.jsonl").resolve()
+    contexts_path = (args.evidence_context or bundle / "tables_evidence_context_v3.jsonl").resolve()
     if contexts_path.parent != bundle:
         raise ValueError("Semantic context sidecar must reside in the review bundle")
     validate_structure_sidecar(bundle, structured)

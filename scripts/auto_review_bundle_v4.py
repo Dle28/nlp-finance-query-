@@ -51,6 +51,20 @@ RAW_NOTE_REFERENCE_RE = re.compile(
     r"(?<!\w)[IVXLCDM]+\s*\.\s*\d+(?:\s*\([A-Za-z]\))?(?!\w)",
     re.IGNORECASE,
 )
+# Statement row codes (``XIII``, ``16.``, ``1.2.``) are not financial
+# metric words. They can occur in their own source cell or before the textual
+# label after V2 row serialization. Do not treat an ordinary word as a code:
+# a code must have an explicit structural separator.
+RAW_STRUCTURAL_ROW_CODE_RE = re.compile(
+    r"^\s*(?:(?:[IVXLCDM]+|\d+(?:\.\d+)*|[A-Za-z])\s*(?:[.)]|>)\s*)+",
+    re.IGNORECASE,
+)
+STRICT_FINANCIAL_TOKEN_EXPANSIONS = {
+    # This is a fixed Vietnamese accounting abbreviation, not a learned
+    # similarity rule. It permits source ``TNDN`` to match the same fully
+    # spelled-out source/question metric and nothing else.
+    "tndn": ("thuế", "thu", "nhập", "doanh", "nghiệp"),
+}
 STRICT_TIEBREAK_MIN_SEMANTIC = 0.90
 STRICT_TIEBREAK_MIN_EVIDENCE = 0.85
 DIRECT_EVIDENCE_SCHEMA_VERSION = 1
@@ -484,15 +498,32 @@ def raw_metric_identity(
             "row_tokens": [],
         }
     metric = v3.metric_text(item, candidate)
-    metric_tokens = [
-        token for token in v3.token_sequence(metric) if not token.isdecimal()
-    ]
+    def identity_tokens(value: str) -> tuple[list[str], bool]:
+        output: list[str] = []
+        used_financial_acronym = False
+        for token in v3.token_sequence(value):
+            if token.isdecimal():
+                continue
+            expansion = STRICT_FINANCIAL_TOKEN_EXPANSIONS.get(token)
+            used_financial_acronym = used_financial_acronym or expansion is not None
+            if token == "tndn" and output[-1:] == ["thuế"]:
+                # ``thuế TNDN`` is the standard shortened spelling of
+                # ``thuế thu nhập doanh nghiệp``; do not duplicate ``thuế``.
+                output.extend(expansion[1:])
+            else:
+                output.extend(expansion or (token,))
+        return output, used_financial_acronym
+
+    metric_tokens, metric_uses_acronym = identity_tokens(metric)
     label = row_label([str(value) for value in rows[row_index]])
     ignored_note_references = RAW_NOTE_REFERENCE_RE.findall(label)
-    identity_label = RAW_NOTE_REFERENCE_RE.sub("", label)
-    row_tokens = [
-        token for token in v3.token_sequence(identity_label) if not token.isdecimal()
-    ]
+    without_note_references = RAW_NOTE_REFERENCE_RE.sub("", label)
+    ignored_structural_row_code = RAW_STRUCTURAL_ROW_CODE_RE.findall(
+        without_note_references
+    )
+    identity_label = RAW_STRUCTURAL_ROW_CODE_RE.sub("", without_note_references)
+    row_tokens, row_uses_acronym = identity_tokens(identity_label)
+    used_financial_acronym = metric_uses_acronym or row_uses_acronym
     exact = bool(metric_tokens) and metric_tokens == row_tokens
     return {
         "exact": exact,
@@ -500,12 +531,24 @@ def raw_metric_identity(
         "raw_row_label": label,
         "identity_row_label": identity_label,
         "ignored_note_references": ignored_note_references,
+        "ignored_structural_row_code": ignored_structural_row_code,
+        "expanded_financial_acronym": used_financial_acronym,
         "metric_tokens": metric_tokens,
         "row_tokens": row_tokens,
         "reason": (
             "exact_significant_token_sequence"
-            if exact and not ignored_note_references
+            if exact
+            and not ignored_note_references
+            and not ignored_structural_row_code
+            and not used_financial_acronym
             else "exact_after_ignoring_standalone_note_reference"
+            if (
+                exact
+                and ignored_note_references
+                and not ignored_structural_row_code
+                and not used_financial_acronym
+            )
+            else "exact_after_ignoring_structural_row_code_or_expanding_financial_acronym"
             if exact
             else "metric_row_label_differs"
         ),
@@ -753,6 +796,12 @@ def autonomous_review_item(
     )
     ordinary_silver = (
         fully_grounded_direct
+        # A high overlap score is useful for review ordering, but it is not a
+        # license to turn a related row into a training label. The selected
+        # raw V2 row must name the planned metric exactly; otherwise a newly
+        # recovered header can make an unrelated but nearby row look highly
+        # confident (for example a construction advance versus PPE cost).
+        and bool(selected["raw_metric_identity"].get("exact"))
         and agreement >= min_agreement
         and critic_accepts
         and confidence >= silver_threshold
@@ -863,7 +912,7 @@ def main() -> None:
     if int(manifest.get("error_count") or 0) != 0:
         raise RuntimeError("Refuse autonomous review: bundle contains retrieval errors.")
     structure_path = bundle / "tables_structured_v2.jsonl"
-    context_path = args.evidence_context or bundle / "tables_evidence_context_v2.jsonl"
+    context_path = args.evidence_context or bundle / "tables_evidence_context_v3.jsonl"
     validate_structure_sidecar(bundle, structure_path)
     validate_evidence_context_sidecar(bundle, structure_path, context_path)
     source_items = v3.load_jsonl(bundle / "review_items.jsonl")

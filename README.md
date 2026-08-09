@@ -48,26 +48,20 @@ Mục tiêu hiện tại chưa phải sinh answer cuối bằng LLM. Mục tiêu
                         ▼
        raw-HTML table-structure sidecar V2
        - preserve empty cells / expand spans
+       - canonical evidence context V3
        - table function/purpose + context trace
+       - conservative inline-`td` header recovery
        - accounting-side and formula-operand gates
                         │
                         ▼
                   diagnostic gate
                         │
                         ▼
-             source-aware multi-agent review
+             source-aware multi-agent cross-review
                         │
-               Codex-assisted review
+          exact raw-row / raw-column / metric gate
                         │
-                 human spot-check ~6 câu
-                        │
-                 Codex review lại
-                        │
-                        ▼
-                 review calibrator
-                        │
-                        ▼
-             rerun machine review toàn bộ
+       machine-silver accumulation (no human relabelling)
                         │
             ┌───────────┴───────────┐
             ▼                       ▼
@@ -435,19 +429,22 @@ python local/run_local_review_stage.py autonomous \
     --bundle-dir ~/ViFinQA_review/run_002
 ```
 
-`preprocess` tạo `tables_evidence_context_v2.jsonl` cùng manifest riêng từ V2
-raw-HTML grid: khôi phục path tiêu đề
-cha–con theo span provenance, bind period/unit vào cột nguồn và quarantine
-bảng không đủ dữ kiện. Sidecar cũng tách cell chỉ *trông* giống số khỏi cell
-parse được đúng một số; OCR ghép nhiều nhóm số bị quarantine, không bị tách
-hay suy diễn. `autonomous` cho retrieval/semantic/evidence/metadata/
-challenger/critic views review chéo. Chỉ direct lookup qua toàn bộ source gate
-mới là `machine_calibrated` silver; phần còn lại vẫn là `machine_provisional`
-hoặc `needs_human` và bị loại khỏi train.
+`preprocess` tạo `tables_evidence_context_v3.jsonl` cùng manifest riêng từ V2
+raw-HTML grid. Context V3 giữ nguyên grid/numbers và khôi phục path tiêu đề
+cha–con theo span provenance. Khi bảng **không có** header HTML, nó chỉ có thể
+dùng tối đa ba hàng `td` đứng trước data làm header nếu từng cột số có text
+nguồn, provenance hợp lệ và có cue kỳ/đơn vị/tham chiếu; heading nhóm không
+được gán lại cho cột số. Nếu thiếu điều kiện, bảng bị quarantine thay vì đoán.
+Sidecar cũng tách cell chỉ *trông* giống số khỏi cell parse được đúng một số;
+OCR ghép nhiều nhóm số bị quarantine, không bị tách hay suy diễn.
+`autonomous` cho retrieval/semantic/evidence/metadata/challenger/critic views
+review chéo. Chỉ direct lookup qua toàn bộ source gate **và** có raw value-row
+metric trùng exact planned metric mới là `machine_calibrated` silver; phần còn
+lại vẫn là `machine_provisional` hoặc `needs_human` và bị loại khỏi train.
 
-`tables_evidence_context_v1.jsonl` chỉ được giữ để audit sidecar lịch sử;
-không bị ghi đè. Các stage mới mặc định dùng V2 và từ chối manifest V2 không
-có policy bind đúng một số raw-source cho mỗi cell.
+`tables_evidence_context_v1.jsonl` và `v2` chỉ được giữ để audit lịch sử;
+không bị ghi đè. Các stage mới mặc định dùng V3 và từ chối manifest không có
+policy bind đúng một số raw-source cho mỗi cell.
 
 Với cụm từ giống phép tính nhưng thực tế là một **dòng đã được báo cáo sẵn**
 (`Tổng cộng tài sản`, `Tỷ lệ sở hữu`, `Lỗ chênh lệch tỷ giá`), không sửa
@@ -476,9 +473,9 @@ và không thay đổi label:
 ```bash
 python scripts/build_formula_evidence_sets.py \
   --bundle-dir ~/ViFinQA_review/run_002 \
-  --evidence-context ~/ViFinQA_review/run_002/tables_evidence_context_v2.jsonl \
+  --evidence-context ~/ViFinQA_review/run_002/tables_evidence_context_v3.jsonl \
   --discover-source-operands \
-  --output ~/ViFinQA_review/run_002/formula_evidence_sets_context_v2_discovered.jsonl
+  --output ~/ViFinQA_review/run_002/formula_evidence_sets_context_v3_discovered.jsonl
 ```
 
 Discovery này chỉ join UID với metadata immutable `tables.jsonl`: ticker trong

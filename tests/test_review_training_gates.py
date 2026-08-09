@@ -2,6 +2,8 @@ import importlib.util
 import unittest
 from pathlib import Path
 
+from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
+
 
 spec = importlib.util.spec_from_file_location(
     "export_review_labels",
@@ -27,7 +29,7 @@ class ReviewTrainingGateTests(unittest.TestCase):
         }
         self.assertTrue(mod.human_training_eligible(row))
 
-    def test_machine_label_requires_exact_v2_validation(self):
+    def test_machine_label_requires_exact_v2_validation_and_v3_source_contract(self):
         legacy = {
             "consensus_status": "machine_calibrated",
             "machine_candidate_uid": "u1",
@@ -36,6 +38,11 @@ class ReviewTrainingGateTests(unittest.TestCase):
         grounded = {
             **legacy,
             "structure_validation": {"validated": True, "structure_version": 2},
+            "machine_self_review": {
+                "protocol": AUTONOMOUS_REVIEW_PROTOCOL,
+                "training_eligible": True,
+                "selected_assessment": {"raw_metric_identity": {"exact": True}},
+            },
         }
         self.assertTrue(mod.machine_training_eligible(grounded))
 
