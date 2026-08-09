@@ -101,6 +101,10 @@ import shutil
 import subprocess
 
 SOURCE_ROOT = Path('/kaggle/input/vifinqa-source-snapshot')
+# The initial private dataset version was created from this exact Git revision.
+# Keep it in checkpoint provenance because Kaggle inputs deliberately exclude
+# the repository's .git directory.
+SOURCE_SNAPSHOT_GIT_COMMIT = '3861638cc8d946636b9c51194b7da7dd5c31d503'
 
 if (SOURCE_ROOT / 'pyproject.toml').is_file():
     if REPO_DIR.exists():
@@ -145,6 +149,22 @@ esac
     print('Repo ready from authenticated GitHub clone:', REPO_DIR)
 """,
             )
+        if "def build_manifest(stage: str)" in source and '"rev-parse", "HEAD"' in source:
+            original = '''    git_commit = subprocess.check_output(
+        ["git", "-C", str(REPO_DIR), "rev-parse", "HEAD"],
+        text=True,
+    ).strip()'''
+            replacement = '''    git_commit = (
+        subprocess.check_output(
+            ["git", "-C", str(REPO_DIR), "rev-parse", "HEAD"],
+            text=True,
+        ).strip()
+        if (REPO_DIR / ".git").is_dir()
+        else SOURCE_SNAPSHOT_GIT_COMMIT
+    )'''
+            if original not in source:
+                raise RuntimeError("Template checkpoint manifest does not have the expected Git revision block.")
+            _set_source(cell, source.replace(original, replacement, 1))
         if '"finance-query",\n            "build-dense",' in source:
             # Kaggle's current PyTorch wheel does not include kernels for the
             # P100 (compute capability 6.0).  A lexical-only bundle is much
