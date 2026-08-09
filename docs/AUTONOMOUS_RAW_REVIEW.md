@@ -112,6 +112,14 @@ word is removed. This rejects a near label such as
 `Thặng dư vốn cổ phần` for a question asking `Vốn cổ phần`; it never changes a
 human label and it never applies to formula or multi-stage questions.
 
+The critic may reject a direct candidate solely because another raw V2 row is
+within its score margin. The separate `strict_equivalent_critic_answer` policy
+can resolve that case only when the selected row has exact metric identity and
+every near-tied alternative is independently cell-bound, parses to the same
+number, and declares the same source unit. All alternative row/cell/value/unit
+facts are retained in the review record. A different value, unknown unit,
+different unit, or another unverified near tie remains `machine_provisional`.
+
 ## Commands
 
 ```bash

@@ -27,6 +27,8 @@ from finance_query.evidence_context import (  # noqa: E402
     validate_evidence_context_sidecar,
 )
 from finance_query.binding import row_label  # noqa: E402
+from finance_query.corpus import infer_unit  # noqa: E402
+from finance_query.execution import parse_decimal  # noqa: E402
 from finance_query.plan_overrides import apply_plan_overrides, validate_plan_overrides
 from finance_query.table_structure import validate_structure_sidecar
 
@@ -388,6 +390,94 @@ def selector_has_tied_best(assessments: list[dict[str, Any]], key) -> bool:
     return abs(scores[0] - scores[1]) <= SELECTOR_TIE_EPSILON
 
 
+def raw_source_unit(table: dict[str, Any]) -> str | None:
+    """Resolve only the unit explicitly available in the raw source context."""
+    hinted = table.get("unit_hint")
+    if isinstance(hinted, str) and hinted:
+        return hinted
+    context = " ".join(
+        [
+            str(table.get("context_before") or ""),
+            str((table.get("context_trace") or {}).get("source_title") or ""),
+            " ".join((table.get("context_trace") or {}).get("unit_labels") or []),
+        ]
+    )
+    rows = table.get("rows") or []
+    return infer_unit(context, "\n".join(" | ".join(map(str, row)) for row in rows))
+
+
+def reliable_raw_number(value: object) -> str | None:
+    """Accept exactly the number form accepted later by the execution ledger."""
+    parsed = parse_decimal(str(value))
+    if parsed.value is None or any(
+        warning != "percent_value_not_scaled" for warning in parsed.warnings
+    ):
+        return None
+    return parsed.value
+
+
+def equivalent_critic_alternatives(
+    selected: dict[str, Any],
+    eligible: list[dict[str, Any]],
+    tables: dict[str, dict[str, Any]],
+    selected_score: float,
+) -> list[dict[str, Any]] | None:
+    """Prove that every critic-near-tie has the same executable raw answer.
+
+    A critic normally vetoes a direct candidate whose closest alternate is
+    within 0.05 of its content score.  That is correct when the alternate can
+    lead to a different answer.  It is not an ambiguity when *each* such
+    alternate is independently cell-bound and carries the same parsed numeric
+    value in the same declared source unit.  The return value is deliberately
+    an audit trail rather than a boolean.
+    """
+    selected_binding = selected.get("value_binding") or {}
+    if str(selected_binding.get("status") or "") != "cell_bound":
+        return None
+    selected_table = tables.get(str(selected.get("uid") or ""))
+    if selected_table is None:
+        return None
+    selected_value = reliable_raw_number(selected_binding.get("value"))
+    selected_unit = raw_source_unit(selected_table)
+    if selected_value is None or not selected_unit:
+        return None
+
+    equivalents: list[dict[str, Any]] = []
+    for alternative in eligible:
+        if alternative.get("uid") == selected.get("uid"):
+            continue
+        alternative_score = (
+            0.55 * float(alternative["semantic_score"])
+            + 0.35 * float(alternative["evidence_score"])
+            + 0.10 * float(alternative["metadata_score"])
+        )
+        if selected_score - alternative_score >= 0.05:
+            continue
+        binding = alternative.get("value_binding") or {}
+        table = tables.get(str(alternative.get("uid") or ""))
+        if str(binding.get("status") or "") != "cell_bound" or table is None:
+            return None
+        value = reliable_raw_number(binding.get("value"))
+        unit = raw_source_unit(table)
+        if value != selected_value or unit != selected_unit:
+            return None
+        equivalents.append(
+            {
+                "internal_table_uid": str(alternative["uid"]),
+                "raw_row_label": (alternative.get("raw_metric_identity") or {}).get(
+                    "raw_row_label"
+                ),
+                "row_index": binding.get("row_index"),
+                "column_index": binding.get("column_index"),
+                "column_label": binding.get("column_label"),
+                "raw_value": binding.get("value"),
+                "parsed_value": value,
+                "source_unit": unit,
+            }
+        )
+    return equivalents or None
+
+
 def autonomous_review_item(
     item: dict[str, Any],
     tables: dict[str, dict[str, Any]],
@@ -556,12 +646,35 @@ def autonomous_review_item(
         and selector_has_tied_best(eligible, lambda value: value["source_score"])
         and selector_has_tied_best(eligible, lambda value: value["metadata_score"])
     )
-    if ordinary_silver or strict_identity_tiebreak:
+    # A close critic alternative normally prevents silver.  Treat the critic
+    # as resolved only if every near-tied alternative independently produces
+    # the exact same parsed value in the same explicit source unit.  This is
+    # stricter than metric similarity: it preserves the complete list of raw
+    # rows/cells whose equality made the answer unambiguous.
+    equivalent_alternatives = equivalent_critic_alternatives(
+        selected, eligible, tables, selected_score
+    )
+    strict_equivalent_critic_answer = (
+        fully_grounded_direct
+        and not critic_accepts
+        and bool(selected["raw_metric_identity"].get("exact"))
+        and selected["semantic_score"] >= STRICT_TIEBREAK_MIN_SEMANTIC
+        and selected["evidence_score"] >= STRICT_TIEBREAK_MIN_EVIDENCE
+        and selected["source_score"] >= 1.0 - SELECTOR_TIE_EPSILON
+        and selected["metadata_score"] >= 1.0 - SELECTOR_TIE_EPSILON
+        and all(votes.get(name) == chosen_uid for name in content_selectors)
+        and selector_has_tied_best(eligible, lambda value: value["source_score"])
+        and selector_has_tied_best(eligible, lambda value: value["metadata_score"])
+        and equivalent_alternatives is not None
+    )
+    if ordinary_silver or strict_identity_tiebreak or strict_equivalent_critic_answer:
         status = "machine_calibrated"
         reason = (
             "Autonomous source/semantic/evidence/critic consensus passed all raw-V2 gates."
             if ordinary_silver
             else "Strict raw-metric identity resolved nondiscriminative source/metadata selector ties."
+            if strict_identity_tiebreak
+            else "Every critic-near-tie has the same exact V2 parsed value and source unit."
         )
     elif selected["semantic_score"] >= 0.45 and selected["evidence_score"] >= 0.45:
         status = "machine_provisional"
@@ -597,9 +710,12 @@ def autonomous_review_item(
                     if ordinary_silver
                     else "strict_raw_metric_identity_tiebreak"
                     if strict_identity_tiebreak
+                    else "strict_equivalent_critic_answer"
+                    if strict_equivalent_critic_answer
                     else "provisional_or_needs_human"
                 ),
                 "alternative_uid": None if alternative is None else alternative["uid"],
+                "equivalent_critic_alternatives": equivalent_alternatives or [],
                 "selected_value_binding": selected["value_binding"],
                 "selected_assessment": selected,
                 "candidate_assessments": assessments,

@@ -317,6 +317,93 @@ class AutonomousReviewV4Tests(unittest.TestCase):
         )["raw_metric_identity"]
         self.assertFalse(wrong_identity["exact"])
 
+    def test_equivalent_critic_answer_requires_same_declared_source_unit(self):
+        def table(uid: str, label: str, *, unit: str) -> dict:
+            return {
+                "internal_table_uid": uid,
+                "context_before": f"Đơn vị tính: {unit}",
+                "rows": [["", "Năm 2023"], [label, "100"]],
+                "header_row_indices": [0],
+                "cell_provenance": [
+                    [
+                        {"anchor_row": row, "anchor_column": column, "covered_by_span": False}
+                        for column in range(2)
+                    ]
+                    for row in range(2)
+                ],
+                "source_provenance": {},
+            }
+
+        selected_table = table("selected", "Tổng doanh thu", unit="VND")
+        equivalent_table = table("equivalent", "Tổng doanh thu", unit="VND")
+
+        def candidate(uid: str, rank: int) -> dict:
+            return {
+                "internal_table_uid": uid,
+                "rank": rank,
+                "lexical_rank": rank,
+                "candidate_source": "retrieved",
+                "metadata_score": 1.0,
+                "ticker_match": True,
+                "scope_match": True,
+                "year_match": True,
+                "best_row_index": 1,
+                "direct_evidence": "VALUE: Tổng doanh thu | 100",
+                "evidence_features": {
+                    "row_score": 1.0,
+                    "metric_overlap": 1.0,
+                    "question_overlap": 1.0,
+                    "numeric": True,
+                },
+                "structure_validation": {"validated": True, "row_index": 1},
+            }
+
+        item = {
+            "id": 3,
+            "question": "Tổng doanh thu năm 2023 là bao nhiêu?",
+            "weak_family": "direct_lookup",
+            "effective_metric": "Tổng doanh thu",
+            "question_plan": {"family": "direct_lookup", "operands": [{"metric": "Tổng doanh thu"}]},
+            "candidates": [candidate("selected", 1), candidate("equivalent", 2)],
+        }
+        contexts = {
+            "selected": build_evidence_context(selected_table),
+            "equivalent": build_evidence_context(equivalent_table),
+        }
+        review, _quarantine = mod.autonomous_review_item(
+            item,
+            {"selected": selected_table, "equivalent": equivalent_table},
+            contexts,
+            token_gate=0.85,
+            bigram_gate=0.45,
+            min_agreement=0.67,
+            silver_threshold=0.84,
+        )
+        self.assertEqual(review["consensus_status"], "machine_calibrated")
+        self.assertEqual(
+            review["machine_self_review"]["selection_policy"],
+            "strict_equivalent_critic_answer",
+        )
+        self.assertEqual(
+            review["machine_self_review"]["equivalent_critic_alternatives"][0]["source_unit"],
+            "vnd",
+        )
+
+        mismatched_table = table("equivalent", "Tổng doanh thu", unit="Triệu đồng")
+        review, _quarantine = mod.autonomous_review_item(
+            item,
+            {"selected": selected_table, "equivalent": mismatched_table},
+            {
+                "selected": contexts["selected"],
+                "equivalent": build_evidence_context(mismatched_table),
+            },
+            token_gate=0.85,
+            bigram_gate=0.45,
+            min_agreement=0.67,
+            silver_threshold=0.84,
+        )
+        self.assertNotEqual(review["consensus_status"], "machine_calibrated")
+
     def test_missing_period_header_cannot_be_autonomous_silver(self):
         table = {
             "internal_table_uid": "u1",
