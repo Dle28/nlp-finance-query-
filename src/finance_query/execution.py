@@ -21,6 +21,19 @@ def parse_decimal(raw_value: Any) -> ParsedNumber:
         return ParsedNumber(raw, None, None, 0.0, ["null_or_missing_value"])
 
     text = raw.replace("\u00a0", " ").strip()
+    # OCR/table extraction can concatenate two adjacent source cells, for
+    # example ``(72.193)(27.471)``. Removing punctuation would turn that into
+    # one plausible-looking but fabricated number, so reject it before any
+    # normalization. The raw value remains available for audit.
+    parenthetical_numeric_groups = [
+        group
+        for group in re.findall(r"\(([^()]*)\)", text)
+        if any(character.isdigit() for character in group)
+    ]
+    if len(parenthetical_numeric_groups) > 1:
+        return ParsedNumber(raw, None, None, 0.0, ["multiple_numeric_groups"])
+    if re.search(r"\d\s*[/;|]\s*\d", text):
+        return ParsedNumber(raw, None, None, 0.0, ["multiple_or_fractional_numeric_groups"])
     negative = text.startswith("(") and text.endswith(")")
     if negative:
         text = text[1:-1].strip()
