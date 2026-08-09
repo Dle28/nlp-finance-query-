@@ -76,6 +76,33 @@ class AutonomousReviewV4Tests(unittest.TestCase):
         )
         self.assertEqual(binding["status"], "ambiguous_period_column")
 
+    def test_unreliable_ocr_number_cannot_be_cell_bound(self):
+        table = {
+            "internal_table_uid": "u_unsafe",
+            "rows": [
+                ["", "Năm 2023"],
+                ["Chi phí tài chính", "(72.193.585.614)(27.471.160.925)"],
+            ],
+            "header_row_indices": [0],
+            "cell_provenance": [
+                [
+                    {"anchor_row": row, "anchor_column": column, "covered_by_span": False}
+                    for column in range(2)
+                ]
+                for row in range(2)
+            ],
+            "source_provenance": {},
+        }
+        context = build_evidence_context(table)
+        binding = mod.bind_value_row(
+            {"question": "Chi phí tài chính năm 2023 là bao nhiêu?"},
+            {"report_year": 2023, "structure_validation": {"row_index": 1}},
+            table,
+            context,
+        )
+        self.assertNotEqual(binding["status"], "cell_bound")
+        self.assertEqual(binding["reason"], "projected evidence row is not a canonical data row")
+
     def test_direct_lookup_requires_exact_row_and_period_cell_binding(self):
         table = {
             "internal_table_uid": "u1",
