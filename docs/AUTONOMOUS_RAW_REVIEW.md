@@ -104,8 +104,11 @@ of treating list order as evidence. A direct candidate may use the separate
 `strict_raw_metric_identity_tiebreak` policy only when semantic, evidence and
 challenger selectors all choose it, the critic accepts it, both hard selectors
 are tied, the raw V2 value-row label has the exact same significant token
-sequence as the planned metric, and its evidence/source/metadata scores meet
-the stricter 0.90/0.95/1.00 thresholds. This rejects a near label such as
+sequence as the planned metric, and its semantic/evidence/source/metadata
+scores meet the 0.90/0.85/1.00 thresholds. A standalone accounting-note
+reference such as `VI.06` in a separate source cell is excluded from that
+identity comparison and is retained in the audit record; no ordinary label
+word is removed. This rejects a near label such as
 `Thặng dư vốn cổ phần` for a question asking `Vốn cổ phần`; it never changes a
 human label and it never applies to formula or multi-stage questions.
 

@@ -272,6 +272,51 @@ class AutonomousReviewV4Tests(unittest.TestCase):
         )
         self.assertFalse(noise["raw_metric_identity"]["exact"])
 
+    def test_raw_metric_identity_ignores_only_standalone_note_reference(self):
+        table = {
+            "internal_table_uid": "u_note",
+            "rows": [
+                ["Mã số", "Chỉ tiêu", "Thuyết minh", "Năm 2025"],
+                ["26", "9. Chi phí quản lý doanh nghiệp", "VI.06", "100"],
+            ],
+            "header_row_indices": [0],
+            "cell_provenance": [
+                [
+                    {"anchor_row": row, "anchor_column": column, "covered_by_span": False}
+                    for column in range(4)
+                ]
+                for row in range(2)
+            ],
+            "source_provenance": {},
+        }
+        context = build_evidence_context(table)
+        item = {
+            "question": "Chi phí quản lý doanh nghiệp năm 2025 là bao nhiêu?",
+            "effective_metric": "Chi phí quản lý doanh nghiệp năm 2025",
+            "question_plan": {"operands": [{"metric": "Chi phí quản lý doanh nghiệp"}]},
+        }
+        candidate = {
+            "internal_table_uid": "u_note",
+            "report_year": 2025,
+            "structure_validation": {"validated": True, "row_index": 1},
+            "evidence_features": {"row_score": 1.0, "numeric": True},
+        }
+        assessment = mod.candidate_assessment(
+            item, candidate, table, context, token_gate=0.85, bigram_gate=0.45
+        )
+        identity = assessment["raw_metric_identity"]
+        self.assertTrue(identity["exact"])
+        self.assertEqual(identity["ignored_note_references"], ["VI.06"])
+        self.assertEqual(
+            identity["reason"], "exact_after_ignoring_standalone_note_reference"
+        )
+
+        wrong_item = {**item, "effective_metric": "Chi phí tài chính"}
+        wrong_identity = mod.candidate_assessment(
+            wrong_item, candidate, table, context, token_gate=0.85, bigram_gate=0.45
+        )["raw_metric_identity"]
+        self.assertFalse(wrong_identity["exact"])
+
     def test_missing_period_header_cannot_be_autonomous_silver(self):
         table = {
             "internal_table_uid": "u1",

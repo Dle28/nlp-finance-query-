@@ -38,6 +38,15 @@ END_RE = re.compile(r"cuối\s+năm|31\s*[/.-]\s*12|cuối\s+kỳ", re.IGNORECAS
 START_RE = re.compile(r"đầu\s+năm|0?1\s*[/.-]\s*0?1|đầu\s+kỳ", re.IGNORECASE)
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 SELECTOR_TIE_EPSILON = 1e-12
+# A note-reference cell is not part of a financial metric.  Keep this narrow:
+# it accepts only a standalone Roman-numeral note prefix followed by a number,
+# such as ``VI.06``.  It must not remove ordinary label text.
+RAW_NOTE_REFERENCE_RE = re.compile(
+    r"(?<!\w)[IVXLCDM]+\s*\.\s*\d+(?:\s*\([A-Za-z]\))?(?!\w)",
+    re.IGNORECASE,
+)
+STRICT_TIEBREAK_MIN_SEMANTIC = 0.90
+STRICT_TIEBREAK_MIN_EVIDENCE = 0.85
 
 
 def parse_args() -> argparse.Namespace:
@@ -347,17 +356,27 @@ def raw_metric_identity(
         token for token in v3.token_sequence(metric) if not token.isdecimal()
     ]
     label = row_label([str(value) for value in rows[row_index]])
+    ignored_note_references = RAW_NOTE_REFERENCE_RE.findall(label)
+    identity_label = RAW_NOTE_REFERENCE_RE.sub("", label)
     row_tokens = [
-        token for token in v3.token_sequence(label) if not token.isdecimal()
+        token for token in v3.token_sequence(identity_label) if not token.isdecimal()
     ]
     exact = bool(metric_tokens) and metric_tokens == row_tokens
     return {
         "exact": exact,
         "metric": metric,
         "raw_row_label": label,
+        "identity_row_label": identity_label,
+        "ignored_note_references": ignored_note_references,
         "metric_tokens": metric_tokens,
         "row_tokens": row_tokens,
-        "reason": "exact_significant_token_sequence" if exact else "metric_row_label_differs",
+        "reason": (
+            "exact_significant_token_sequence"
+            if exact and not ignored_note_references
+            else "exact_after_ignoring_standalone_note_reference"
+            if exact
+            else "metric_row_label_differs"
+        ),
     }
 
 
@@ -529,8 +548,8 @@ def autonomous_review_item(
         fully_grounded_direct
         and critic_accepts
         and bool(selected["raw_metric_identity"].get("exact"))
-        and selected["semantic_score"] >= 0.95
-        and selected["evidence_score"] >= 0.90
+        and selected["semantic_score"] >= STRICT_TIEBREAK_MIN_SEMANTIC
+        and selected["evidence_score"] >= STRICT_TIEBREAK_MIN_EVIDENCE
         and selected["source_score"] >= 1.0 - SELECTOR_TIE_EPSILON
         and selected["metadata_score"] >= 1.0 - SELECTOR_TIE_EPSILON
         and all(votes.get(name) == chosen_uid for name in content_selectors)
