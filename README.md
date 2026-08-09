@@ -483,14 +483,22 @@ python scripts/build_formula_evidence_sets.py \
 
 Discovery này chỉ join UID với metadata immutable `tables.jsonl`: ticker trong
 question plan phải được resolve, report year phải là năm operand hoặc năm báo
-cáo kế tiếp. Sau đó operand vẫn phải qua exact raw-row/cell binding; không có
-answer hay label nào được tạo từ discovery.
+cáo kế tiếp. Sau đó operand vẫn phải qua exact raw-row/cell binding; discovery
+không tạo answer hay label nào.
 
 `complete` chỉ có nghĩa tất cả operand của formula đã có exact raw row/cell,
 cùng entity/scope và không mơ hồ; câu có lọc nhóm, xếp hạng hoặc công thức
 ambiguous vẫn giữ `partial` cho đến khi có executor theo stage. Mỗi cell còn
 phải parse thành đúng **một** số nguồn tin cậy; cell OCR ghép hai nhóm số bị
 giữ `partial`, không thể tạo answer.
+
+Execution ledger có allow-list tách biệt, rất hẹp: hiện chỉ
+`percentage_change` đã `defined`, confidence ≥0,95, đủ đúng hai operand
+`x_old`/`x_new`, cùng source unit và qua lần revalidate thứ hai với raw V2
+row/cell/header/provenance mới có thể được tính. Record lưu FormulaSet hash,
+consensus status ban đầu và `review_status_promoted=false`; nó không đổi review
+label, không tạo machine-silver training pair. Ratio, lọc/xếp hạng và
+multi-stage vẫn fail-closed.
 
 Kiểm tra lại mọi operand đã lưu trước khi nghiên cứu executor tiếp theo:
 

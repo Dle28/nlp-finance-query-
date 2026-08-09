@@ -191,6 +191,7 @@ def main() -> None:
     autonomous_quarantine = labels / f"autonomous_quarantine_{run_tag}{artifact_variant}.jsonl"
     autonomous_silver = labels / f"machine_silver_labels_{run_tag}{artifact_variant}.jsonl"
     execution_ledger = labels / f"machine_execution_ledger_{run_tag}{artifact_variant}.jsonl"
+    formula_evidence = bundle / "formula_evidence_sets_context_v2_discovered.jsonl"
 
     if args.mode == "preprocess":
         command = [
@@ -211,7 +212,6 @@ def main() -> None:
             raise FileNotFoundError(
                 f"Canonical context missing: {evidence_context}. Run preprocess first."
             )
-        formula_evidence = bundle / "formula_evidence_sets_context_v2_discovered.jsonl"
         run(
             [
                 sys.executable,
@@ -241,6 +241,20 @@ def main() -> None:
                 ],
                 root,
             )
+        run(
+            [
+                sys.executable,
+                str(root / "scripts/build_formula_evidence_sets.py"),
+                "--bundle-dir",
+                str(bundle),
+                "--output",
+                str(formula_evidence),
+                "--evidence-context",
+                str(evidence_context),
+                "--discover-source-operands",
+            ],
+            root,
+        )
         review_command = [
             sys.executable,
             str(root / "scripts/auto_review_bundle_v4.py"),
@@ -277,6 +291,8 @@ def main() -> None:
                 str(autonomous_reviews),
                 "--evidence-context",
                 str(evidence_context),
+                "--formula-evidence",
+                str(formula_evidence),
                 "--output",
                 str(execution_ledger),
             ],

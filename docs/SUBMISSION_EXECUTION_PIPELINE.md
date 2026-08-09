@@ -8,7 +8,7 @@ full V3 bundle
   -> repair-tables (immutable V2 raw-HTML grid)
   -> preprocess (numeric-safe V2 canonical header / period context)
   -> autonomous (independent source + semantic + critic views)
-  -> machine execution ledger (exact-cell direct answers)
+  -> machine execution ledger (exact-cell direct answers + tiny formula allow-list)
   -> submission compiler (all questions only)
   -> directory + ZIP pandas re-execution validation
 ```
@@ -64,8 +64,12 @@ before and after creating the ZIP.
 
 ## Current executor coverage
 
-`scripts/build_execution_ledger.py` currently produces execution records only
-for direct lookup questions whose V4-selected exact cell passes all gates.
-Temporal, ratio, comparison, aggregation, and multi-stage selection questions
-remain explicitly `not_executable` until each operand/stage has a controlled
-formula and exact evidence set.  They are never padded with a guessed answer.
+`scripts/build_execution_ledger.py` produces direct lookup records when the
+V4-selected exact cell passes all gates. It additionally accepts only a
+complete, defined, confidence ≥0.95 `percentage_change` EvidenceSet whose
+`x_old` and `x_new` cells pass a second exact V2 row/header/provenance/parse
+check and have identical resolved units. The record carries its FormulaSet hash
+and original review consensus; it does not modify a review label or create a
+silver training example. Temporal formulas outside this one allow-list, ratio,
+comparison, aggregation, filtering and multi-stage selection remain explicitly
+`not_executable`; none is padded with a guessed answer.

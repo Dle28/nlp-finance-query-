@@ -78,6 +78,55 @@ def _context(label: str = "Số cuối năm VND") -> dict:
     }
 
 
+def _formula_table(uid: str, year: int, value: str) -> dict:
+    return {
+        "internal_table_uid": uid,
+        "document_id": f"ABC_financial_statements_{year}_separate",
+        "local_ordinal": 1,
+        "unit_hint": "vnd",
+        "rows": [["Chỉ tiêu", f"Năm {year}"], ["Doanh thu xây dựng", value]],
+        "cell_provenance": [
+            [
+                {"anchor_row": row, "anchor_column": column, "covered_by_span": False}
+                for column in range(2)
+            ]
+            for row in range(2)
+        ],
+    }
+
+
+def _formula_context(year: int) -> dict:
+    return {
+        "canonical_headers": {
+            "columns": [
+                {"column_index": 0, "source_label": "Chỉ tiêu"},
+                {"column_index": 1, "source_label": f"Năm {year}"},
+            ]
+        },
+        "row_profiles": [
+            {"row_index": 0, "role": "header", "numeric_columns": []},
+            {"row_index": 1, "role": "data", "numeric_columns": [1]},
+        ],
+    }
+
+
+def _formula_match(uid: str, year: int, value: str) -> dict:
+    source_cell = {"anchor_row": 1, "anchor_column": 1, "covered_by_span": False}
+    return {
+        "internal_table_uid": uid,
+        "source_row": ["Doanh thu xây dựng", value],
+        "binding": {
+            "status": "cell_bound",
+            "row_index": 1,
+            "column_index": 1,
+            "column_label": f"Năm {year}",
+            "raw_value": value,
+            "parsed_value": value,
+            "source_cell": source_cell,
+        },
+    }
+
+
 class ExecutionLedgerTests(unittest.TestCase):
     def test_machine_calibrated_direct_cell_becomes_exact_execution_record(self) -> None:
         row = ledger.direct_execution_row(_item(), _review(), {UID: _table()})
@@ -118,6 +167,105 @@ class ExecutionLedgerTests(unittest.TestCase):
         )
         self.assertEqual(row["execution_status"], "not_executable")
         self.assertEqual(row["reason"], "selected_column_label_differs_from_canonical_source")
+
+    def test_complete_percentage_evidence_becomes_exact_formula_execution(self) -> None:
+        old_uid, new_uid = "old", "new"
+        evidence = {
+            "id": 1,
+            "evidence_completeness": "complete",
+            "reason_codes": [],
+            "formula": {
+                "formula_id": "percentage_change",
+                "definition_status": "defined",
+                "confidence": 0.96,
+            },
+            "selected_operand_matches": {
+                "x_old": _formula_match(old_uid, 2022, "100"),
+                "x_new": _formula_match(new_uid, 2023, "80"),
+            },
+            "source_discovery": {"enabled": True},
+        }
+        row = ledger.exact_formula_execution_row(
+            {"id": 1},
+            evidence,
+            {
+                old_uid: _formula_table(old_uid, 2022, "100"),
+                new_uid: _formula_table(new_uid, 2023, "80"),
+            },
+            {old_uid: _formula_context(2022), new_uid: _formula_context(2023)},
+            manifest={
+                "sidecar_sha256": "formula-sha",
+                "evidence_context_file": "tables_evidence_context_v2.jsonl",
+            },
+        )
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["execution_mode"], "exact_formula")
+        self.assertEqual(row["computed_answer"], "-20.0")
+        self.assertEqual(row["operation_ast"], {"op": "percentage_change", "args": ["x_new", "x_old"]})
+        self.assertFalse(row["formula_provenance"]["review_status_promoted"])
+
+    def test_formula_execution_requires_high_controlled_formula_confidence(self) -> None:
+        evidence = {
+            "id": 1,
+            "evidence_completeness": "complete",
+            "reason_codes": [],
+            "formula": {
+                "formula_id": "percentage_change",
+                "definition_status": "defined",
+                "confidence": 0.94,
+            },
+            "selected_operand_matches": {
+                "x_old": _formula_match("old", 2022, "100"),
+                "x_new": _formula_match("new", 2023, "80"),
+            },
+        }
+        self.assertIsNone(
+            ledger.exact_formula_execution_row(
+                {"id": 1},
+                evidence,
+                {
+                    "old": _formula_table("old", 2022, "100"),
+                    "new": _formula_table("new", 2023, "80"),
+                },
+                {"old": _formula_context(2022), "new": _formula_context(2023)},
+                manifest={
+                    "sidecar_sha256": "formula-sha",
+                    "evidence_context_file": "tables_evidence_context_v2.jsonl",
+                },
+            )
+        )
+
+    def test_formula_execution_rejects_a_cell_that_differs_from_v2(self) -> None:
+        evidence = {
+            "id": 1,
+            "evidence_completeness": "complete",
+            "reason_codes": [],
+            "formula": {
+                "formula_id": "percentage_change",
+                "definition_status": "defined",
+                "confidence": 0.96,
+            },
+            "selected_operand_matches": {
+                "x_old": _formula_match("old", 2022, "999"),
+                "x_new": _formula_match("new", 2023, "80"),
+            },
+        }
+        self.assertIsNone(
+            ledger.exact_formula_execution_row(
+                {"id": 1},
+                evidence,
+                {
+                    "old": _formula_table("old", 2022, "100"),
+                    "new": _formula_table("new", 2023, "80"),
+                },
+                {"old": _formula_context(2022), "new": _formula_context(2023)},
+                manifest={
+                    "sidecar_sha256": "formula-sha",
+                    "evidence_context_file": "tables_evidence_context_v2.jsonl",
+                },
+            )
+        )
 
 
 if __name__ == "__main__":

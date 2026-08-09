@@ -6,7 +6,9 @@ Câu hỏi hệ số, tỷ lệ tăng trưởng và chỉ tiêu suy ra không th
 bằng một candidate “có vẻ liên quan”. Review unit là một `EvidenceSet`: công
 thức có định nghĩa rõ, đủ operand và mỗi operand trỏ về đúng dòng nguồn.
 
-Lớp này hỗ trợ review retrieval; nó chưa tính answer và không tự tạo gold.
+Collector của lớp này chỉ hỗ trợ review/retrieval: nó không tự tạo gold, không
+đổi review status và không tự tính answer. Một executor tách biệt chỉ được đọc
+sidecar đã audit khi một formula family được nêu rõ trong contract thực thi.
 
 ## Luồng hiện tại
 
@@ -18,6 +20,7 @@ question
 → exact source rows + column labels per operand
 → complete | partial | missing
 → human confirms formula when required
+→ (tuỳ chọn) controlled executor revalidates exact cells before calculating
 ```
 
 Formula rules nằm trong `src/finance_query/financial_metrics.py`. Widget dùng
@@ -96,10 +99,33 @@ và kiểm tra lại UID/rank, exact row cells và column labels của mọi ope
 Coverage bị sửa tay hoặc không khớp source làm ledger dừng thay vì âm thầm nhận
 label complete.
 
+## Exact formula execution (narrow allow-list)
+
+`scripts/build_execution_ledger.py --formula-evidence ...` hiện chỉ có một
+allow-list: `percentage_change`. Nó không dùng Formula EvidenceSet như answer
+guesser. Một record chỉ được materialize khi đồng thời thỏa:
+
+1. EvidenceSet V3 và manifest còn khớp hash của bundle, V2 structure và V2
+   canonical context.
+2. `evidence_completeness=complete`, formula `defined`, không có reason code,
+   và confidence controlled rule từ 0,95 trở lên.
+3. Chính xác hai operand `x_old`, `x_new` đều được bind lại vào raw V2 row,
+   cell provenance, canonical column header, raw string và parsed number.
+4. Hai source unit đã resolve và giống nhau; AST cố định là
+   `(x_new - x_old) / abs(x_old) * 100`.
+
+Execution record giữ `formula_provenance.review_consensus_status` và
+`review_status_promoted=false`: nhãn V4 gốc không bị đổi thành
+`human_verified` hoặc sửa lại trong review/silver file. `machine_calibrated`
+trên **execution ledger** chỉ biểu thị rằng deterministic formula gate đã qua
+để compiler có thể nhận record; không tạo training pair và không làm review
+status gốc thay đổi. Mọi ratio, ranking, filtering, multi-stage và mọi formula
+khác vẫn evidence-only / `not_executable`.
+
 ## Giới hạn có chủ đích
 
-- Hiện binding dừng ở exact row + column labels; exact-cell binding và unit
-  resolver là bước kế tiếp.
+- Collector không tự execute. Exact-cell binding và unit resolver chỉ được áp
+  lại trong executor allow-list nói trên.
 - OCR text vẫn có thể sai ký tự/số. V2 sửa cấu trúc HTML, không sửa OCR.
 - Một bảng chứa nhiều period có thể hỗ trợ nhiều operand qua cùng một row;
   reviewer phải đọc column labels trước khi xác nhận.

@@ -179,7 +179,7 @@ report, plus the resolved scope when one exists. The discovered table still
 needs the same exact V2 row, canonical header and one-number cell binding. It
 is evidence discovery only, never answer or label generation.
 
-Audit the generated sidecar before considering any later executor work:
+Audit the generated sidecar before considering executor work:
 
 ```bash
 python scripts/analyze_formula_evidence.py \
@@ -190,6 +190,16 @@ python scripts/analyze_formula_evidence.py \
 
 The audit verifies each stored operand row/cell/header against V2 again and
 reports coverage bottlenecks. It does not calculate an answer.
+
+The execution ledger has a separate, intentionally tiny allow-list. With the
+audited sidecar passed as `--formula-evidence`, it can execute only a complete,
+defined `percentage_change` with controlled confidence ≥0.95, exactly
+`x_old`/`x_new`, identical resolved units and a second raw-V2 cell/header/
+provenance/parse revalidation. It records the original V4 consensus status in
+`formula_provenance` and sets `review_status_promoted=false`; it neither edits
+the autonomous review nor writes a silver training label. All ratios,
+comparison, aggregation, screening and multi-stage programs remain
+`not_executable`.
 
 ### Semantic rerank V2 is diagnostic, exact-row and reproducible
 
@@ -249,11 +259,11 @@ zero build errors. It placed 4,036 tables in `needs_processing` and retained
 numeric binding because they did not parse as exactly one reliable number.
 
 The corresponding autonomous V4 run produced 57 `machine_calibrated`, 363
-`machine_provisional`, and 592 `needs_human` records. The exact-cell execution
-ledger made 47 direct-lookups `grounded`; the other 965 are explicitly
-`not_executable`. Formula source discovery joined 33,069 metadata-bound
-candidates and audited 350 exact operand bindings: 10 of 134 questions now
-have complete operand coverage, but all 134 remain `partial` for execution
-because formula definition/stage/entity gates still apply. None supplied a
-computed answer. This is the current evidence boundary, not an error to be
-solved by lowering the promotion threshold.
+`machine_provisional`, and 592 `needs_human` records. The direct exact-cell
+ledger made 47 direct-lookups `grounded`; FormulaSet discovery joined 33,069
+metadata-bound candidates and audited 350 exact operand bindings. Under the
+separate formula allow-list, one defined, complete `percentage_change` also
+passed a second exact V2 revalidation, for 48 grounded execution records in
+total; the other 964 remain explicitly `not_executable`. This did not change
+the 57 training-eligible machine-silver labels or promote a review status.
+All ratios, comparisons, filters and multi-stage formulas remain fail-closed.

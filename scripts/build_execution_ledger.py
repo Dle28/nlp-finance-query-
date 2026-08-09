@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Materialize direct-answer execution evidence from V4 autonomous reviews.
+"""Materialize exact-answer execution evidence from V4 reviews and FormulaSet.
 
 This is the first answer-generation stage, not a fallback answer guesser.  It
 only emits an executable record when V4's independent agents selected a
@@ -12,6 +12,7 @@ submission through ``compile_vifinqa_submission.py``.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -26,7 +27,7 @@ if str(ROOT / "src") not in sys.path:
 
 from finance_query.binding import row_label  # noqa: E402
 from finance_query.corpus import infer_unit  # noqa: E402
-from finance_query.execution import convert_unit, parse_decimal  # noqa: E402
+from finance_query.execution import convert_unit, execute_ast, parse_decimal  # noqa: E402
 from finance_query.evidence_context import (  # noqa: E402
     AUTONOMOUS_REVIEW_PROTOCOL,
     validate_evidence_context_sidecar,
@@ -44,6 +45,15 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Canonical context sidecar; defaults to tables_evidence_context_v2.jsonl in the bundle.",
+    )
+    parser.add_argument(
+        "--formula-evidence",
+        type=Path,
+        default=None,
+        help=(
+            "Audited Formula EvidenceSet V3. Only complete, defined percentage-change "
+            "sets may add exact_formula execution records."
+        ),
     )
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
@@ -63,6 +73,49 @@ def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
         file.flush()
         os.fsync(file.fileno())
     temporary.replace(path)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def validate_formula_evidence_sidecar(
+    bundle: Path,
+    sidecar: Path,
+    context_path: Path,
+) -> dict[str, Any]:
+    """Accept only the numeric-safe, source-discovery Formula EvidenceSet V3."""
+    if sidecar.parent != bundle:
+        raise ValueError("Formula evidence sidecar must reside in the review bundle")
+    manifest_path = sidecar.with_suffix(".manifest.json")
+    if not sidecar.is_file() or not manifest_path.is_file():
+        raise FileNotFoundError("Formula evidence sidecar or manifest is missing")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if int(manifest.get("schema_version") or 0) != 3:
+        raise ValueError("Formula execution requires Formula EvidenceSet schema_version=3")
+    expected = {
+        "bundle_review_items_sha256": bundle / "review_items.jsonl",
+        "bundle_tables_sha256": bundle / "tables.jsonl",
+        "structured_tables_sha256": bundle / "tables_structured_v2.jsonl",
+        "evidence_context_sha256": context_path,
+    }
+    for key, source_path in expected.items():
+        if str(manifest.get(key) or "") != sha256_file(source_path):
+            raise ValueError(f"Formula evidence manifest does not match {source_path.name}")
+    if str(manifest.get("evidence_context_file") or "") != context_path.name:
+        raise ValueError("Formula evidence manifest names a different canonical context")
+    if str(manifest.get("numeric_binding_policy") or "") != "one_reliable_raw_v2_number_per_operand":
+        raise ValueError("Formula evidence lacks the strict numeric binding policy")
+    discovery = manifest.get("source_discovery") or {}
+    if not bool(discovery.get("enabled")):
+        raise ValueError("Formula execution requires source-discovery provenance")
+    if str(manifest.get("sidecar_sha256") or "") != sha256_file(sidecar):
+        raise ValueError("Formula evidence sidecar hash does not match its manifest")
+    return manifest
 
 
 def index_by_id(rows: Iterable[dict[str, Any]], name: str) -> dict[int, dict[str, Any]]:
@@ -128,6 +181,187 @@ def _non_executable(item: dict[str, Any], review: dict[str, Any] | None, reason:
         "reason": reason,
         "operation_ast": (item.get("question_plan") or {}).get("operation_ast") or {},
         "operand_bindings": [],
+    }
+
+
+def _profile_for_row(context: dict[str, Any], row_index: int) -> dict[str, Any]:
+    return next(
+        (
+            profile
+            for profile in context.get("row_profiles") or []
+            if isinstance(profile.get("row_index"), int)
+            and not isinstance(profile.get("row_index"), bool)
+            and profile["row_index"] == row_index
+        ),
+        {},
+    )
+
+
+def _formula_binding(
+    match: dict[str, Any],
+    table: dict[str, Any],
+    context: dict[str, Any],
+    *,
+    confidence: float,
+) -> DirectBinding | None:
+    """Revalidate one stored Formula EvidenceSet match against raw V2 again."""
+    binding = match.get("binding") or {}
+    row_index, column_index = binding.get("row_index"), binding.get("column_index")
+    rows = table.get("rows") or []
+    if (
+        str(binding.get("status") or "") != "cell_bound"
+        or not isinstance(row_index, int)
+        or not isinstance(column_index, int)
+        or not 0 <= row_index < len(rows)
+        or not 0 <= column_index < len(rows[row_index])
+    ):
+        return None
+    profile = _profile_for_row(context, row_index)
+    if str(profile.get("role") or "") != "data" or column_index not in {
+        int(value) for value in profile.get("numeric_columns") or []
+    }:
+        return None
+    raw_value = str(rows[row_index][column_index])
+    if raw_value != str(binding.get("raw_value") or ""):
+        return None
+    if [str(value) for value in rows[row_index]] != [
+        str(value) for value in match.get("source_row") or []
+    ]:
+        return None
+    headers = (context.get("canonical_headers") or {}).get("columns") or []
+    column_label = str(
+        next(
+            (
+                column.get("source_label")
+                for column in headers
+                if isinstance(column.get("column_index"), int)
+                and not isinstance(column.get("column_index"), bool)
+                and column["column_index"] == column_index
+            ),
+            "",
+        )
+        or ""
+    )
+    if not column_label or column_label != str(binding.get("column_label") or ""):
+        return None
+    provenance_rows = table.get("cell_provenance") or []
+    if row_index >= len(provenance_rows) or column_index >= len(provenance_rows[row_index] or []):
+        return None
+    provenance = provenance_rows[row_index][column_index]
+    if binding.get("source_cell") != provenance:
+        return None
+    parsed = parse_decimal(raw_value)
+    if parsed.value is None or any(
+        warning != "percent_value_not_scaled" for warning in parsed.warnings
+    ):
+        return None
+    if str(binding.get("parsed_value") or "") != parsed.value:
+        return None
+    source_unit = canonical_unit(table)
+    if source_unit is None:
+        return None
+    return DirectBinding(
+        internal_table_uid=str(table["internal_table_uid"]),
+        document_id=str(table["document_id"]),
+        row_index=row_index,
+        column_index=column_index,
+        row_text=row_label(rows[row_index]),
+        column_text=column_label,
+        raw_value=raw_value,
+        parsed_value=parsed.value,
+        source_unit=source_unit,
+        target_unit=None,
+        converted_value=parsed.value,
+        binding_score=confidence,
+        warnings=list(parsed.warnings),
+    )
+
+
+def exact_formula_execution_row(
+    item: dict[str, Any],
+    evidence: dict[str, Any] | None,
+    tables: dict[str, dict[str, Any]],
+    contexts: dict[str, dict[str, Any]],
+    *,
+    manifest: dict[str, Any],
+    review: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Materialize the one safe formula family currently eligible for execution.
+
+    This is intentionally narrower than Formula EvidenceSet collection. It
+    requires complete evidence, a defined formula, no outstanding reason code,
+    one exact V2 number per operand and identical known source units.  Complex
+    selection/ranking and every unsupported formula remain evidence-only.
+    """
+    if not evidence or int(evidence.get("id") or -1) != int(item["id"]):
+        return None
+    formula = evidence.get("formula") or {}
+    try:
+        confidence = float(formula.get("confidence"))
+    except (TypeError, ValueError):
+        return None
+    if (
+        str(evidence.get("evidence_completeness") or "") != "complete"
+        or str(formula.get("definition_status") or "") != "defined"
+        or evidence.get("reason_codes")
+        or str(formula.get("formula_id") or "") != "percentage_change"
+        or not 0.95 <= confidence <= 1.0
+    ):
+        return None
+    selected = evidence.get("selected_operand_matches") or {}
+    if set(selected) != {"x_old", "x_new"}:
+        return None
+    bindings: dict[str, DirectBinding] = {}
+    for operand_id in ("x_old", "x_new"):
+        match = selected[operand_id]
+        uid = str(match.get("internal_table_uid") or "")
+        table, context = tables.get(uid), contexts.get(uid)
+        if table is None or context is None:
+            return None
+        binding = _formula_binding(match, table, context, confidence=confidence)
+        if binding is None:
+            return None
+        bindings[operand_id] = binding
+    if len({binding.source_unit for binding in bindings.values()}) != 1:
+        return None
+    operation_ast = {"op": "percentage_change", "args": ["x_new", "x_old"]}
+    try:
+        computed = execute_ast(
+            operation_ast,
+            {operand_id: Decimal(binding.parsed_value) for operand_id, binding in bindings.items()},
+        )
+    except (ArithmeticError, ValueError):
+        return None
+    if not computed.is_finite():
+        return None
+    return {
+        "id": int(item["id"]),
+        "provenance_status": "machine_calibrated",
+        "execution_status": "grounded",
+        "grounding_status": "exact_rows_validated",
+        "execution_mode": "exact_formula",
+        "formula_definition_status": "defined",
+        "operation_ast": operation_ast,
+        "normalize_operands_to_vnd": False,
+        "operand_bindings": [
+            {
+                "operand_id": operand_id,
+                "internal_table_uid": binding.internal_table_uid,
+                "binding": binding.to_dict(),
+            }
+            for operand_id, binding in bindings.items()
+        ],
+        "formula_provenance": {
+            "protocol": "formula_evidence_v3_exact_percentage_change",
+            "formula_id": formula["formula_id"],
+            "formula_confidence": confidence,
+            "review_consensus_status": str((review or {}).get("consensus_status") or "not_used"),
+            "review_status_promoted": False,
+            "formula_evidence_sha256": manifest["sidecar_sha256"],
+            "evidence_context_file": manifest["evidence_context_file"],
+            "source_discovery": evidence.get("source_discovery") or {},
+        },
+        "computed_answer": format(computed, "f"),
     }
 
 
@@ -265,10 +499,33 @@ def main() -> None:
     if context_path.parent != bundle:
         raise ValueError("Execution context sidecar must reside in the review bundle")
     contexts = load_evidence_contexts(bundle, context_path)
-    rows = [
-        direct_execution_row(item, reviews.get(int(item["id"])), tables, contexts)
-        for item in items
-    ]
+    formula_manifest: dict[str, Any] | None = None
+    formula_by_id: dict[int, dict[str, Any]] = {}
+    if args.formula_evidence is not None:
+        formula_path = args.formula_evidence.resolve()
+        formula_manifest = validate_formula_evidence_sidecar(bundle, formula_path, context_path)
+        formula_by_id = index_by_id(load_jsonl(formula_path), "formula evidence")
+        unexpected_formula_ids = sorted(set(formula_by_id) - item_ids)
+        if unexpected_formula_ids:
+            raise ValueError(
+                f"Formula evidence contains IDs outside bundle: {unexpected_formula_ids[:10]}"
+            )
+    rows = []
+    for item in items:
+        direct_row = direct_execution_row(item, reviews.get(int(item["id"])), tables, contexts)
+        formula_row = (
+            exact_formula_execution_row(
+                item,
+                formula_by_id.get(int(item["id"])),
+                tables,
+                contexts,
+                manifest=formula_manifest,
+                review=reviews.get(int(item["id"])),
+            )
+            if formula_manifest is not None and direct_row["execution_status"] != "grounded"
+            else None
+        )
+        rows.append(formula_row or direct_row)
     write_jsonl(args.output.resolve(), rows)
     counts = Counter(str(row["execution_status"]) for row in rows)
     reasons = Counter(str(row.get("reason") or "") for row in rows if row.get("reason"))
