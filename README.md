@@ -437,7 +437,9 @@ python local/run_local_review_stage.py autonomous \
 
 `preprocess` tạo sidecar riêng từ V2 raw-HTML grid: khôi phục path tiêu đề
 cha–con theo span provenance, bind period/unit vào cột nguồn và quarantine
-bảng không đủ dữ kiện. `autonomous` cho retrieval/semantic/evidence/metadata/
+bảng không đủ dữ kiện. Sidecar cũng tách cell chỉ *trông* giống số khỏi cell
+parse được đúng một số; OCR ghép nhiều nhóm số bị quarantine, không bị tách
+hay suy diễn. `autonomous` cho retrieval/semantic/evidence/metadata/
 challenger/critic views review chéo. Chỉ direct lookup qua toàn bộ source gate
 mới là `machine_calibrated` silver; phần còn lại vẫn là `machine_provisional`
 hoặc `needs_human` và bị loại khỏi train.

@@ -937,6 +937,12 @@ Nếu V2 heuristic đánh dấu một row số liệu nằm sau data là header,
 không ghép số liệu vào period label. Raw cells và marker V2 không bị sửa. Khi
 prefix còn lại không đủ label cột số, table bị `needs_processing`.
 
+`row_profiles.numeric_columns` chỉ chứa cell parse được đúng một số theo
+contract execution. Cell OCR có hình thức số nhưng ghép nhiều nhóm số được
+ghi riêng ở `unreliable_numeric_columns`; row chỉ có các cell đó mang role
+`data_with_unreliable_numeric` và không thể bind. Điều này là quarantine của
+derived context, không sửa/tách raw V2 grid.
+
 ```text
 machine_calibrated  source-gated autonomous silver; có thể train sau min size
 machine_provisional audit only; không train

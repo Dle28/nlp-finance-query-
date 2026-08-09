@@ -62,6 +62,14 @@ from being concatenated into a period label. The raw V2 cells/markers remain
 unchanged; tables whose remaining prefix cannot label numeric data become
 `needs_processing` rather than being guessed.
 
+V1 also distinguishes a cell that merely *looks numeric* in OCR syntax from a
+cell that parses as exactly one reliable number under the execution parser.
+The former remains visible in the lossless grid, but a concatenation such as
+`(72…)(27…)` is recorded in `unreliable_numeric_columns` and cannot be bound
+as an answer or formula operand. A row with no remaining reliable number is
+`data_with_unreliable_numeric`, not a usable data row; a sibling valid cell in
+the same row remains available. No OCR text is split, replaced, or inferred.
+
 ## Independent autonomous gates
 
 A selected candidate must pass all of these before it can be machine silver:
