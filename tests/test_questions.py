@@ -40,6 +40,30 @@ class QuestionRouterTests(unittest.TestCase):
         self.assertEqual(plan.years, [2022, 2024])
         self.assertEqual(len(plan.operands), 2)
 
+    def test_disclosed_ownership_ratio_is_a_direct_lookup(self) -> None:
+        plan = self.planner.plan(
+            "Tỷ lệ sở hữu Công ty CP Gang thép Hòa Phát của HPG đến ngày 31/12/2023 là bao nhiêu %?",
+            question_id=97,
+        )
+        self.assertEqual(plan.family, "direct_lookup")
+        self.assertEqual(plan.operation_ast["op"], "lookup")
+        self.assertEqual(len(plan.operands), 1)
+
+    def test_disclosed_total_row_is_a_direct_lookup(self) -> None:
+        plan = self.planner.plan(
+            "Tổng cộng tài sản của SSH cuối năm 2025 là bao nhiêu nghìn tỷ đồng?",
+            question_id=92,
+        )
+        self.assertEqual(plan.family, "direct_lookup")
+        self.assertEqual(plan.operation_ast["op"], "lookup")
+
+    def test_multi_entity_total_cannot_be_reclassified_as_direct(self) -> None:
+        plan = self.planner.plan(
+            "Tổng cộng số dư dự phòng của SHB, VIB và BID vào cuối năm 2016 là bao nhiêu triệu đồng?",
+            question_id=991,
+        )
+        self.assertNotEqual(plan.family, "direct_lookup")
+
 
 if __name__ == "__main__":
     unittest.main()

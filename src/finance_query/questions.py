@@ -76,6 +76,38 @@ FAMILY_RULES: list[tuple[QuestionFamily, re.Pattern[str], float]] = [
     ),
 ]
 
+# Some Vietnamese report-row labels contain words that otherwise look like an
+# operation (``Tổng cộng tài sản``, ``Tỷ lệ sở hữu`` or ``Lỗ chênh lệch tỷ
+# giá``).  These rules are intentionally narrow: they re-route only a single
+# disclosed value, never a group/range/comparison question, to direct lookup.
+REPORTED_RATIO_RE = re.compile(
+    r"^(?:tổng\s+)?t(?:ỷ|ỉ)\s+lệ\s+(?:quyền\s+biểu\s+quyết|biểu\s+quyết|"
+    r"sở\s+hữu|lợi\s+ích\s+kinh\s+tế|sở\s+hữu\s+trên\s+vốn\s+thực\s+góp)",
+    re.IGNORECASE,
+)
+REPORTED_TOTAL_RE = re.compile(
+    r"^(?:giá\s+trị\s+còn\s+lại|tổng\s+cộng|tổng\s+số|"
+    r"số\s+(?:lượng\s+)?cổ\s+phiếu\s+phổ\s+thông\s+bình\s+quân\s+gia\s+quyền|"
+    r"công\s+ty.+\bcó\s+số\s+lượng\s+cổ\s+phiếu\s+phổ\s+thông\s+bình\s+quân\s+gia\s+quyền)",
+    re.IGNORECASE,
+)
+REPORTED_FX_ROW_RE = re.compile(r"^(?:lỗ|lãi)\s+chênh\s+lệch\s+tỷ\s+giá", re.IGNORECASE)
+COMPOSED_LOOKUP_BLOCK_RE = re.compile(
+    r"\b(?:trong\s+(?:các\s+)?(?:nhóm|doanh\s+nghiệp)|trong\s+giai\s+đoạn|"
+    r"so\s+với|từ\s+năm|giữa\s+(?:năm|hai)|cao\s+nhất|thấp\s+nhất|trung\s+vị|"
+    r"đồng\s+thời|tăng\s+bao\s+nhiêu|giảm\s+bao\s+nhiêu|thay\s+đổi\s+bao\s+nhiêu|"
+    r"có\s+bao\s+nhiêu\s+(?:doanh\s+nghiệp|công\s+ty|năm)|trừ\s+đi|các\s+năm|"
+    r"trong\s+số)\b",
+    re.IGNORECASE,
+)
+MULTI_SUBJECT_RE = re.compile(
+    r"\)\s*(?:,|và)\s*(?:ctcp|công\s+ty|tổng\s+công\s+ty)|"
+    r"\b(?:ctcp|công\s+ty|tổng\s+công\s+ty)\b.{0,90}\b(?:và|,\s*(?:ctcp|công\s+ty|tổng\s+công\s+ty))\b",
+    re.IGNORECASE,
+)
+TICKER_TOKEN_RE = re.compile(r"\(([A-Z]{2,6})\)|\b([A-Z]{2,6})\b")
+NON_TICKER_TOKENS = {"CP", "CTCP", "TMCP", "TNDN", "VND", "HĐQT", "BTC"}
+
 
 def normalize_text(text: str) -> str:
     value = unicodedata.normalize("NFKC", text)
@@ -184,6 +216,35 @@ def infer_family(question: str, question_id: int | None = None) -> tuple[Questio
     return "direct_lookup", 0.62
 
 
+def reported_value_lookup_reason(question: str) -> str | None:
+    """Return a high-precision reason when wording asks for one reported row.
+
+    This is classification only.  It does not establish that retrieval found a
+    correct table, row, period or value; all later raw-row/cell gates remain
+    mandatory.
+    """
+    normalized = normalize_text(question)
+    if COMPOSED_LOOKUP_BLOCK_RE.search(normalized) or MULTI_SUBJECT_RE.search(normalized):
+        return None
+    years = YEAR_RE.findall(normalized)
+    if len(set(years)) > 1:
+        return None
+    ticker_tokens = {
+        next(value for value in match if value)
+        for match in TICKER_TOKEN_RE.findall(normalized)
+        if next(value for value in match if value) not in NON_TICKER_TOKENS
+    }
+    if len(ticker_tokens) > 1:
+        return None
+    if REPORTED_RATIO_RE.search(normalized):
+        return "disclosed_ownership_or_voting_ratio"
+    if REPORTED_TOTAL_RE.search(normalized):
+        return "disclosed_total_or_weighted_average_row"
+    if REPORTED_FX_ROW_RE.search(normalized):
+        return "disclosed_foreign_exchange_row"
+    return None
+
+
 def infer_operation_ast(family: QuestionFamily, question: str) -> dict:
     q = question.casefold()
     if family == "direct_lookup":
@@ -239,7 +300,12 @@ class RuleQuestionPlanner:
 
     def plan(self, question: str, question_id: int | None = None) -> QuestionPlan:
         normalized = normalize_text(question)
-        family, confidence = infer_family(normalized, question_id)
+        reported_lookup_reason = reported_value_lookup_reason(normalized)
+        family, confidence = (
+            ("direct_lookup", 0.98)
+            if reported_lookup_reason
+            else infer_family(normalized, question_id)
+        )
         tickers = extract_tickers(normalized, self.aliases)
         years = sorted({int(year) for year in YEAR_RE.findall(normalized)})
         scope = infer_scope(normalized)
@@ -275,6 +341,11 @@ class RuleQuestionPlanner:
             warnings.append("No ticker/company alias was resolved.")
         if family != "direct_lookup" and not operands:
             warnings.append("Retrieval should run per operand after semantic decomposition.")
+        if reported_lookup_reason:
+            warnings.append(
+                "Classified as direct_lookup because the question requests one disclosed report row: "
+                + reported_lookup_reason
+            )
 
         return QuestionPlan(
             question_id=question_id,

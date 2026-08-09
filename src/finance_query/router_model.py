@@ -7,7 +7,12 @@ import joblib
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from .questions import RuleQuestionPlanner, infer_operation_ast, metric_hint
+from .questions import (
+    RuleQuestionPlanner,
+    infer_operation_ast,
+    metric_hint,
+    reported_value_lookup_reason,
+)
 from .schemas import OperandSpec, QuestionFamily, QuestionPlan
 
 
@@ -54,7 +59,15 @@ class ModelBackedQuestionPlanner:
 
     def plan(self, question: str, question_id: int | None = None) -> QuestionPlan:
         plan = self.rule_planner.plan(question, question_id)
-        family, confidence = self.router.predict(question)
+        reported_lookup_reason = reported_value_lookup_reason(question)
+        if reported_lookup_reason:
+            # A trained coarse family router may reasonably confuse these row
+            # labels with arithmetic wording.  Preserve the high-precision
+            # lexical override and let subsequent source/cell validation
+            # decide whether a direct answer is actually admissible.
+            family, confidence = "direct_lookup", 0.98
+        else:
+            family, confidence = self.router.predict(question)
         plan.family = family
         plan.family_confidence = confidence
         plan.operation_ast = infer_operation_ast(family, question)
@@ -90,6 +103,14 @@ class ModelBackedQuestionPlanner:
             )
         else:
             warning = "Model router selected a composed family; semantic operand decomposition is required."
+            if warning not in plan.warnings:
+                plan.warnings.append(warning)
+
+        if reported_lookup_reason:
+            warning = (
+                "Model router was constrained to direct_lookup for one disclosed report row: "
+                + reported_lookup_reason
+            )
             if warning not in plan.warnings:
                 plan.warnings.append(warning)
 
