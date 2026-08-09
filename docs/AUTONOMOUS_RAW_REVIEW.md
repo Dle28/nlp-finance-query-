@@ -98,6 +98,17 @@ The views are deliberately not treated as independent ground truth.  They are
 separate failure detectors over raw-source facts.  Therefore their agreement
 creates `machine_calibrated` **silver**, never `human_verified` gold.
 
+Source-quality and metadata are hard gates, not meaningful selectors when all
+eligible candidates have the same score. V4 records this selector tie instead
+of treating list order as evidence. A direct candidate may use the separate
+`strict_raw_metric_identity_tiebreak` policy only when semantic, evidence and
+challenger selectors all choose it, the critic accepts it, both hard selectors
+are tied, the raw V2 value-row label has the exact same significant token
+sequence as the planned metric, and its evidence/source/metadata scores meet
+the stricter 0.90/0.95/1.00 thresholds. This rejects a near label such as
+`Thặng dư vốn cổ phần` for a question asking `Vốn cổ phần`; it never changes a
+human label and it never applies to formula or multi-stage questions.
+
 ## Commands
 
 ```bash

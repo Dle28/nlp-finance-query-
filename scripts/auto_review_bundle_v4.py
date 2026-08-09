@@ -26,6 +26,7 @@ from finance_query.evidence_context import (  # noqa: E402
     AUTONOMOUS_REVIEW_PROTOCOL,
     validate_evidence_context_sidecar,
 )
+from finance_query.binding import row_label  # noqa: E402
 from finance_query.plan_overrides import apply_plan_overrides, validate_plan_overrides
 from finance_query.table_structure import validate_structure_sidecar
 
@@ -36,6 +37,7 @@ v3 = v31.v3
 END_RE = re.compile(r"cuối\s+năm|31\s*[/.-]\s*12|cuối\s+kỳ", re.IGNORECASE)
 START_RE = re.compile(r"đầu\s+năm|0?1\s*[/.-]\s*0?1|đầu\s+kỳ", re.IGNORECASE)
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+SELECTOR_TIE_EPSILON = 1e-12
 
 
 def parse_args() -> argparse.Namespace:
@@ -268,6 +270,7 @@ def candidate_assessment(
     quality = context.get("quality") or {}
     grounding = v3.grounding(item, candidate, token_gate, bigram_gate)
     binding = bind_value_row(item, candidate, table, context)
+    identity = raw_metric_identity(item, candidate, table, binding)
     evidence = candidate.get("evidence_features") or {}
     source_ready = str(quality.get("status") or "") == "review_ready"
     exact_row = bool((candidate.get("structure_validation") or {}).get("validated"))
@@ -305,12 +308,65 @@ def candidate_assessment(
         "retrieval_score": retrieval_score,
         "grounding": grounding,
         "value_binding": binding,
+        "raw_metric_identity": identity,
         "reason_codes": list(dict.fromkeys(reason_codes)),
     }
 
 
 def pick(assessments: list[dict[str, Any]], key) -> dict[str, Any] | None:
     return max(assessments, key=key) if assessments else None
+
+
+def raw_metric_identity(
+    item: dict[str, Any],
+    candidate: dict[str, Any],
+    table: dict[str, Any],
+    binding: dict[str, Any],
+) -> dict[str, Any]:
+    """Compare the planned candidate metric with its raw V2 value-row label.
+
+    V3's regular grounding intentionally uses projected evidence for broad
+    retrieval review. A special autonomous tie-break needs a stricter fact:
+    the non-numeric label of the exact raw V2 value row must contain the same
+    significant token sequence as the candidate's planned effective metric.
+    This rejects near neighbours such as ``Thặng dư vốn cổ phần`` for a
+    question asking ``Vốn cổ phần``. It is deliberately too strict for normal
+    recall and is never used to make a partial/complex question executable.
+    """
+    row_index = binding.get("row_index")
+    rows = table.get("rows") or []
+    if not isinstance(row_index, int) or not 0 <= row_index < len(rows):
+        return {
+            "exact": False,
+            "reason": "value_row_unavailable",
+            "metric_tokens": [],
+            "row_tokens": [],
+        }
+    metric = v3.metric_text(item, candidate)
+    metric_tokens = [
+        token for token in v3.token_sequence(metric) if not token.isdecimal()
+    ]
+    label = row_label([str(value) for value in rows[row_index]])
+    row_tokens = [
+        token for token in v3.token_sequence(label) if not token.isdecimal()
+    ]
+    exact = bool(metric_tokens) and metric_tokens == row_tokens
+    return {
+        "exact": exact,
+        "metric": metric,
+        "raw_row_label": label,
+        "metric_tokens": metric_tokens,
+        "row_tokens": row_tokens,
+        "reason": "exact_significant_token_sequence" if exact else "metric_row_label_differs",
+    }
+
+
+def selector_has_tied_best(assessments: list[dict[str, Any]], key) -> bool:
+    """Return true only if a selector cannot distinguish its best candidate."""
+    if len(assessments) < 2:
+        return False
+    scores = sorted((float(key(value)) for value in assessments), reverse=True)
+    return abs(scores[0] - scores[1]) <= SELECTOR_TIE_EPSILON
 
 
 def autonomous_review_item(
@@ -455,14 +511,39 @@ def autonomous_review_item(
         and bool((candidate_by_uid[chosen_uid].get("evidence_features") or {}).get("numeric"))
         and period_complete
     )
-    if (
+    ordinary_silver = (
         fully_grounded_direct
         and agreement >= min_agreement
         and critic_accepts
         and confidence >= silver_threshold
-    ):
+    )
+    # Metadata and source quality are hard eligibility gates, but they cannot
+    # select between two equally-valid candidates when their scores tie. The
+    # legacy ``max`` selector still emitted an arbitrary UID in that case,
+    # which could suppress an otherwise exact direct answer. Resolve only this
+    # narrow failure mode: three content selectors and the critic must agree,
+    # the raw V2 value-row label must be an exact metric identity, and both
+    # nondiscriminative selectors must demonstrably have a tied best score.
+    content_selectors = ("semantic_agent", "evidence_agent", "challenger_agent")
+    strict_identity_tiebreak = (
+        fully_grounded_direct
+        and critic_accepts
+        and bool(selected["raw_metric_identity"].get("exact"))
+        and selected["semantic_score"] >= 0.95
+        and selected["evidence_score"] >= 0.90
+        and selected["source_score"] >= 1.0 - SELECTOR_TIE_EPSILON
+        and selected["metadata_score"] >= 1.0 - SELECTOR_TIE_EPSILON
+        and all(votes.get(name) == chosen_uid for name in content_selectors)
+        and selector_has_tied_best(eligible, lambda value: value["source_score"])
+        and selector_has_tied_best(eligible, lambda value: value["metadata_score"])
+    )
+    if ordinary_silver or strict_identity_tiebreak:
         status = "machine_calibrated"
-        reason = "Autonomous source/semantic/evidence/critic consensus passed all raw-V2 gates."
+        reason = (
+            "Autonomous source/semantic/evidence/critic consensus passed all raw-V2 gates."
+            if ordinary_silver
+            else "Strict raw-metric identity resolved nondiscriminative source/metadata selector ties."
+        )
     elif selected["semantic_score"] >= 0.45 and selected["evidence_score"] >= 0.45:
         status = "machine_provisional"
         reason = "Candidate is source-grounded but does not meet conservative autonomous-silver gates."
@@ -492,6 +573,13 @@ def autonomous_review_item(
                 "protocol": AUTONOMOUS_REVIEW_PROTOCOL,
                 "training_eligible": status == "machine_calibrated",
                 "critic_accepts": critic_accepts,
+                "selection_policy": (
+                    "ordinary_multi_view_consensus"
+                    if ordinary_silver
+                    else "strict_raw_metric_identity_tiebreak"
+                    if strict_identity_tiebreak
+                    else "provisional_or_needs_human"
+                ),
                 "alternative_uid": None if alternative is None else alternative["uid"],
                 "selected_value_binding": selected["value_binding"],
                 "selected_assessment": selected,
