@@ -104,16 +104,34 @@ def _question_years(question: str) -> list[int]:
 
 
 def _growth_metric(question: str) -> str:
+    """Extract the metric without treating an in-metric ``từ`` as a date cue.
+
+    Financial labels commonly contain phrases such as ``chi phí mua khí từ các
+    chủ mỏ`` or ``doanh thu từ hoạt động xây dựng``.  The old generic split at
+    the first ``từ`` silently widened those metrics.  A growth boundary must
+    instead carry an explicit year/date phrase.
+    """
     value = re.sub(r"\s+", " ", question).strip(" ?.\n")
     match = re.search(
         r"(?:tỷ lệ tăng trưởng|tỉ lệ tăng trưởng|tốc độ tăng trưởng|"
-        r"tỷ lệ tăng\s*%|tỉ lệ tăng\s*%|phần trăm tốc độ tăng trưởng)\s+(.+?)\s+từ\s+",
+        r"tỷ lệ tăng\s*%|tỉ lệ tăng\s*%|phần trăm tốc độ tăng trưởng)\s+(.+)$",
         value,
         re.IGNORECASE,
     )
     if not match:
         return "Chỉ tiêu cần so sánh"
     metric = match.group(1).strip()
+    time_boundary = re.search(
+        r"\s+(?:từ\s+(?:(?:đầu|cuối)\s+)?năm\s+|"
+        r"từ\s+(?:19|20)\d{2}\b|"
+        r"trong\s+năm\s+(?:19|20)\d{2}\s+so\s+với\s+năm\s+(?:19|20)\d{2}\b|"
+        r"năm\s+(?:19|20)\d{2}\s+so\s+với\s+năm\s+(?:19|20)\d{2}\b)",
+        metric,
+        re.IGNORECASE,
+    )
+    if time_boundary:
+        metric = metric[: time_boundary.start()].strip()
+    metric = re.sub(r"\s+(?:tính|so)$", "", metric, flags=re.IGNORECASE).strip()
     entity = re.search(
         r"\s+của\s+(?:công ty mẹ|ctcp|công ty cổ phần|ngân hàng|tập đoàn|tổng công ty)\b",
         metric,
@@ -121,7 +139,7 @@ def _growth_metric(question: str) -> str:
     )
     if entity:
         metric = metric[: entity.start()].strip()
-    metric = re.sub(r"\s+của\s+[A-Z]{2,6}$", "", metric).strip()
+    metric = re.sub(r"\s+của\s+[A-Z]{2,6}(?:\s+.*)?$", "", metric).strip()
     return metric or "Chỉ tiêu cần so sánh"
 
 
@@ -543,7 +561,10 @@ def infer_formula_spec(question: str) -> dict[str, Any] | None:
     growth_terms = ("tang truong", "toc do tang", "ty le tang", "phan tram toc do tang")
     if any(term in text for term in growth_terms) and len(years) >= 2:
         metric = _growth_metric(question)
-        old, new = years[0], years[-1]
+        # ``2022 so với 2020`` names the target before its base.  A growth
+        # rate is chronological unless a future controlled rule explicitly
+        # models a reverse-period comparison.
+        old, new = min(years), max(years)
         return _spec(
             "percentage_change",
             "Tỷ lệ tăng trưởng",

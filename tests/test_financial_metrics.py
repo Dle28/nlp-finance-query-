@@ -20,6 +20,25 @@ class FinancialMetricFormulaTests(unittest.TestCase):
         self.assertIn("tổng nợ ngắn hạn", spec["operands"][0]["label"].casefold())
         self.assertTrue(formula_is_multi_operand(spec))
 
+    def test_growth_rule_preserves_metric_qualifier_and_orders_years(self):
+        spec = infer_formula_spec(
+            "Tốc độ tăng trưởng doanh thu thuần từ hoạt động xây dựng của DIG "
+            "tính từ năm 2022 lên 2023 là bao nhiêu %?"
+        )
+        self.assertEqual(
+            [operand["years"] for operand in spec["operands"]], [[2022], [2023]]
+        )
+        self.assertIn("từ hoạt động xây dựng", spec["operands"][0]["label"].casefold())
+
+        reversed_years = infer_formula_spec(
+            "Tỉ lệ tăng trưởng chi phí mua khí từ các chủ mỏ của GAS trong năm "
+            "2022 so với năm 2020 là bao nhiêu %?"
+        )
+        self.assertEqual(
+            [operand["years"] for operand in reversed_years["operands"]], [[2020], [2022]]
+        )
+        self.assertIn("từ các chủ mỏ", reversed_years["operands"][0]["label"].casefold())
+
     def test_known_balance_sheet_ratio_is_explicit(self):
         spec = infer_formula_spec(
             "Tỷ lệ nợ ngắn hạn trên vốn chủ sở hữu của công ty mẹ VNM năm 2022 là bao nhiêu %?"
