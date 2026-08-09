@@ -10,6 +10,7 @@ Modes:
 - final: export a full audit ledger plus a provenance-filtered training subset.
 - pilot: train/evaluate a shadow Top-K candidate reranker; no corpus/index rebuild.
 - preprocess: derive canonical header/period context from immutable V2 grids.
+- formula-evidence: derive exact-cell coverage for controlled formula operands.
 - autonomous: V4 machine self-review and source-gated machine-silver export.
 - autotrain: train only when enough V4 machine-silver pairs have accumulated.
 """
@@ -25,7 +26,7 @@ from pathlib import Path
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument(
-        "mode", choices=["diagnose", "repair-tables", "baseline", "collaborate", "calibrate", "final", "pilot", "preprocess", "autonomous", "autotrain", "submission"]
+        "mode", choices=["diagnose", "repair-tables", "baseline", "collaborate", "calibrate", "final", "pilot", "preprocess", "formula-evidence", "autonomous", "autotrain", "submission"]
     )
     p.add_argument("--bundle-dir", type=Path, default=None)
     p.add_argument("--bundle-archive", type=Path, default=None)
@@ -153,7 +154,7 @@ def main() -> None:
 
     reviewer = (
         reviewer_script(root, bundle)
-        if args.mode not in {"preprocess", "autonomous", "autotrain", "pilot", "submission"}
+        if args.mode not in {"preprocess", "formula-evidence", "autonomous", "autotrain", "pilot", "submission"}
         else None
     )
 
@@ -199,6 +200,27 @@ def main() -> None:
         run(command, root)
         print("\nCanonical context sidecar:", evidence_context)
         print("It preserves raw V2 rows and only derives header/period/provenance context.")
+        return
+
+    if args.mode == "formula-evidence":
+        if not evidence_context.is_file():
+            raise FileNotFoundError(
+                f"Canonical context missing: {evidence_context}. Run preprocess first."
+            )
+        formula_evidence = bundle / "formula_evidence_sets_v1.jsonl"
+        run(
+            [
+                sys.executable,
+                str(root / "scripts/build_formula_evidence_sets.py"),
+                "--bundle-dir",
+                str(bundle),
+                "--output",
+                str(formula_evidence),
+            ],
+            root,
+        )
+        print("\nFormula EvidenceSet sidecar:", formula_evidence)
+        print("It records only exact raw-row/cell operand coverage; it does not generate answers or labels.")
         return
 
     if args.mode == "autonomous":
