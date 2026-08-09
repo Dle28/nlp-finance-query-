@@ -27,6 +27,7 @@ if str(ROOT / "src") not in sys.path:
 from finance_query.binding import row_label  # noqa: E402
 from finance_query.corpus import infer_unit  # noqa: E402
 from finance_query.execution import convert_unit, parse_decimal  # noqa: E402
+from finance_query.evidence_context import validate_evidence_context_sidecar  # noqa: E402
 from finance_query.schemas import DirectBinding  # noqa: E402
 from finance_query.table_structure import validate_structure_sidecar  # noqa: E402
 
@@ -82,6 +83,18 @@ def load_v2_tables(bundle: Path) -> dict[str, dict[str, Any]]:
     return tables
 
 
+def load_evidence_contexts(bundle: Path) -> dict[str, dict[str, Any]]:
+    structured = bundle / "tables_structured_v2.jsonl"
+    context_path = bundle / "tables_evidence_context_v1.jsonl"
+    validate_evidence_context_sidecar(bundle, structured, context_path)
+    contexts = {
+        str(row["internal_table_uid"]): row for row in load_jsonl(context_path)
+    }
+    if not contexts:
+        raise ValueError("Canonical evidence-context sidecar is empty")
+    return contexts
+
+
 def canonical_unit(table: dict[str, Any]) -> str | None:
     unit = table.get("unit_hint")
     if isinstance(unit, str) and unit:
@@ -111,7 +124,10 @@ def _non_executable(item: dict[str, Any], review: dict[str, Any] | None, reason:
 
 
 def direct_execution_row(
-    item: dict[str, Any], review: dict[str, Any] | None, tables: dict[str, dict[str, Any]]
+    item: dict[str, Any],
+    review: dict[str, Any] | None,
+    tables: dict[str, dict[str, Any]],
+    contexts: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if review is None:
         return _non_executable(item, review, "no_autonomous_review")
@@ -130,6 +146,9 @@ def direct_execution_row(
     table = tables.get(uid)
     if table is None:
         return _non_executable(item, review, "selected_table_not_in_valid_v2_sidecar")
+    context = (contexts or {}).get(uid)
+    if contexts is not None and context is None:
+        return _non_executable(item, review, "selected_table_not_in_canonical_context_sidecar")
     selected = self_review.get("selected_value_binding") or {}
     if str(selected.get("status") or "") != "cell_bound":
         return _non_executable(item, review, "selected_value_cell_not_bound")
@@ -143,10 +162,28 @@ def direct_execution_row(
     raw_value = str(rows[row_index][column_index])
     if raw_value != str(selected.get("value") or ""):
         return _non_executable(item, review, "selected_value_differs_from_v2_source")
-    column_labels = table.get("column_labels") or []
     column_label = str(selected.get("column_label") or "")
-    if column_index >= len(column_labels) or column_label != str(column_labels[column_index]):
-        return _non_executable(item, review, "selected_column_label_differs_from_v2_source")
+    if context is not None:
+        headers = (context.get("canonical_headers") or {}).get("columns") or []
+        expected_label = str(
+            next(
+                (
+                    column.get("source_label")
+                    for column in headers
+                    if int(column.get("column_index") or -1) == column_index
+                ),
+                "",
+            )
+            or ""
+        )
+        if not expected_label or column_label != expected_label:
+            return _non_executable(item, review, "selected_column_label_differs_from_canonical_source")
+    else:
+        # Compatibility path for a small unit-level caller.  Production always
+        # supplies the hash-validated canonical context above.
+        column_labels = table.get("column_labels") or []
+        if column_index >= len(column_labels) or column_label != str(column_labels[column_index]):
+            return _non_executable(item, review, "selected_column_label_differs_from_v2_source")
     parsed = parse_decimal(raw_value)
     if parsed.value is None or any(
         warning != "percent_value_not_scaled" for warning in parsed.warnings
@@ -214,7 +251,11 @@ def main() -> None:
     if unexpected:
         raise ValueError(f"Machine reviews contain IDs outside bundle: {unexpected[:10]}")
     tables = load_v2_tables(bundle)
-    rows = [direct_execution_row(item, reviews.get(int(item["id"])), tables) for item in items]
+    contexts = load_evidence_contexts(bundle)
+    rows = [
+        direct_execution_row(item, reviews.get(int(item["id"])), tables, contexts)
+        for item in items
+    ]
     write_jsonl(args.output.resolve(), rows)
     counts = Counter(str(row["execution_status"]) for row in rows)
     reasons = Counter(str(row.get("reason") or "") for row in rows if row.get("reason"))

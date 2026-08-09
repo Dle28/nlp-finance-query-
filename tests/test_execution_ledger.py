@@ -64,6 +64,18 @@ def _review(value: str = "1.880.000.000") -> dict:
     }
 
 
+def _context(label: str = "Số cuối năm VND") -> dict:
+    return {
+        "internal_table_uid": UID,
+        "canonical_headers": {
+            "columns": [
+                {"column_index": 0, "source_label": "Nhãn dòng"},
+                {"column_index": 1, "source_label": label},
+            ]
+        },
+    }
+
+
 class ExecutionLedgerTests(unittest.TestCase):
     def test_machine_calibrated_direct_cell_becomes_exact_execution_record(self) -> None:
         row = ledger.direct_execution_row(_item(), _review(), {UID: _table()})
@@ -77,6 +89,26 @@ class ExecutionLedgerTests(unittest.TestCase):
         row = ledger.direct_execution_row(_item(), _review("1.990.000.000"), {UID: _table()})
         self.assertEqual(row["execution_status"], "not_executable")
         self.assertEqual(row["reason"], "selected_value_differs_from_v2_source")
+
+    def test_canonical_header_path_is_the_production_binding_contract(self) -> None:
+        review = _review()
+        review["machine_self_review"]["selected_value_binding"]["column_label"] = (
+            "Đơn vị: VND Tổng cộng · Tại ngày 31 tháng 12 năm 2023"
+        )
+        row = ledger.direct_execution_row(
+            _item(),
+            review,
+            {UID: _table()},
+            {UID: _context("Đơn vị: VND Tổng cộng · Tại ngày 31 tháng 12 năm 2023")},
+        )
+        self.assertEqual(row["execution_status"], "grounded")
+
+    def test_canonical_header_mismatch_is_not_executable(self) -> None:
+        row = ledger.direct_execution_row(
+            _item(), _review(), {UID: _table()}, {UID: _context("Năm 2022")}
+        )
+        self.assertEqual(row["execution_status"], "not_executable")
+        self.assertEqual(row["reason"], "selected_column_label_differs_from_canonical_source")
 
 
 if __name__ == "__main__":
