@@ -48,9 +48,9 @@ def semantic_candidate_input(
 ) -> str:
     """Create bounded, source-only text for one cross-encoder pair.
 
-    `direct_evidence` is retained because it contains the projected source row
-    and headers; the exact V2 row is also inserted independently so a malformed
-    projection cannot be the only model-visible evidence.
+    The input contains no V3 projected evidence.  It is built only from the
+    immutable V2 source row and canonical context that is itself traceable to
+    raw-header cells, so a stale projection cannot influence the score.
     """
     trace = context.get("context_trace") or table.get("context_trace") or {}
     function = context.get("table_function") or table.get("table_function") or {}
@@ -71,7 +71,6 @@ def semantic_candidate_input(
         f"Chức năng bảng: {function_name}",
         f"Đơn vị: {compact_text(table.get('unit_hint'), 80) or units}",
         f"Nguồn: {source_title}",
-        f"Evidence source: {compact_text(candidate.get('direct_evidence'), 1200)}",
     ]
     return "\n".join(line for line in lines if not line.endswith(": "))
 
