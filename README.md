@@ -483,9 +483,12 @@ question plan phải được resolve, report year phải là năm operand hoặ
 cáo kế tiếp. Sau đó operand vẫn phải qua exact raw-row/cell binding; discovery
 không tạo answer hay label nào.
 
-`complete` chỉ có nghĩa tất cả operand của formula đã có exact raw row/cell,
-cùng entity/scope và không mơ hồ; câu có lọc nhóm, xếp hạng hoặc công thức
-ambiguous vẫn giữ `partial` cho đến khi có executor theo stage. Mỗi cell còn
+`complete` chỉ có nghĩa tất cả operand của formula đã có exact raw row/cell và
+không mơ hồ: một entity cần một binding duy nhất trong cùng scope; nhiều entity
+cần một scope không rỗng chung cho mọi entity và một binding duy nhất cho từng
+operand trong scope ấy. Không có/mơ hồ scope chung vẫn là `partial`. Câu có lọc
+nhóm, xếp hạng hoặc công thức ambiguous vẫn giữ `partial` cho đến khi có
+executor theo stage. Mỗi cell còn
 phải parse thành đúng **một** số nguồn tin cậy; cell OCR ghép hai nhóm số bị
 giữ `partial`, không thể tạo answer.
 

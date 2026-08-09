@@ -997,10 +997,12 @@ margin. Vì vậy score semantic không thể thay thế exact row/cell, period/
 binding hay critic; nó chỉ có thể trở thành signal hạ mức sau một audit độc
 lập.
 
-Formula EvidenceSet V2 dùng cùng parser fail-closed với execution ledger: một
+Formula EvidenceSet V3 dùng cùng parser fail-closed với execution ledger: một
 cell có nhiều nhóm số OCR ghép không phải numeric operand. `complete` đòi hỏi
 mỗi operand là đúng một raw V2 number có thể parse, ngoài các gate entity,
-scope, period và definition hiện có.
+scope, period và definition hiện có. Với nhiều entity, một scope không rỗng
+phải chung cho mọi entity và mỗi operand phải có một binding duy nhất trong
+scope đó; collector không ghép các scope riêng hoặc tự chọn giữa các binding.
 
 ---
 

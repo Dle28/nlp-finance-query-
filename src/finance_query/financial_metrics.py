@@ -347,6 +347,146 @@ def _quick_gpm_interest_coverage_plan(
     return spec
 
 
+def _cfo_positive_multiyear_max_net_margin_plan(
+    question: str,
+    folded_question: str,
+    years: list[int],
+) -> dict[str, Any] | None:
+    """Recognise one fully stated filter → rank → ratio program.
+
+    This is deliberately narrower than the generic multi-stage fallback. It
+    has an explicit population, a stated CFO-positivity filter over multiple
+    years, and an explicit target of the highest net-profit margin. The result
+    remains an EvidenceSet plan, never an answer: every entity/year operand
+    must bind to an exact V2 row/cell before execution is considered.
+    """
+    required_phrases = (
+        "luu chuyen tien thuan tu hoat dong kinh doanh duong",
+        "trong ca",
+        "ty le loi nhuan sau thue tren doanh thu thuan cao nhat",
+    )
+    if not all(phrase in folded_question for phrase in required_phrases):
+        return None
+
+    excluded_upper_tokens = {"CFO", "ROA", "ROE", "GPM", "TNDN", "LNST", "VND"}
+    entities: list[str] = []
+    for match in re.finditer(r"\b[A-Z]{2,6}\b", question):
+        ticker = match.group(0)
+        if ticker in excluded_upper_tokens or ticker in entities:
+            continue
+        entities.append(ticker)
+    if len(entities) < 2:
+        return None
+
+    # The target period is attached to the net-margin phrase itself; a leading
+    # report year must not silently become the target period.
+    target_match = re.search(
+        r"ty\s+(?:le|suat)\s+loi\s+nhuan\s+sau\s+thue\s+tren\s+doanh\s+thu\s+thuan"
+        r"\s+cao\s+nhat\s+nam\s+((?:19|20)\d{2})",
+        folded_question,
+    )
+    if not target_match:
+        return None
+    target_year = int(target_match.group(1))
+    screening_years = set(years)
+    # A closed year range is a literal part of the filter, not an inferred
+    # intervening period. Keep the expansion bounded so malformed OCR cannot
+    # generate an unbounded operand set.
+    for range_match in re.finditer(
+        r"\b((?:19|20)\d{2})\s*[-–—]\s*((?:19|20)\d{2})\b",
+        folded_question,
+    ):
+        start, end = (int(range_match.group(1)), int(range_match.group(2)))
+        if 0 <= end - start <= 5:
+            screening_years.update(range(start, end + 1))
+    screening_years = sorted(screening_years)
+    if len(screening_years) < 2 or target_year not in screening_years:
+        return None
+
+    operands: list[dict[str, Any]] = []
+    for entity in entities:
+        prefix = entity.casefold()
+        for year in screening_years:
+            operands.append(
+                _operand(
+                    f"{prefix}_operating_cash_flow_{year}",
+                    f"{entity} — Lưu chuyển tiền thuần từ hoạt động kinh doanh {year}",
+                    ["lưu chuyển tiền thuần từ hoạt động kinh doanh"],
+                    [year],
+                    "cfo_positive_screen",
+                    entity=entity,
+                    stage_id="cfo_positive_filter",
+                    allowed_table_functions=["cash_flow_statement"],
+                )
+            )
+        operands.extend(
+            [
+                _operand(
+                    f"{prefix}_net_profit_{target_year}",
+                    f"{entity} — Lợi nhuận sau thuế {target_year}",
+                    ["lợi nhuận sau thuế", "lợi nhuận ròng"],
+                    [target_year],
+                    "net_margin_numerator",
+                    entity=entity,
+                    stage_id="net_margin_rank",
+                    allowed_table_functions=["income_statement"],
+                ),
+                _operand(
+                    f"{prefix}_net_revenue_{target_year}",
+                    f"{entity} — Doanh thu thuần {target_year}",
+                    ["doanh thu thuần"],
+                    [target_year],
+                    "net_margin_denominator",
+                    entity=entity,
+                    stage_id="net_margin_rank",
+                    allowed_table_functions=["income_statement"],
+                ),
+            ]
+        )
+
+    spec = _spec(
+        "cfo_positive_multiyear_max_net_margin",
+        "Lọc CFO dương nhiều năm → chọn biên lợi nhuận ròng cao nhất",
+        "filter(CFO_y > 0 for every screening year) → argmax(LNST_target / Doanh thu thuần_target)",
+        operands,
+        confidence=0.99,
+        definition_status="defined",
+        notes=[
+            "Chỉ giữ entity có lưu chuyển tiền thuần từ hoạt động kinh doanh dương ở mọi năm sàng lọc.",
+            "Biên lợi nhuận ròng = Lợi nhuận sau thuế / Doanh thu thuần × 100% tại năm mục tiêu.",
+            "Chọn duy nhất entity có biên lợi nhuận ròng lớn nhất; bằng nhau hoặc thiếu operand phải fail-closed.",
+        ],
+    )
+    spec.update(
+        {
+            "output_unit": "percent",
+            "entities": entities,
+            "execution_status": "stage_binding_required",
+            "stages": [
+                {
+                    "stage_id": "cfo_positive_filter",
+                    "label": "1. Lọc CFO dương ở mọi năm nêu trong câu hỏi",
+                    "expression": "CFO_y > 0 for every screening year",
+                    "decision": "Giữ entity khi tất cả operand CFO exact-cell đều dương.",
+                },
+                {
+                    "stage_id": "net_margin_rank",
+                    "label": f"2. Xếp hạng biên lợi nhuận ròng năm {target_year}",
+                    "expression": "NPM = Lợi nhuận sau thuế / Doanh thu thuần × 100%",
+                    "decision": "Chọn entity có NPM lớn nhất trong tập sau lọc.",
+                },
+                {
+                    "stage_id": "target_output",
+                    "label": "3. Trả NPM exact của entity thắng",
+                    "expression": "NPM của entity được chọn",
+                    "decision": "Không suy diễn nếu thiếu/tie ở bất kỳ stage nào.",
+                },
+            ],
+        }
+    )
+    return spec
+
+
 def infer_formula_spec(question: str) -> dict[str, Any] | None:
     """Infer a review formula only when a controlled rule matches."""
     text = fold_text(question)
@@ -355,6 +495,12 @@ def infer_formula_spec(question: str) -> dict[str, Any] | None:
     staged_plan = _quick_gpm_interest_coverage_plan(text, years)
     if staged_plan:
         return staged_plan
+
+    cfo_net_margin_plan = _cfo_positive_multiyear_max_net_margin_plan(
+        question, text, years
+    )
+    if cfo_net_margin_plan:
+        return cfo_net_margin_plan
 
     # Do not collapse a screening/ranking program into whichever ratio keyword
     # appears first.  These questions need entity-wise EvidenceSets and a later

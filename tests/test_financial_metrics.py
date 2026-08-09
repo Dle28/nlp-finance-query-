@@ -131,6 +131,34 @@ class FinancialMetricFormulaTests(unittest.TestCase):
         self.assertEqual(spec["output_unit"], "times")
         self.assertIn("Lợi nhuận trước thuế +", spec["stages"][2]["expression"])
 
+    def test_cfo_positive_filter_then_max_net_margin_has_controlled_stage_plan(self):
+        spec = infer_formula_spec(
+            "Trong nhóm AAA, DCM, DPM, GVR và PRT có lưu chuyển tiền thuần từ "
+            "hoạt động kinh doanh dương trong cả ba năm 2020–2022, tỷ lệ lợi "
+            "nhuận sau thuế trên doanh thu thuần cao nhất năm 2022 là bao nhiêu %?"
+        )
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        self.assertEqual(spec["formula_id"], "cfo_positive_multiyear_max_net_margin")
+        self.assertEqual(spec["definition_status"], "defined")
+        self.assertEqual(spec["execution_status"], "stage_binding_required")
+        self.assertEqual(spec["entities"], ["AAA", "DCM", "DPM", "GVR", "PRT"])
+        self.assertEqual(len(spec["operands"]), 25)
+        self.assertEqual(
+            [stage["stage_id"] for stage in spec["stages"]],
+            ["cfo_positive_filter", "net_margin_rank", "target_output"],
+        )
+
+    def test_cfo_filter_without_net_margin_target_stays_unresolved(self):
+        spec = infer_formula_spec(
+            "Trong nhóm AAA, DCM và DPM có lưu chuyển tiền thuần từ hoạt động "
+            "kinh doanh dương trong cả hai năm 2020 và 2021, doanh nghiệp có "
+            "tăng trưởng doanh thu thuần cao nhất đạt ROA năm 2021 là bao nhiêu phần trăm?"
+        )
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        self.assertEqual(spec["formula_id"], "multi_stage_selection_unresolved")
+
     def test_entity_specific_operand_does_not_bind_other_ticker(self):
         operand = {
             "entity": "HPG",

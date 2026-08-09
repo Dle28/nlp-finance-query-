@@ -58,8 +58,11 @@ EvidenceSet chỉ complete khi:
 2. metric và period của operand cùng khớp context nguồn;
 3. definition không `ambiguous`;
 4. human bật xác nhận công thức;
-5. các candidate được chọn thuộc cùng entity/scope hoặc khác biệt đã được
-   kiểm tra có chủ đích.
+5. với formula một thực thể, toàn bộ operand phải có đúng một binding của cùng
+   `entity/scope`; với formula nhiều thực thể, **một scope không rỗng** phải
+   chung cho tất cả entity và từng operand của từng entity phải có đúng một
+   binding trong scope đó. Không có scope chung, nhiều scope chung, hoặc nhiều
+   binding đều giữ EvidenceSet ở `partial`.
 
 Grid `legacy_bundle_rows` không đủ điều kiện complete. Widget ẩn quick numeric
 view, khóa `Accept machine` và hạ lựa chọn có số liệu xuống partial cho đến khi
@@ -80,6 +83,14 @@ net service result, net finance result và một số tỷ trọng tài chính x
 trong tập câu hỏi. Quick ratio và một số tỷ trọng có
 `definition_status=review_required`; dividend investment yield là `ambiguous`
 nếu câu hỏi không chỉ rõ cơ sở giá trị khoản đầu tư.
+
+Một template có kiểm soát nữa chỉ nhận đúng mẫu: lọc các công ty có **lưu
+chuyển tiền thuần từ hoạt động kinh doanh dương ở mọi năm trong khoảng đóng**,
+sau đó xếp hạng **LNST / doanh thu thuần** ở một năm đích. Template chỉ tạo
+operand CFO, LNST và doanh thu với table function tương ứng và ghi
+`stage_binding_required`; nó không tính tỷ lệ, không chọn công ty thắng và
+không tạo answer/label. Mẫu thiếu năm đích, thiếu entity hoặc khác câu chữ sẽ
+fail-closed về `multi_stage_selection_unresolved`.
 
 Không match rule thì UI giữ workflow table review bình thường; không suy đoán
 công thức mới.

@@ -309,6 +309,96 @@ def operand_evidence_matches(
     return output
 
 
+def select_coherent_operand_matches(
+    coverage: Mapping[str, list[dict[str, Any]]],
+    operands: list[Mapping[str, Any]],
+) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """Select only a unique source-consistent binding for each operand.
+
+    Single-entity formulas require one common ``(ticker, scope)`` pair. A
+    multi-entity stage program instead requires one *common non-empty scope*
+    across entities and exactly one source binding for each entity-specific
+    operand in that scope. Treating all operands as one ticker was impossible
+    for a genuine group question; selecting a scope per entity independently
+    would be equally unsafe. Both ambiguity modes fail closed.
+    """
+    entities = {
+        str(operand.get("entity") or "").casefold()
+        for operand in operands
+    }
+    entity_scoped = bool(entities and "" not in entities)
+    selected: dict[str, dict[str, Any]] = {}
+    reason_codes: list[str] = []
+
+    if entity_scoped:
+        scope_sets: list[set[str]] = []
+        for entity in sorted(entities):
+            entity_operands = [
+                operand
+                for operand in operands
+                if str(operand.get("entity") or "").casefold() == entity
+            ]
+            scopes: set[str] | None = None
+            for operand in entity_operands:
+                operand_id = str(operand["operand_id"])
+                operand_scopes = {
+                    str(match.get("scope") or "")
+                    for match in coverage.get(operand_id) or []
+                    if str(match.get("ticker") or "").casefold() == entity
+                    and str(match.get("scope") or "")
+                }
+                scopes = operand_scopes if scopes is None else scopes & operand_scopes
+            scope_sets.append(scopes or set())
+
+        common_scopes = set.intersection(*scope_sets) if scope_sets else set()
+        if not common_scopes:
+            return {}, ["no_common_scope_across_entity_operands"]
+        if len(common_scopes) > 1:
+            return {}, ["ambiguous_scope_across_entities"]
+        scope = next(iter(common_scopes))
+        for operand in operands:
+            operand_id = str(operand["operand_id"])
+            entity = str(operand.get("entity") or "").casefold()
+            matches = [
+                match
+                for match in coverage.get(operand_id) or []
+                if str(match.get("ticker") or "").casefold() == entity
+                and str(match.get("scope") or "") == scope
+            ]
+            if len(matches) != 1:
+                reason_codes.append("ambiguous_operand_bindings")
+                break
+            selected[operand_id] = matches[0]
+        return (selected if not reason_codes else {}), reason_codes
+
+    coherent_pairs: set[tuple[str, str]] | None = None
+    for operand in operands:
+        operand_id = str(operand["operand_id"])
+        pairs = {
+            (str(value.get("ticker") or ""), str(value.get("scope") or ""))
+            for value in coverage.get(operand_id) or []
+        }
+        coherent_pairs = pairs if coherent_pairs is None else coherent_pairs & pairs
+    if not coherent_pairs:
+        return {}, ["no_common_entity_scope_for_required_operands"]
+    if len(coherent_pairs) > 1:
+        return {}, ["ambiguous_entity_or_scope_combination"]
+    pair = next(iter(coherent_pairs))
+    for operand in operands:
+        operand_id = str(operand["operand_id"])
+        pair_matches = [
+            value
+            for value in coverage.get(operand_id) or []
+            if (str(value.get("ticker") or ""), str(value.get("scope") or ""))
+            == pair
+        ]
+        if len(pair_matches) != 1:
+            reason_codes.append("ambiguous_operand_bindings")
+            break
+        selected[operand_id] = pair_matches[0]
+    return (selected if not reason_codes else {}), reason_codes
+
+
 def formula_evidence_set(
     formula: Mapping[str, Any],
     item: Mapping[str, Any],
@@ -369,31 +459,12 @@ def formula_evidence_set(
         "multi_entity_or_period_aggregation",
     }:
         reason_codes.append("question_family_requires_composed_execution")
-    coherent_pairs: set[tuple[str, str]] | None = None
-    for matches in coverage.values():
-        pairs = {
-            (str(value.get("ticker") or ""), str(value.get("scope") or ""))
-            for value in matches
-        }
-        coherent_pairs = pairs if coherent_pairs is None else coherent_pairs & pairs
     selected_operand_matches: dict[str, dict[str, Any]] = {}
     if not missing:
-        if not coherent_pairs:
-            reason_codes.append("no_common_entity_scope_for_required_operands")
-        elif len(coherent_pairs) > 1:
-            reason_codes.append("ambiguous_entity_or_scope_combination")
-        else:
-            pair = next(iter(coherent_pairs))
-            for operand_id, matches in coverage.items():
-                pair_matches = [
-                    value
-                    for value in matches
-                    if (str(value.get("ticker") or ""), str(value.get("scope") or "")) == pair
-                ]
-                if len(pair_matches) != 1:
-                    reason_codes.append("ambiguous_operand_bindings")
-                    break
-                selected_operand_matches[operand_id] = pair_matches[0]
+        selected_operand_matches, selection_reasons = select_coherent_operand_matches(
+            coverage, operands
+        )
+        reason_codes.extend(selection_reasons)
     evidence_completeness = (
         "complete"
         if operand_coverage_status == "complete" and len(selected_operand_matches) == len(operands) and not reason_codes

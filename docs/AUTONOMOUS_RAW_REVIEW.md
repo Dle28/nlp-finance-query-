@@ -228,9 +228,12 @@ python scripts/build_formula_evidence_sets.py \
 
 An operand is recorded only when its metric has an exact V2 data row and a
 unique raw canonical year/period cell. The collector rejects unmatched ticker
-or scope metadata and requires one coherent entity/scope combination plus one
-unambiguous binding per required operand. `complete` therefore means that the
-controlled input EvidenceSet is source-complete; it still cannot execute when
+or scope metadata. A one-entity formula needs one unambiguous binding per
+operand in one entity/scope; a multi-entity formula needs one non-empty scope
+shared by every entity and one unambiguous binding per operand within it. No
+shared scope, several shared scopes, or duplicate bindings stays `partial`.
+`complete` therefore means that the controlled input EvidenceSet is
+source-complete; it still cannot execute when
 the formula is ambiguous, needs a stage selection, or the question family is a
 group/comparison/conditional program. The collector never changes a review
 status or produces an answer. V2 also parses each bound source cell with the

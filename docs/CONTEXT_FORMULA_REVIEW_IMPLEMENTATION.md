@@ -246,3 +246,42 @@ thay sidecar local nếu sidecar cũ tồn tại.
 completion có provenance cho bảng đúng nhưng nằm ngoài Top-K. Q369 đã có stage
 planner cụ thể; bốn câu còn mang `multi_stage_selection_unresolved` vẫn phải
 giữ `needs_human`/partial cho đến khi có rule tương ứng.
+
+## Controlled multi-table stage template — 2026-08-10
+
+Đã bổ sung một template rất hẹp cho câu hỏi có đúng cấu trúc: nhiều công ty,
+điều kiện “lưu chuyển tiền thuần từ hoạt động kinh doanh dương trong cả” một
+khoảng năm đóng, rồi chọn tỷ lệ `LNST / doanh thu thuần` cao nhất ở một năm
+đích. Template tạo EvidenceSet cho từng stage nhưng không materialize answer:
+
+```text
+CFO dương cho mọi năm lọc (cash-flow statement)
+→ LNST và doanh thu thuần ở năm đích (income statement)
+→ stage_binding_required
+```
+
+Binding được siết theo provenance: formula một entity cần một `entity/scope`
+duy nhất; formula nhiều entity chỉ được complete nếu có **một scope không rỗng
+chung cho tất cả entity** và mỗi operand có đúng một binding trong scope ấy.
+Khác scope, nhiều scope chung hay duplicate match đều fail-closed, không được
+tự ghép báo cáo riêng lẻ.
+
+Shadow run trên `run_full_001` nhận diện 4 câu đúng mẫu và thêm 524 source
+operand candidates. Cả bốn vẫn `partial`: Q472/Q489/Q547 thiếu LNST và doanh
+thu của DPM/GVR năm 2022; Q551 thiếu LNST và doanh thu của SAM năm 2024. Không
+có `selected_operand_matches`, không có answer, không thay đổi review status
+hay machine-silver.
+
+Đã chạy audit chỉ đọc `raw_source_completion_audit_v1` cho các operand thiếu.
+Kết quả xác nhận 14 trường hợp có bảng statement raw với row signature đầy đủ
+nhưng UID không có trong immutable bundle, trong đó có toàn bộ 14 operand của
+bốn câu trên. Mỗi operand vẫn có cả `consolidated` và `separate`, nên chưa có
+scope chung duy nhất và không được tự chọn. Audit lưu source report/table SHA,
+ordinal, trang, headers và exact metric row; nó không thêm table vào bundle,
+không tạo evidence binding và có `promotion_allowed=false`.
+
+Bước tiếp theo là một **source-completion sidecar** riêng: chỉ nhận raw-table
+candidate khi table SHA/UID/source report được revalidate, canonical header và
+year-cell được dựng lại, rồi áp lại common-scope/unique-binding gate. Sidecar
+đó không sửa corpus/index và chỉ có thể đưa table vào *vòng EvidenceSet sau*;
+nó không được phép dùng trực tiếp cho answer hoặc training label.

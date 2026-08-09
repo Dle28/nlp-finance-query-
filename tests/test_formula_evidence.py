@@ -31,6 +31,14 @@ def _table() -> dict:
     }
 
 
+def _entity_table(uid: str, ticker: str) -> dict:
+    table = _table()
+    table["internal_table_uid"] = uid
+    table["document_id"] = f"{ticker}_financial_statements_2023_consolidated"
+    table["ticker"] = ticker
+    return table
+
+
 class FormulaEvidenceTests(unittest.TestCase):
     def test_source_discovery_uses_only_resolved_source_metadata(self):
         formula = {
@@ -218,6 +226,69 @@ class FormulaEvidenceTests(unittest.TestCase):
         evidence = formula_evidence_set(formula, item, {"u1": table}, {"u1": context})
         self.assertEqual(evidence["evidence_completeness"], "complete")
         self.assertEqual(set(evidence["selected_operand_matches"]), {"assets", "liabilities"})
+
+    def test_multi_entity_operands_require_one_common_scope_not_one_ticker(self):
+        aaa = _entity_table("aaa", "AAA")
+        dcm = _entity_table("dcm", "DCM")
+        contexts = {"aaa": build_evidence_context(aaa), "dcm": build_evidence_context(dcm)}
+        formula = {
+            "formula_id": "controlled_group_program",
+            "definition_status": "defined",
+            "operands": [
+                {
+                    "operand_id": "aaa_assets",
+                    "entity": "AAA",
+                    "metric_hints": ["tài sản ngắn hạn"],
+                    "years": [2023],
+                    "required": True,
+                },
+                {
+                    "operand_id": "dcm_liabilities",
+                    "entity": "DCM",
+                    "metric_hints": ["nợ ngắn hạn"],
+                    "years": [2023],
+                    "required": True,
+                },
+            ],
+        }
+        item = {
+            "id": 1,
+            "question": "test",
+            "question_plan": {"family": "ratio_or_derived", "tickers": ["AAA", "DCM"]},
+            "candidates": [
+                {"internal_table_uid": "aaa", "rank": 1, "ticker": "AAA", "scope": "consolidated", "report_year": 2023},
+                {"internal_table_uid": "dcm", "rank": 2, "ticker": "DCM", "scope": "consolidated", "report_year": 2023},
+            ],
+        }
+        evidence = formula_evidence_set(formula, item, {"aaa": aaa, "dcm": dcm}, contexts)
+        self.assertEqual(evidence["evidence_completeness"], "complete")
+        self.assertEqual(set(evidence["selected_operand_matches"]), {"aaa_assets", "dcm_liabilities"})
+
+    def test_multi_entity_operands_fail_closed_without_a_common_scope(self):
+        aaa = _entity_table("aaa", "AAA")
+        dcm = _entity_table("dcm", "DCM")
+        contexts = {"aaa": build_evidence_context(aaa), "dcm": build_evidence_context(dcm)}
+        formula = {
+            "formula_id": "controlled_group_program",
+            "definition_status": "defined",
+            "operands": [
+                {"operand_id": "aaa_assets", "entity": "AAA", "metric_hints": ["tài sản ngắn hạn"], "years": [2023], "required": True},
+                {"operand_id": "dcm_liabilities", "entity": "DCM", "metric_hints": ["nợ ngắn hạn"], "years": [2023], "required": True},
+            ],
+        }
+        item = {
+            "id": 1,
+            "question": "test",
+            "question_plan": {"family": "ratio_or_derived", "tickers": ["AAA", "DCM"]},
+            "candidates": [
+                {"internal_table_uid": "aaa", "rank": 1, "ticker": "AAA", "scope": "separate", "report_year": 2023},
+                {"internal_table_uid": "dcm", "rank": 2, "ticker": "DCM", "scope": "consolidated", "report_year": 2023},
+            ],
+        }
+        evidence = formula_evidence_set(formula, item, {"aaa": aaa, "dcm": dcm}, contexts)
+        self.assertEqual(evidence["evidence_completeness"], "partial")
+        self.assertEqual(evidence["selected_operand_matches"], {})
+        self.assertIn("no_common_scope_across_entity_operands", evidence["reason_codes"])
 
     def test_candidate_with_wrong_ticker_cannot_supply_formula_evidence(self):
         table = _table()
