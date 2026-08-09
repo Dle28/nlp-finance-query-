@@ -83,11 +83,12 @@ def main() -> None:
     output = args.output.resolve()
     write_jsonl(output, evidence)
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "bundle_review_items_sha256": sha256_file(bundle / "review_items.jsonl"),
         "structured_tables_sha256": sha256_file(structured),
         "evidence_context_sha256": sha256_file(contexts_path),
         "evidence_set_count": len(evidence),
+        "numeric_binding_policy": "one_reliable_raw_v2_number_per_operand",
         "completeness_counts": dict(Counter(row["evidence_completeness"] for row in evidence)),
         "sidecar_sha256": sha256_file(output),
     }
