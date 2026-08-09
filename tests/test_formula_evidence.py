@@ -55,6 +55,19 @@ class FormulaEvidenceTests(unittest.TestCase):
         candidate = {"internal_table_uid": "u1", "rank": 1, "ticker": "ABC", "report_year": 2023}
         self.assertEqual(operand_evidence_matches(operand, candidate, table, context), [])
 
+    def test_ocr_concatenated_numeric_cell_cannot_become_formula_operand(self):
+        table = _table()
+        table["rows"][1][1] = "(72.193.585.614)(27.471.160.925)"
+        context = build_evidence_context(table)
+        operand = {
+            "operand_id": "assets",
+            "metric_hints": ["tài sản ngắn hạn"],
+            "years": [2023],
+            "required": True,
+        }
+        candidate = {"internal_table_uid": "u1", "rank": 1, "ticker": "ABC", "report_year": 2023}
+        self.assertEqual(operand_evidence_matches(operand, candidate, table, context), [])
+
     def test_set_stays_partial_when_a_required_operand_has_no_exact_cell(self):
         table = _table()
         context = build_evidence_context(table)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from .execution import parse_decimal
 from .financial_metrics import operand_match_score
 
 
@@ -152,13 +153,29 @@ def bind_operand_cell(
     column_index = next(iter(columns))
     if not 0 <= row_index < len(rows) or not 0 <= column_index < len(rows[row_index]):
         return {"status": "invalid_source_coordinates", "reason": "raw V2 coordinate out of bounds"}
+    raw_value = str(rows[row_index][column_index])
+    parsed = parse_decimal(raw_value)
+    # A formula composes numbers, so it must use the same fail-closed numeric
+    # contract as direct execution. In particular, a malformed OCR cell that
+    # concatenates adjacent numbers is evidence of neither operand.
+    if parsed.value is None or any(
+        warning != "percent_value_not_scaled" for warning in parsed.warnings
+    ):
+        return {
+            "status": "unreliable_source_number",
+            "raw_value": raw_value,
+            "parse_warnings": list(parsed.warnings),
+            "reason": "raw V2 source cell is not one reliable numeric value",
+        }
     provenance = ((table.get("cell_provenance") or [])[row_index] or [])[column_index]
     return {
         "status": "cell_bound",
         "row_index": row_index,
         "column_index": column_index,
         "column_label": _column_by_index(context, column_index).get("source_label"),
-        "raw_value": str(rows[row_index][column_index]),
+        "raw_value": raw_value,
+        "parsed_value": parsed.value,
+        "parse_warnings": list(parsed.warnings),
         "source_cell": provenance,
         "binding_reason": reason,
     }
