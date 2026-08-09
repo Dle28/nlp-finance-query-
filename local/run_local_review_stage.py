@@ -301,8 +301,8 @@ def main() -> None:
         print("\nAutonomous reviews:", autonomous_reviews)
         print("Quarantined dirty/ambiguous candidates:", autonomous_quarantine)
         print("V4 machine-silver labels only:", autonomous_silver)
-        print("Exact-cell execution ledger (direct lookups only):", execution_ledger)
-        print("No label is human_verified; provisional/needs_human remain excluded from silver training.")
+        print("Exact-cell execution ledger (direct lookups + audited formula allow-list):", execution_ledger)
+        print("No label is human_verified; formula execution does not promote review status or enter silver training.")
         return
 
     if args.mode == "autotrain":
