@@ -100,15 +100,14 @@ import os
 import shutil
 import subprocess
 
-SOURCE_SNAPSHOT = Path('/kaggle/input/vifinqa-source-snapshot/AI_guru_source.tar.gz')
+SOURCE_ROOT = Path('/kaggle/input/vifinqa-source-snapshot')
 
-if SOURCE_SNAPSHOT.is_file():
+if (SOURCE_ROOT / 'pyproject.toml').is_file():
     if REPO_DIR.exists():
         shutil.rmtree(REPO_DIR)
-    REPO_DIR.mkdir(parents=True, exist_ok=False)
-    subprocess.run(['tar', '-xzf', str(SOURCE_SNAPSHOT), '-C', str(REPO_DIR)], check=True)
+    shutil.copytree(SOURCE_ROOT, REPO_DIR)
     assert (REPO_DIR / 'pyproject.toml').is_file(), 'Source snapshot is incomplete.'
-    print('Repo hydrated from private Kaggle source snapshot:', SOURCE_SNAPSHOT.name)
+    print('Repo hydrated from private Kaggle source snapshot:', SOURCE_ROOT)
 else:
     print('Source snapshot unavailable; falling back to configured GitHub secret.')
 
