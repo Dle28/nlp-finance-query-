@@ -117,6 +117,8 @@ def main() -> None:
     eligible_questions = 0
     human_checked = 0
     human_top_match = 0
+    human_candidate_available = 0
+    human_top_match_when_available = 0
     for qid, score_row in score_rows.items():
         scores = score_row.get("candidate_scores") or []
         if not scores:
@@ -143,9 +145,14 @@ def main() -> None:
         status = str(review.get("consensus_status") or "")
         status_counts[status] += 1
         human_uids = human.get(qid, set())
+        scored_uids = {str(value.get("internal_table_uid") or "") for value in ordered}
+        human_candidate_present = bool(human_uids & scored_uids)
         if human_uids:
             human_checked += 1
-            human_top_match += int(str(top["internal_table_uid"]) in human_uids)
+            top_matches_human = str(top["internal_table_uid"]) in human_uids
+            human_top_match += int(top_matches_human)
+            human_candidate_available += int(human_candidate_present)
+            human_top_match_when_available += int(top_matches_human and human_candidate_present)
         item = items[qid]
         rows.append(
             {
@@ -163,6 +170,9 @@ def main() -> None:
                 "matches_machine_choice": match,
                 "matches_complete_human_choice": (
                     None if not human_uids else str(top["internal_table_uid"]) in human_uids
+                ),
+                "complete_human_candidate_present_in_scored_top_k": (
+                    None if not human_uids else human_candidate_present
                 ),
             }
         )
@@ -182,9 +192,16 @@ def main() -> None:
             else None,
             "machine_status_counts": dict(status_counts),
             "complete_human_audit_count": human_checked,
+            "complete_human_candidate_present_in_scored_top_k_count": human_candidate_available,
             "semantic_top_matches_complete_human_count": human_top_match,
-            "semantic_top_matches_complete_human_rate": round(human_top_match / human_checked, 6)
+            "semantic_top_matches_complete_human_rate_all": round(human_top_match / human_checked, 6)
             if human_checked
+            else None,
+            "semantic_top_matches_complete_human_when_candidate_present_count": human_top_match_when_available,
+            "semantic_top_matches_complete_human_when_candidate_present_rate": round(
+                human_top_match_when_available / human_candidate_available, 6
+            )
+            if human_candidate_available
             else None,
         },
         "margin_quantiles": {
