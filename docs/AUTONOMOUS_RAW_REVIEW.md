@@ -54,6 +54,14 @@ It does not fill missing OCR text, correct a number, or move a source cell.
 If an expected header/data relationship cannot be reconstructed, the table is
 quarantined instead of being interpreted by an agent.
 
+Canonical headers also form a prefix: if V2's structural heuristic marks a
+numeric row *after the first observed data row* as a header, that later marker
+is excluded from the derived header path and recorded as
+`nonleading_header_rows_excluded_from_canonical_path`. This prevents values
+from being concatenated into a period label. The raw V2 cells/markers remain
+unchanged; tables whose remaining prefix cannot label numeric data become
+`needs_processing` rather than being guessed.
+
 ## Independent autonomous gates
 
 A selected candidate must pass all of these before it can be machine silver:

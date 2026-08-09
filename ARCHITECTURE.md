@@ -931,6 +931,12 @@ V4 copy effective plan và provenance vào review output; ledger dùng đúng pl
 đã review nhưng compiler vẫn yêu cầu raw V2 cell. Group/range/comparison hoặc
 formula nhiều operand không được đưa vào override.
 
+Canonical header cũng phải là prefix trước data row quan sát được đầu tiên.
+Nếu V2 heuristic đánh dấu một row số liệu nằm sau data là header, V1 loại row
+đó khỏi header path và ghi `nonleading_header_rows_excluded_from_canonical_path`;
+không ghép số liệu vào period label. Raw cells và marker V2 không bị sửa. Khi
+prefix còn lại không đủ label cột số, table bị `needs_processing`.
+
 ```text
 machine_calibrated  source-gated autonomous silver; có thể train sau min size
 machine_provisional audit only; không train
