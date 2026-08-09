@@ -25,6 +25,10 @@ if str(ROOT / "src") not in sys.path:
 
 from finance_query.execution import parse_decimal  # noqa: E402
 from finance_query.formula_evidence import FORMULA_SOURCE_DISCOVERY_POLICY  # noqa: E402
+from finance_query.source_completion import (  # noqa: E402
+    SOURCE_COMPLETION_PROTOCOL,
+    validate_source_completion_sidecar,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -71,8 +75,8 @@ def validate_manifest(bundle: Path, sidecar: Path) -> dict[str, Any]:
         raise FileNotFoundError(f"Formula evidence manifest missing: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     version = int(manifest.get("schema_version") or 0)
-    if version not in {2, 3}:
-        raise ValueError("Formula evidence audit requires schema_version=2 or 3")
+    if version not in {2, 3, 4}:
+        raise ValueError("Formula evidence audit requires schema_version=2, 3, or 4")
     expected = {
         "bundle_review_items_sha256": bundle / "review_items.jsonl",
         "structured_tables_sha256": bundle / "tables_structured_v2.jsonl",
@@ -87,11 +91,44 @@ def validate_manifest(bundle: Path, sidecar: Path) -> dict[str, Any]:
         discovery = manifest.get("source_discovery") or {}
         if not bool(discovery.get("enabled")) or str(discovery.get("policy") or "") != FORMULA_SOURCE_DISCOVERY_POLICY:
             raise ValueError("Formula source-discovery manifest lacks the required policy")
+    if version >= 4:
+        source_completion_paths(bundle, manifest)
     if str(manifest.get("sidecar_sha256") or "") != sha256_file(sidecar):
         raise ValueError("Formula evidence sidecar hash does not match its manifest")
     if str(manifest.get("numeric_binding_policy") or "") != "one_reliable_raw_v2_number_per_operand":
         raise ValueError("Formula evidence sidecar does not declare the strict numeric binding policy")
     return manifest
+
+
+def _bundle_local_path(bundle: Path, value: object, label: str) -> Path:
+    name = str(value or "")
+    if not name or Path(name).name != name:
+        raise ValueError(f"Formula source-completion {label} must be a local bundle filename")
+    return bundle / name
+
+
+def source_completion_paths(bundle: Path, manifest: dict[str, Any]) -> tuple[Path, Path]:
+    """Validate and return optional V4 raw-source supplemental sidecars."""
+    completion = manifest.get("source_completion") or {}
+    if not bool(completion.get("enabled")):
+        raise ValueError("Formula evidence V4 manifest must enable source completion")
+    if str(completion.get("protocol") or "") != SOURCE_COMPLETION_PROTOCOL:
+        raise ValueError("Formula source-completion protocol is invalid")
+    if bool(completion.get("answer_eligible")) or bool(completion.get("training_eligible")):
+        raise ValueError("Formula source-completion cannot be answer/training eligible")
+    tables_path = _bundle_local_path(bundle, completion.get("tables_file"), "tables file")
+    contexts_path = _bundle_local_path(bundle, completion.get("contexts_file"), "contexts file")
+    for key, path in {
+        "tables_sha256": tables_path,
+        "contexts_sha256": contexts_path,
+    }.items():
+        if str(completion.get(key) or "") != sha256_file(path):
+            raise ValueError(f"Formula source-completion {key} does not match {path.name}")
+    manifest_path = tables_path.with_name("source_completion_v1.manifest.json")
+    if str(completion.get("manifest_sha256") or "") != sha256_file(manifest_path):
+        raise ValueError("Formula source-completion manifest hash mismatch")
+    validate_source_completion_sidecar(bundle, tables_path, contexts_path)
+    return tables_path, contexts_path
 
 
 def operand_matches(rows: Iterable[dict[str, Any]]) -> Iterable[tuple[int, str, dict[str, Any]]]:
@@ -127,6 +164,26 @@ def load_referenced_jsonl(path: Path, uids: set[str]) -> dict[str, dict[str, Any
     return output
 
 
+def load_referenced_from_paths(paths: Iterable[Path], uids: set[str]) -> dict[str, dict[str, Any]]:
+    """Load exact referenced rows from V2 plus optional source-completion files."""
+    output: dict[str, dict[str, Any]] = {}
+    for path in paths:
+        with path.open(encoding="utf-8-sig") as file:
+            for line in file:
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                uid = str(row.get("internal_table_uid") or "")
+                if uid in uids:
+                    if uid in output:
+                        raise ValueError(f"Referenced formula table UID appears twice: {uid}")
+                    output[uid] = row
+    missing = uids - set(output)
+    if missing:
+        raise ValueError(f"Referenced formula table missing from sidecars: {sorted(missing)[:3]}")
+    return output
+
+
 def canonical_column_label(context: dict[str, Any], column_index: int) -> str:
     return str(
         next(
@@ -145,13 +202,22 @@ def validate_operand_matches(
     rows: list[dict[str, Any]],
     bundle: Path,
     context_path: Path | None = None,
+    source_completion_tables: Path | None = None,
+    source_completion_context: Path | None = None,
 ) -> int:
     uids = _needed_uids(rows)
     if not uids:
         return 0
-    tables = load_referenced_jsonl(bundle / "tables_structured_v2.jsonl", uids)
-    contexts = load_referenced_jsonl(
-        context_path or bundle / "tables_evidence_context_v1.jsonl", uids
+    if bool(source_completion_tables) != bool(source_completion_context):
+        raise ValueError("Source-completion tables/context must be supplied together")
+    table_paths = [bundle / "tables_structured_v2.jsonl"]
+    context_paths = [context_path or bundle / "tables_evidence_context_v1.jsonl"]
+    if source_completion_tables is not None:
+        table_paths.append(source_completion_tables)
+        context_paths.append(source_completion_context)  # type: ignore[arg-type]
+    tables = load_referenced_from_paths(table_paths, uids)
+    contexts = load_referenced_from_paths(
+        context_paths, uids
     )
     checked = 0
     for qid, operand_id, match in operand_matches(rows):
@@ -215,7 +281,18 @@ def main() -> None:
     bundle, sidecar = args.bundle_dir.resolve(), args.formula_evidence.resolve()
     manifest = validate_manifest(bundle, sidecar)
     rows = load_jsonl(sidecar)
-    checked = validate_operand_matches(rows, bundle, evidence_context_path(bundle, manifest))
+    completion_tables, completion_context = (
+        source_completion_paths(bundle, manifest)
+        if int(manifest.get("schema_version") or 0) >= 4
+        else (None, None)
+    )
+    checked = validate_operand_matches(
+        rows,
+        bundle,
+        evidence_context_path(bundle, manifest),
+        completion_tables,
+        completion_context,
+    )
     output = {
         "formula_evidence_manifest": manifest,
         "operand_binding_count_checked": checked,

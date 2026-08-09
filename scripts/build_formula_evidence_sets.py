@@ -23,6 +23,7 @@ from finance_query.formula_evidence import (  # noqa: E402
     formula_evidence_set,
     source_discovery_candidates,
 )
+from finance_query.source_completion import validate_source_completion_sidecar  # noqa: E402
 from finance_query.table_structure import validate_structure_sidecar  # noqa: E402
 
 
@@ -35,6 +36,21 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Canonical context sidecar; defaults to tables_evidence_context_v3.jsonl in the bundle.",
+    )
+    parser.add_argument(
+        "--source-completion-tables",
+        type=Path,
+        default=None,
+        help=(
+            "Optional revalidated raw-source completion sidecar. It is used only "
+            "for formula EvidenceSet coverage and remains answer/training-ineligible."
+        ),
+    )
+    parser.add_argument(
+        "--source-completion-context",
+        type=Path,
+        default=None,
+        help="Canonical V3 context sidecar paired with --source-completion-tables.",
     )
     parser.add_argument("--max-matches-per-operand", type=int, default=12)
     parser.add_argument(
@@ -83,6 +99,10 @@ def main() -> None:
         raise ValueError("Formula context sidecar must reside in the review bundle")
     validate_structure_sidecar(bundle, structured)
     validate_evidence_context_sidecar(bundle, structured, contexts_path)
+    if bool(args.source_completion_tables) != bool(args.source_completion_context):
+        raise ValueError(
+            "--source-completion-tables and --source-completion-context must be supplied together"
+        )
     items = load_jsonl(bundle / "review_items.jsonl")
     source_tables = {
         str(row["internal_table_uid"]): row for row in load_jsonl(bundle / "tables.jsonl")
@@ -100,6 +120,27 @@ def main() -> None:
         for uid, structured_table in structured_tables.items()
     }
     contexts = {str(row["internal_table_uid"]): row for row in load_jsonl(contexts_path)}
+    source_completion_manifest: dict[str, Any] | None = None
+    if args.source_completion_tables is not None:
+        completion_tables_path = args.source_completion_tables.resolve()
+        completion_context_path = args.source_completion_context.resolve()
+        if completion_tables_path.parent != bundle or completion_context_path.parent != bundle:
+            raise ValueError("Source-completion sidecars must reside directly in the review bundle")
+        source_completion_manifest = validate_source_completion_sidecar(
+            bundle, completion_tables_path, completion_context_path
+        )
+        completion_tables = {
+            str(row["internal_table_uid"]): row
+            for row in load_jsonl(completion_tables_path)
+        }
+        completion_contexts = {
+            str(row["internal_table_uid"]): row
+            for row in load_jsonl(completion_context_path)
+        }
+        if set(completion_tables) & set(tables) or set(completion_contexts) & set(contexts):
+            raise ValueError("Source-completion UID overlaps immutable V2 context")
+        tables.update(completion_tables)
+        contexts.update(completion_contexts)
     evidence = []
     source_discovery_candidate_count = 0
     for item in items:
@@ -131,7 +172,7 @@ def main() -> None:
     output = args.output.resolve()
     write_jsonl(output, evidence)
     manifest = {
-        "schema_version": 3 if args.discover_source_operands else 2,
+        "schema_version": 4 if source_completion_manifest is not None else 3 if args.discover_source_operands else 2,
         "bundle_review_items_sha256": sha256_file(bundle / "review_items.jsonl"),
         "bundle_tables_sha256": sha256_file(bundle / "tables.jsonl"),
         "structured_tables_sha256": sha256_file(structured),
@@ -145,6 +186,21 @@ def main() -> None:
             "candidate_count": source_discovery_candidate_count,
             "source_metadata": "immutable_tables_jsonl_uid_join",
         },
+        "source_completion": (
+            {
+                "enabled": True,
+                "protocol": str(source_completion_manifest.get("protocol") or ""),
+                "tables_file": completion_tables_path.name,
+                "contexts_file": completion_context_path.name,
+                "tables_sha256": sha256_file(completion_tables_path),
+                "contexts_sha256": sha256_file(completion_context_path),
+                "manifest_sha256": sha256_file(completion_tables_path.with_name("source_completion_v1.manifest.json")),
+                "answer_eligible": False,
+                "training_eligible": False,
+            }
+            if source_completion_manifest is not None
+            else {"enabled": False}
+        ),
         "completeness_counts": dict(Counter(row["evidence_completeness"] for row in evidence)),
         "sidecar_sha256": sha256_file(output),
     }

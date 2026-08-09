@@ -483,6 +483,22 @@ question plan phải được resolve, report year phải là năm operand hoặ
 cáo kế tiếp. Sau đó operand vẫn phải qua exact raw-row/cell binding; discovery
 không tạo answer hay label nào.
 
+Khi audit cho thấy statement tồn tại trong raw report nhưng bị thiếu hẳn khỏi
+bundle, chạy source completion ở chế độ **shadow**:
+
+```bash
+python local/run_local_review_stage.py source-completion \
+  --bundle-dir ~/ViFinQA_review/run_002
+```
+
+Luồng này tạo `formula_source_completion_audit_v1.json`, sau đó chỉ đưa các
+raw table đã revalidate lại report SHA, table SHA, deterministic UID, header
+V3, period cell và provenance vào `source_completion_*_v1` sidecar. Nó tạo
+Formula EvidenceSet shadow riêng, không sửa `tables.jsonl`, corpus/index,
+review status, answer, execution ledger hoặc training label. Một raw table
+bổ sung vẫn phải qua common-scope/unique-binding gate; không được tự chọn
+`consolidated` hay `separate`.
+
 `complete` chỉ có nghĩa tất cả operand của formula đã có exact raw row/cell và
 không mơ hồ: một entity cần một binding duy nhất trong cùng scope; nhiều entity
 cần một scope không rỗng chung cho mọi entity và một binding duy nhất cho từng
@@ -505,8 +521,8 @@ Kiểm tra lại mọi operand đã lưu trước khi nghiên cứu executor ti�
 ```bash
 python scripts/analyze_formula_evidence.py \
   --bundle-dir ~/ViFinQA_review/run_002 \
-  --formula-evidence ~/ViFinQA_review/run_002/formula_evidence_sets_v2.jsonl \
-  --output ~/ViFinQA_review/run_002/formula_evidence_sets_v2.audit.json
+  --formula-evidence ~/ViFinQA_review/run_002/formula_evidence_sets_context_v3_discovered.jsonl \
+  --output ~/ViFinQA_review/run_002/formula_evidence_sets_context_v3_discovered.audit.json
 ```
 
 Semantic rerank V2 là sidecar audit riêng: model chỉ thấy question, exact V2

@@ -2,7 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from finance_query.source_completion import raw_source_candidates, source_report_index
+from finance_query.source_completion import (
+    revalidate_raw_source_candidate,
+    raw_source_candidates,
+    source_report_index,
+)
 
 
 class SourceCompletionTests(unittest.TestCase):
@@ -37,6 +41,12 @@ class SourceCompletionTests(unittest.TestCase):
             self.assertFalse(candidates[0]["already_in_immutable_bundle"])
             self.assertEqual(candidates[0]["table_function"]["kind"], "income_statement")
             self.assertEqual(candidates[0]["matching_rows"][0]["row_index"], 4)
+            table, context = revalidate_raw_source_candidate(
+                candidates[0], reports_root=root
+            )
+            self.assertEqual(table["source_completion"]["protocol"], "raw_source_completion_v1")
+            self.assertFalse(table["source_completion"]["answer_eligible"])
+            self.assertEqual(context["quality"]["status"], "review_ready")
 
     def test_source_audit_rejects_table_without_expected_statement_function(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -64,6 +64,44 @@ class AnalyzeFormulaEvidenceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 mod.validate_operand_matches(rows, bundle)
 
+    def test_operand_match_can_be_checked_against_separate_source_completion_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory)
+            (bundle / "tables_structured_v2.jsonl").write_text("", encoding="utf-8")
+            (bundle / "tables_evidence_context_v1.jsonl").write_text("", encoding="utf-8")
+            completion_table = {
+                "internal_table_uid": "raw-u1",
+                "rows": [["Chỉ tiêu", "Năm 2023"], ["Tiền", "100"]],
+            }
+            completion_context = {
+                "internal_table_uid": "raw-u1",
+                "canonical_headers": {"columns": [{"column_index": 1, "source_label": "Năm 2023"}]},
+            }
+            completion_tables = bundle / "source_completion_tables_v1.jsonl"
+            completion_contexts = bundle / "source_completion_context_v1.jsonl"
+            completion_tables.write_text(json.dumps(completion_table) + "\n", encoding="utf-8")
+            completion_contexts.write_text(json.dumps(completion_context) + "\n", encoding="utf-8")
+            rows = [{
+                "id": 1,
+                "operand_matches": {"cash": [{
+                    "internal_table_uid": "raw-u1",
+                    "source_row": ["Tiền", "100"],
+                    "binding": {
+                        "status": "cell_bound", "row_index": 1, "column_index": 1,
+                        "column_label": "Năm 2023", "raw_value": "100", "parsed_value": "100",
+                    },
+                }]},
+            }]
+            self.assertEqual(
+                mod.validate_operand_matches(
+                    rows,
+                    bundle,
+                    source_completion_tables=completion_tables,
+                    source_completion_context=completion_contexts,
+                ),
+                1,
+            )
+
     def test_summary_separates_coverage_from_execution_eligibility(self) -> None:
         summary = mod.summarize(
             [

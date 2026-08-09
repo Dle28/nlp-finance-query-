@@ -260,6 +260,26 @@ python scripts/analyze_formula_evidence.py \
 The audit verifies each stored operand row/cell/header against V2 again and
 reports coverage bottlenecks. It does not calculate an answer.
 
+### Raw-source completion is a separate shadow path
+
+If the audit finds a primary statement in the raw report that is absent from
+the immutable bundle, run:
+
+```bash
+python local/run_local_review_stage.py source-completion \
+  --bundle-dir ~/ViFinQA_review/run_002
+```
+
+It first records an audit-only source locator, then independently revalidates
+the report SHA-256, raw table SHA-256, deterministic UID, structural statement
+function, lossless grid, V3 header/period context and source-cell provenance.
+The resulting `source_completion_tables_v1.jsonl` and context sidecar feed a
+*formula shadow only*. Each table is explicitly answer-, training-, and
+review-status-promotion-ineligible. The main autonomous path does not read the
+sidecar. A supplemental operand remains partial whenever common scope or
+unique binding is unresolved; `consolidated` and `separate` are never selected
+by default.
+
 The execution ledger has a separate, intentionally tiny allow-list. With the
 audited sidecar passed as `--formula-evidence`, it can execute only a complete,
 defined `percentage_change` with controlled confidence ≥0.95, exactly
@@ -320,30 +340,22 @@ raw-source protocol should `autotrain` run. Model evaluation remains
 machine-silver evaluation—not a claim of human/official accuracy—until an
 external gold source becomes available.
 
-## Full-bundle V2 checkpoint
+## Full-bundle V3 checkpoint
 
-For the extracted `run_full_001` bundle, context V2 built 29,428 contexts with
-zero build errors. It placed 4,036 tables in `needs_processing` and retained
-25,392 as `review_ready`; 22,373 OCR cells were visible but excluded from
-numeric binding because they did not parse as exactly one reliable number.
+For the extracted `run_full_001` bundle, context V3 built 29,428 contexts with
+zero build errors. It placed 3,719 tables in `needs_processing` and retained
+25,709 as `review_ready`; 315 inline raw-TD headers were recovered only with
+per-cell source provenance. OCR cells that do not parse as exactly one reliable
+number remain excluded from numeric binding.
 
-The latest autonomous V4 run, including raw-V2 direct source discovery,
-produced 66 `machine_calibrated`, 355 `machine_provisional`, and 591
-`needs_human` records. Discovery inspected 358 effective direct-lookup plans,
-emitted 242 exact source candidates, and excluded 12 same-table multi-row
-ambiguities rather than choosing by order. It demoted Q22 when a second exact
-raw row exposed a materially different value, promoted Q249 only after binding
-`Vốn cổ phần | 411 | 22 | 759.680.800.000 | 684.118.840.000` to the raw
-`31/12/2016 VND` cell, and left Q286 provisional because its source candidates
-disagree. The direct exact-cell
-ledger made 61 direct-lookups `grounded`; FormulaSet discovery joined 33,069
-metadata-bound candidates and audited 391 exact operand bindings. Under the
-separate formula allow-list, one defined, complete `percentage_change` also
-passed a second exact V2 revalidation, for 62 grounded execution records in
-total; the other 950 remain explicitly `not_executable`. Five direct records
-remain blocked because their raw source does not declare a monetary unit; five
-others now bind because the resolver preserves explicit `Triệu đồng` source
-headers.
+The latest autonomous V4/V3 run, including raw-V2 direct source discovery,
+produced 29 `machine_calibrated`, 396 `machine_provisional`, and 587
+`needs_human` records. The exact-cell execution ledger has 28 `grounded` and
+984 explicitly `not_executable` records. Formula discovery inspected 33,593
+metadata-bound candidates and emitted 135 EvidenceSets; it remains coverage
+only. The source-completion shadow revalidated six omitted primary statements
+and made four multi-stage formulas operand-complete, but all four remain
+`partial` due to unresolved scope/binding and required staged execution.
 
 One of the four initial additional direct bindings is Q14: the raw V2 row is `Chi phí
 quản lý doanh nghiệp | VI.06 | 144.071.806.197`, where `VI.06` is recorded as

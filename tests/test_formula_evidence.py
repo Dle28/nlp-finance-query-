@@ -123,6 +123,26 @@ class FormulaEvidenceTests(unittest.TestCase):
             [],
         )
 
+    def test_source_completion_candidate_keeps_explicit_provenance(self):
+        formula = {"operands": [{"operand_id": "profit", "years": [2023], "required": True}]}
+        item = {"question_plan": {"tickers": ["ABC"]}, "candidates": []}
+        candidates = source_discovery_candidates(
+            item,
+            formula,
+            {
+                "raw-u1": {
+                    "internal_table_uid": "raw-u1",
+                    "ticker": "ABC",
+                    "scope": "consolidated",
+                    "report_year": 2023,
+                    "document_id": "ABC_financial_statements_2023_consolidated",
+                    "local_ordinal": 8,
+                    "source_completion": {"candidate_source": "raw_source_completion_v1"},
+                }
+            },
+        )
+        self.assertEqual(candidates[0]["candidate_source"], "raw_source_completion_v1")
+
     def test_operand_binds_exact_row_and_explicit_year_cell(self):
         table = _table()
         context = build_evidence_context(table)

@@ -1004,6 +1004,14 @@ scope, period và definition hiện có. Với nhiều entity, một scope khôn
 phải chung cho mọi entity và mỗi operand phải có một binding duy nhất trong
 scope đó; collector không ghép các scope riêng hoặc tự chọn giữa các binding.
 
+Khi primary statement có trong raw report nhưng không nằm trong immutable
+bundle, `raw_source_completion_v1` tạo một supplemental sidecar tách biệt sau
+khi revalidate source/table SHA, deterministic UID, raw grid và V3 context.
+Sidecar chỉ có thể cấp coverage cho Formula EvidenceSet shadow; nó cấm answer,
+training và review-status promotion, không đi vào corpus/index hay autonomous
+review mặc định. Nó vẫn phải qua cùng gate common-scope/unique-binding trước
+khi bất kỳ EvidenceSet nào được coi là đủ input.
+
 ---
 
 # 20. Question-family-specific evidence requirements

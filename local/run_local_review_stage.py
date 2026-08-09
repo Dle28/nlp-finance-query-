@@ -11,6 +11,8 @@ Modes:
 - pilot: train/evaluate a shadow Top-K candidate reranker; no corpus/index rebuild.
 - preprocess: derive canonical header/period context from immutable V2 grids.
 - formula-evidence: derive exact-cell coverage for controlled formula operands.
+- source-completion: audit and revalidate raw tables omitted from the bundle;
+  emit a formula-coverage-only shadow sidecar with no label promotion.
 - autonomous: V4 machine self-review and source-gated machine-silver export.
 - autotrain: train only when enough V4 machine-silver pairs have accumulated.
 """
@@ -26,7 +28,7 @@ from pathlib import Path
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument(
-        "mode", choices=["diagnose", "repair-tables", "baseline", "collaborate", "calibrate", "final", "pilot", "preprocess", "formula-evidence", "autonomous", "autotrain", "submission"]
+        "mode", choices=["diagnose", "repair-tables", "baseline", "collaborate", "calibrate", "final", "pilot", "preprocess", "formula-evidence", "source-completion", "autonomous", "autotrain", "submission"]
     )
     p.add_argument("--bundle-dir", type=Path, default=None)
     p.add_argument("--bundle-archive", type=Path, default=None)
@@ -154,7 +156,7 @@ def main() -> None:
 
     reviewer = (
         reviewer_script(root, bundle)
-        if args.mode not in {"preprocess", "formula-evidence", "autonomous", "autotrain", "pilot", "submission"}
+        if args.mode not in {"preprocess", "formula-evidence", "source-completion", "autonomous", "autotrain", "pilot", "submission"}
         else None
     )
 
@@ -193,6 +195,11 @@ def main() -> None:
     execution_ledger = labels / f"machine_execution_ledger_{run_tag}{artifact_variant}.jsonl"
     formula_evidence = bundle / "formula_evidence_sets_context_v3_discovered.jsonl"
     direct_evidence = bundle / "direct_evidence_sets_context_v3_discovered.jsonl"
+    source_completion_audit = bundle / "formula_source_completion_audit_v1.json"
+    source_completion_tables = bundle / "source_completion_tables_v1.jsonl"
+    source_completion_context = bundle / "source_completion_context_v1.jsonl"
+    source_completion_formula = bundle / "formula_evidence_sets_context_v3_source_completion_shadow.jsonl"
+    source_completion_formula_audit = source_completion_formula.with_suffix(".audit.json")
 
     if args.mode == "preprocess":
         command = [
@@ -229,6 +236,78 @@ def main() -> None:
         )
         print("\nFormula EvidenceSet sidecar:", formula_evidence)
         print("It records only exact raw-row/cell operand coverage; it does not generate answers or labels.")
+        return
+
+    if args.mode == "source-completion":
+        if not evidence_context.is_file():
+            raise FileNotFoundError(
+                f"Canonical context missing: {evidence_context}. Run preprocess first."
+            )
+        completion_reports = (
+            args.reports_root if args.reports_root.is_absolute() else root / args.reports_root
+        ).resolve()
+        # Rebuild the ordinary formula coverage first, so the audit sees the
+        # exact current missing operands. It remains separate from the later
+        # supplemental shadow EvidenceSet.
+        run(
+            [
+                sys.executable,
+                str(root / "scripts/build_formula_evidence_sets.py"),
+                "--bundle-dir", str(bundle),
+                "--output", str(formula_evidence),
+                "--evidence-context", str(evidence_context),
+                "--discover-source-operands",
+            ],
+            root,
+        )
+        run(
+            [
+                sys.executable,
+                str(root / "scripts/audit_formula_source_coverage.py"),
+                "--bundle-dir", str(bundle),
+                "--formula-evidence", str(formula_evidence),
+                "--reports-root", str(completion_reports),
+                "--output", str(source_completion_audit),
+            ],
+            root,
+        )
+        run(
+            [
+                sys.executable,
+                str(root / "scripts/build_source_completion_sidecar.py"),
+                "--bundle-dir", str(bundle),
+                "--source-audit", str(source_completion_audit),
+                "--reports-root", str(completion_reports),
+            ],
+            root,
+        )
+        run(
+            [
+                sys.executable,
+                str(root / "scripts/build_formula_evidence_sets.py"),
+                "--bundle-dir", str(bundle),
+                "--output", str(source_completion_formula),
+                "--evidence-context", str(evidence_context),
+                "--discover-source-operands",
+                "--source-completion-tables", str(source_completion_tables),
+                "--source-completion-context", str(source_completion_context),
+            ],
+            root,
+        )
+        run(
+            [
+                sys.executable,
+                str(root / "scripts/analyze_formula_evidence.py"),
+                "--bundle-dir", str(bundle),
+                "--formula-evidence", str(source_completion_formula),
+                "--output", str(source_completion_formula_audit),
+            ],
+            root,
+        )
+        print("\nRaw-source completion audit:", source_completion_audit)
+        print("Revalidated supplemental tables:", source_completion_tables)
+        print("Coverage-only formula shadow:", source_completion_formula)
+        print("No corpus/index, review status, answer, execution record, or training label was changed.")
         return
 
     if args.mode == "autonomous":

@@ -41,14 +41,16 @@ def source_discovery_candidates(
     formula: Mapping[str, Any],
     tables: Mapping[str, Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Find additional source tables through immutable metadata only.
+    """Find additional source tables through validated metadata only.
 
     This is deliberately narrower than generic retrieval: a formula question
     must have resolved ticker(s) and explicit operand years; candidate tables
     must share the ticker, any resolved scope, and a report year that is the
     operand year or the immediately following comparative report.  It creates
     only discovery candidates for exact-row/cell collection and never an
-    answer, label or synthetic table.
+    answer, label or synthetic table. A source-completion table can join only
+    after its separate raw-source sidecar has been revalidated; its candidate
+    source remains explicit in the EvidenceSet.
     """
     plan = item.get("question_plan") or {}
     tickers = {str(value) for value in plan.get("tickers") or [] if str(value)}
@@ -88,7 +90,10 @@ def source_discovery_candidates(
             "ticker": table.get("ticker"),
             "scope": table.get("scope"),
             "report_year": table.get("report_year"),
-            "candidate_source": FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE,
+            "candidate_source": (
+                (table.get("source_completion") or {}).get("candidate_source")
+                or FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE
+            ),
         }
         for index, table in enumerate(selected)
     ]

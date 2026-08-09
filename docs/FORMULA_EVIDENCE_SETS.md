@@ -95,6 +95,28 @@ fail-closed về `multi_stage_selection_unresolved`.
 Không match rule thì UI giữ workflow table review bình thường; không suy đoán
 công thức mới.
 
+## Source completion (shadow-only)
+
+Nếu một required operand không có exact V2 candidate, hệ thống có thể audit
+raw reports để tách hai nguyên nhân: báo cáo nguồn thực sự không có statement,
+hoặc statement có trong raw report nhưng không nằm trong bundle. Quy trình là:
+
+```text
+missing operand
+→ raw-source audit (structural statement + exact metric row)
+→ revalidate report SHA + table SHA + deterministic UID
+→ rebuild lossless grid + V3 canonical header/period context
+→ supplemental EvidenceSet shadow
+```
+
+`source_completion_tables_v1.jsonl` không thuộc immutable `tables.jsonl` và
+mang protocol `raw_source_completion_v1`. Mỗi table có `answer_eligible=false`,
+`training_eligible=false`, `review_status_promotion_allowed=false`; source
+completion không được gọi bởi autonomous review hoặc execution ledger. Nó chỉ
+có thể tăng **coverage** của Formula EvidenceSet shadow sau khi validator kiểm
+UID/hash/context. Formula vẫn phải qua common-scope và unique-binding gate;
+nếu raw report có cả `consolidated` và `separate`, hệ thống không tự chọn scope.
+
 Câu có lọc/xếp hạng nhiều giai đoạn không được rút thành keyword công thức đầu
 tiên. Q369 hiện có controlled plan riêng:
 

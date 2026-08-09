@@ -280,8 +280,12 @@ scope chung duy nhất và không được tự chọn. Audit lưu source report
 ordinal, trang, headers và exact metric row; nó không thêm table vào bundle,
 không tạo evidence binding và có `promotion_allowed=false`.
 
-Bước tiếp theo là một **source-completion sidecar** riêng: chỉ nhận raw-table
-candidate khi table SHA/UID/source report được revalidate, canonical header và
-year-cell được dựng lại, rồi áp lại common-scope/unique-binding gate. Sidecar
-đó không sửa corpus/index và chỉ có thể đưa table vào *vòng EvidenceSet sau*;
-nó không được phép dùng trực tiếp cho answer hoặc training label.
+Đã triển khai **source-completion sidecar** riêng (`raw_source_completion_v1`).
+Nó revalidate report SHA/table SHA/UID, rebuild lossless grid + V3 context và
+chỉ giữ table `review_ready`. Kết quả có 6 supplemental primary statements.
+Formula shadow đã tăng operand-complete từ 13 lên 17; Q472/Q489/Q547/Q551 đều
+đủ operand nhưng vẫn `partial` (ba câu không có common scope; Q551 có duplicate
+binding). Không có `selected_operand_matches`, answer, execution record,
+review-status promotion hay training label nào được tạo. `source-completion`
+đã có trong `local/run_local_review_stage.py` để chạy lại audit → revalidation
+→ shadow EvidenceSet; nó không sửa corpus/index hay bundle gốc.
