@@ -932,6 +932,12 @@ thứ tự. Sidecar hash-bind với bundle/V2/context/plan override; V4 và exec
 ledger vẫn lặp lại toàn bộ gate nên đây là source recall có provenance, không
 phải label hay answer tự suy diễn.
 
+Khi sidecar thay evidence của một UID đã có trong Top-K, nó cũng thay
+`one_line_summary` bằng `ticker | year | scope` và chính raw V2 value row.
+Không được kế thừa preview Top-K cũ: cùng UID có thể chứa một projected row
+khác với row raw vừa được bind. Summary này chỉ để audit/UI, không phải input
+để chọn candidate hay suy diễn answer.
+
 Một số metric là row label đã disclosed dù có từ giống phép tính, ví dụ `Tổng
 cộng tài sản`, `Tỷ lệ sở hữu`, `Lỗ chênh lệch tỷ giá`. Rule planner chỉ
 reclassify các form đơn chủ thể/đơn kỳ có pattern hẹp. Với bundle đã tạo, việc

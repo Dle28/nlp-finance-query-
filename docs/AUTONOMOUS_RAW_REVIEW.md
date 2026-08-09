@@ -142,6 +142,13 @@ usual critic, unit and execution-ledger contracts still apply. The sidecar can
 therefore surface a missed competing raw row and demote an unsafe prior silver
 label rather than only increasing label count.
 
+When discovery replaces evidence for an already retrieved table, it also
+replaces the display summary with compact immutable metadata
+(`ticker | year | scope`) and the exact raw V2 row. It must never retain that
+table's former projected Top-K preview: the UID can be the same while its old
+preview names a different row. This display field is audit context only and is
+not used to select or execute an answer.
+
 ## Commands
 
 ```bash
@@ -302,8 +309,15 @@ zero build errors. It placed 4,036 tables in `needs_processing` and retained
 25,392 as `review_ready`; 22,373 OCR cells were visible but excluded from
 numeric binding because they did not parse as exactly one reliable number.
 
-The corresponding autonomous V4 run produced 66 `machine_calibrated`, 354
-`machine_provisional`, and 592 `needs_human` records. The direct exact-cell
+The latest autonomous V4 run, including raw-V2 direct source discovery,
+produced 66 `machine_calibrated`, 355 `machine_provisional`, and 591
+`needs_human` records. Discovery inspected 358 effective direct-lookup plans,
+emitted 242 exact source candidates, and excluded 12 same-table multi-row
+ambiguities rather than choosing by order. It demoted Q22 when a second exact
+raw row exposed a materially different value, promoted Q249 only after binding
+`Vốn cổ phần | 411 | 22 | 759.680.800.000 | 684.118.840.000` to the raw
+`31/12/2016 VND` cell, and left Q286 provisional because its source candidates
+disagree. The direct exact-cell
 ledger made 61 direct-lookups `grounded`; FormulaSet discovery joined 33,069
 metadata-bound candidates and audited 391 exact operand bindings. Under the
 separate formula allow-list, one defined, complete `percentage_change` also

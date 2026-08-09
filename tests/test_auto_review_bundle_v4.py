@@ -434,6 +434,7 @@ class AutonomousReviewV4Tests(unittest.TestCase):
                     "dense_rank": 1_000_000,
                     "candidate_source": "raw_v2_direct_source_discovery",
                     "best_row_index": 7,
+                    "one_line_summary": "Nguồn raw V2: TEST | 2023 | separate. Hàng exact: Tiền | 100",
                     "direct_evidence": "VALUE: Tiền | 100",
                     "source_discovery": {
                         "policy": "exact_raw_v2_metric_token_sequence_v1",
@@ -450,6 +451,10 @@ class AutonomousReviewV4Tests(unittest.TestCase):
         self.assertEqual(candidate["lexical_rank"], 3)
         self.assertEqual(candidate["dense_rank"], 2)
         self.assertEqual(candidate["best_row_index"], 7)
+        self.assertEqual(
+            candidate["one_line_summary"],
+            "Nguồn raw V2: TEST | 2023 | separate. Hàng exact: Tiền | 100",
+        )
         self.assertEqual(candidate["direct_evidence"], "VALUE: Tiền | 100")
 
         discovered["effective_question_plan_sha256"] = "mismatch"

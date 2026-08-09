@@ -93,8 +93,32 @@ def row_endpoint_compatible(question: str, label: str) -> bool:
 
 
 def base_candidate(
-    *, uid: str, report_year: int | None, row_index: int, row: list[Any]
+    *,
+    uid: str,
+    ticker: str,
+    report_year: int | None,
+    scope: str,
+    row_index: int,
+    row: list[Any],
 ) -> dict[str, Any]:
+    """Create an exact-row candidate without inheriting a stale Top-K preview.
+
+    A retrieved table can contain a different projected value row from the raw
+    row discovered here.  Its former ``one_line_summary`` must therefore never
+    be carried forward: it would display a correct UID next to wrong evidence.
+    Keep the source description deliberately compact and entirely derived from
+    immutable metadata and the exact V2 row.
+    """
+    source_row = v4.v3.source_row_text(row)
+    identity = " | ".join(
+        value
+        for value in (
+            str(ticker or "").strip(),
+            "" if report_year is None else str(report_year),
+            str(scope or "").strip(),
+        )
+        if value
+    )
     return {
         "internal_table_uid": uid,
         # Source-discovery is a deterministic recall supplement, not a
@@ -109,7 +133,12 @@ def base_candidate(
         "year_match": True,
         "report_year": report_year,
         "best_row_index": row_index,
-        "direct_evidence": "VALUE: " + v4.v3.source_row_text(row),
+        "direct_evidence": "VALUE: " + source_row,
+        # This intentionally replaces any retrieved preview for the same UID.
+        # It is a display/audit field only, not a fact used by the reviewer.
+        "one_line_summary": (
+            f"Nguồn raw V2: {identity or uid}. Hàng exact: {source_row}"
+        ),
         "evidence_features": {
             "row_score": 1.0,
             "metric_overlap": 1.0,
@@ -206,7 +235,9 @@ def main() -> None:
                             continue
                         candidate = base_candidate(
                             uid=uid,
+                            ticker=str(table.get("ticker") or ""),
                             report_year=table.get("report_year"),
+                            scope=str(table.get("scope") or ""),
                             row_index=row_index,
                             row=row,
                         )
