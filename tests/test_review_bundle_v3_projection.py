@@ -126,6 +126,82 @@ class ReviewBundleV3ProjectionTests(unittest.TestCase):
         self.assertIn("TỔNG CỘNG", out["direct_evidence"])
         self.assertIn("1.880.612.291.229", out["direct_evidence"])
 
+    def test_formula_support_adds_only_explicit_entity_year_statement_function(self):
+        formula = {
+            "formula_id": "controlled_ratio",
+            "operands": [
+                {
+                    "operand_id": "assets_2022",
+                    "entity": "ABC",
+                    "years": [2022],
+                    "allowed_table_functions": ["balance_sheet"],
+                },
+                {
+                    "operand_id": "profit_2022",
+                    "entity": "ABC",
+                    "years": [2022],
+                    "allowed_table_functions": ["income_statement"],
+                },
+                # A generic slot must not cause every note for ABC to be
+                # exported as formula context.
+                {"operand_id": "untyped", "entity": "ABC", "years": [2022]},
+            ],
+        }
+        plan = {"tickers": ["ABC"]}
+
+        def asset(uid, year, kind, ticker="ABC"):
+            return {
+                "uid": uid,
+                "ticker": ticker,
+                "scope": "consolidated",
+                "report_year": year,
+                "document_id": f"{ticker}_{year}",
+                "local_ordinal": 1,
+                "table_function_json": {"kind": kind},
+            }
+
+        selected, available = mod.formula_support_assets(
+            formula,
+            plan,
+            [
+                asset("balance-2022", 2022, "balance_sheet"),
+                asset("income-2023", 2023, "income_statement"),
+                asset("note-2022", 2022, "financial_note_detail"),
+                asset("other-company", 2022, "balance_sheet", "XYZ"),
+            ],
+            max_tables=8,
+        )
+        self.assertEqual(available, 2)
+        self.assertEqual(
+            [entry["asset"]["uid"] for entry in selected],
+            ["balance-2022", "income-2023"],
+        )
+        self.assertEqual(selected[0]["operand_ids"], ["assets_2022"])
+        self.assertEqual(selected[1]["operand_ids"], ["profit_2022"])
+
+    def test_formula_support_marks_table_without_changing_review_candidates(self):
+        asset = {
+            "uid": "support-u1",
+            "document_id": "ABC_2022",
+            "ticker": "ABC",
+            "scope": "consolidated",
+            "report_year": 2022,
+            "headers_json": "[]",
+            "rows_json": "[]",
+            "table_function_json": {"kind": "balance_sheet"},
+        }
+        cache = {}
+        _, was_added = mod.add_formula_support_table(
+            cache,
+            {"asset": asset, "operand_ids": ["assets_2022"]},
+            question_id=10,
+            formula_id="controlled_ratio",
+        )
+        self.assertTrue(was_added)
+        marker = cache["support-u1"]["bundle_inclusion"]["formula_metadata_support"]
+        self.assertEqual(marker["question_ids"], [10])
+        self.assertEqual(marker["operand_ids"], ["assets_2022"])
+
 
 if __name__ == "__main__":
     unittest.main()

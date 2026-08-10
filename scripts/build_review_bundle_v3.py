@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from bs4 import BeautifulSoup
 from finance_query.config import ProjectPaths
+from finance_query.financial_metrics import infer_formula_spec
 from finance_query.pipeline import ViFinQARetrievalPipeline, load_config
 
 TOK = re.compile(r"[A-Za-zÀ-ỹ0-9%]+", re.UNICODE)
@@ -16,8 +17,12 @@ ENTITY = re.compile(r"\s+của\s+(?:công\s+ty\s+mẹ|tổng\s+công\s+ty|ctcp|c
 END = re.compile(r"cuối\s+năm|31\s*[/.-]\s*12|31\s+tháng\s+12|đến\s+ngày\s+31|tại\s+ngày\s+31", re.I)
 START = re.compile(r"đầu\s+năm|(?:^|\D)0?1\s*[/.-]\s*0?1(?:\D|$)", re.I)
 
+FORMULA_BUNDLE_SUPPORT_POLICY = "resolved_operand_entity_year_or_following_statement_function_v1"
+FORMULA_BUNDLE_SUPPORT_CANDIDATE_SOURCE = "formula_metadata_support_v1"
+
+
 def args():
-    p=argparse.ArgumentParser(); p.add_argument("--questions",type=Path,default=Path("data/labels/annotation_questions_60.jsonl")); p.add_argument("--config",type=Path,default=Path("configs/annotation_baseline.yaml")); p.add_argument("--output-dir",type=Path,required=True); p.add_argument("--repo-root",type=Path,default=Path.cwd()); p.add_argument("--top-k",type=int,default=20); p.add_argument("--max-review-candidates",type=int,default=40); p.add_argument("--neighbor-radius",type=int,default=1); p.add_argument("--context-recovery-threshold",type=float,default=.45); p.add_argument("--min-asset-count",type=int,default=100000); p.add_argument("--no-dense",action="store_true"); p.add_argument("--force",action="store_true"); p.add_argument("--allow-errors",action="store_true"); return p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument("--questions",type=Path,default=Path("data/labels/annotation_questions_60.jsonl")); p.add_argument("--config",type=Path,default=Path("configs/annotation_baseline.yaml")); p.add_argument("--output-dir",type=Path,required=True); p.add_argument("--repo-root",type=Path,default=Path.cwd()); p.add_argument("--top-k",type=int,default=20); p.add_argument("--max-review-candidates",type=int,default=40); p.add_argument("--max-formula-support-tables",type=int,default=128,help="Maximum metadata-selected statement tables added per question for formula evidence; they are not review UI candidates."); p.add_argument("--neighbor-radius",type=int,default=1); p.add_argument("--context-recovery-threshold",type=float,default=.45); p.add_argument("--min-asset-count",type=int,default=100000); p.add_argument("--no-dense",action="store_true"); p.add_argument("--force",action="store_true"); p.add_argument("--allow-errors",action="store_true"); return p.parse_args()
 
 def tokens(s): return {x.casefold() for x in TOK.findall(str(s)) if len(x)>=2 and x.casefold() not in STOP}
 def ov(s,t): return len(tokens(s)&t)/len(t) if t else 0.0
@@ -144,6 +149,89 @@ def record(d,a,q,plan,metric):
     return {"rank":None,"internal_table_uid":d["internal_table_uid"],"document_id":d.get("document_id"),"ticker":d.get("ticker"),"report_year":d.get("report_year"),"scope":d.get("scope"),"local_ordinal":a.get("local_ordinal"),"page_no":a.get("page_no"),"lexical_rank":d.get("lexical_rank"),"dense_rank":d.get("dense_rank"),"fused_score":float(d.get("fused_score") or 0),"reranker_score":d.get("reranker_score"),"original_retrieval_rank":d.get("original_retrieval_rank"),"candidate_source":d.get("candidate_source"),"parent_retrieval_rank":d.get("parent_retrieval_rank"),"review_score":score,"preview":d.get("preview"),**m,**pr}
 def table(a): return {"internal_table_uid":a["uid"],"document_id":a.get("document_id"),"ticker":a.get("ticker"),"report_year":a.get("report_year"),"scope":a.get("scope"),"local_ordinal":a.get("local_ordinal"),"page_no":a.get("page_no"),"unit_hint":a.get("unit_hint"),"context_before":a.get("context_before") or "","headers":json.loads(a.get("headers_json") or "[]"),"rows":rows(a),"structure_version":int(a.get("structure_version") or 1),"context_schema_version":int(a.get("context_schema_version") or 1),"column_labels":json.loads(a.get("headers_json") or "[]"),"header_row_indices":jfield(a,"header_row_indices_json",[]),"table_function":jfield(a,"table_function_json",{}),"table_section":jfield(a,"table_section_json",{}),"table_purpose":jfield(a,"table_purpose_json",{}),"context_trace":jfield(a,"context_trace_json",{}),"structure_quality":jfield(a,"structure_quality_json",{})}
 
+
+def _support_requests(formula):
+    """Return only explicitly scoped statement requests from a formula template.
+
+    A metadata support table is deliberately narrower than retrieval.  We add
+    it only if the controlled formula names an entity, an operand year, and an
+    allowed statement function.  Generic formula slots without a function
+    constraint stay with normal retrieval; exporting every note for a ticker
+    would create noise and would not establish evidence.
+    """
+    requests=[]
+    for operand in formula.get("operands") or []:
+        entity=str(operand.get("entity") or "").strip()
+        functions={str(value) for value in operand.get("allowed_table_functions") or [] if str(value)}
+        years=[]
+        for value in operand.get("years") or []:
+            try: years.append(int(value))
+            except (TypeError,ValueError): pass
+        if not entity or not years or not functions: continue
+        requests.append({"entity":entity,"years":set(years),"functions":functions,"operand_id":str(operand.get("operand_id") or "")})
+    return requests
+
+
+def _formula_support_asset_rows(store, formula, plan):
+    """Read a bounded metadata pool from the existing lexical artifact only.
+
+    This is an ordinary SQLite metadata lookup.  It does not alter the corpus,
+    lexical index, dense index, raw grids or retrieval scores.
+    """
+    requests=_support_requests(formula)
+    if not requests: return [],requests
+    tickers=sorted({request["entity"] for request in requests})
+    report_years=sorted({year+delta for request in requests for year in request["years"] for delta in (0,1)})
+    conditions=[f"ticker IN ({','.join('?' for _ in tickers)})",f"report_year IN ({','.join('?' for _ in report_years)})"]
+    parameters=[*tickers,*report_years]
+    expected_scope=str(plan.get("scope") or "")
+    if expected_scope:
+        conditions.append("scope = ?"); parameters.append(expected_scope)
+    sql=("SELECT * FROM assets WHERE "+" AND ".join(conditions)+" ORDER BY ticker, scope, report_year, document_id, local_ordinal, uid")
+    with store.connect() as connection:
+        return [dict(row) for row in connection.execute(sql,parameters).fetchall()],requests
+
+
+def formula_support_assets(formula, plan, assets, *, max_tables):
+    """Select formula source tables from metadata with no text/OCR inference.
+
+    The output retains every matching operand id per UID.  A table may support
+    several slots, but its inclusion never makes it a positive review label or
+    a candidate in the compact reviewer UI.
+    """
+    if max_tables < 1: raise ValueError("max_formula_support_tables must be positive")
+    requests=_support_requests(formula)
+    expected_scope=str(plan.get("scope") or "")
+    selected={}
+    for asset in assets:
+        ticker=str(asset.get("ticker") or "")
+        scope=str(asset.get("scope") or "")
+        try: report_year=int(asset.get("report_year"))
+        except (TypeError,ValueError): continue
+        if expected_scope and scope!=expected_scope: continue
+        kind=str((jfield(asset,"table_function_json",{}) or {}).get("kind") or "")
+        operand_ids=[]
+        for request in requests:
+            if ticker!=request["entity"] or kind not in request["functions"]: continue
+            if report_year not in request["years"] and report_year-1 not in request["years"]: continue
+            operand_ids.append(request["operand_id"])
+        if operand_ids:
+            selected[str(asset["uid"])]={"asset":asset,"operand_ids":sorted(set(operand_ids))}
+    ordered=sorted(selected.values(),key=lambda value:(str(value["asset"].get("ticker") or ""),str(value["asset"].get("scope") or ""),int(value["asset"].get("report_year") or 0),str(value["asset"].get("document_id") or ""),int(value["asset"].get("local_ordinal") or 0),str(value["asset"].get("uid") or "")))
+    return ordered[:max_tables],len(ordered)
+
+
+def add_formula_support_table(cache, support, *, question_id, formula_id):
+    """Add immutable raw table content with auditable, UI-invisible provenance."""
+    asset=support["asset"]; uid=str(asset["uid"])
+    already_present=uid in cache
+    source=cache.setdefault(uid,table(asset))
+    inclusion=source.setdefault("bundle_inclusion",{})
+    formula_support=inclusion.setdefault("formula_metadata_support",{"policy":FORMULA_BUNDLE_SUPPORT_POLICY,"question_ids":[],"formula_ids":[],"operand_ids":[]})
+    for key,values in (("question_ids",[int(question_id)]),("formula_ids",[str(formula_id)]),("operand_ids",support["operand_ids"])):
+        formula_support[key]=sorted(set(formula_support.get(key) or [])|set(values))
+    return uid,not already_present
+
 def health(root,minn,dense):
     ar=root/"artifacts"; ap=ar/"table_assets.jsonl"; db=ar/"lexical_index.sqlite3"; up=ar/"dense_uids.jsonl"; ip=ar/"dense.index"; na=count(ap); nu=count(up); nl=0
     if db.is_file():
@@ -166,7 +254,9 @@ def main():
         shutil.rmtree(out)
     out.mkdir(parents=True,exist_ok=True); h=health(root,a.min_asset_count,not a.no_dense); print(json.dumps(h,indent=2));
     if not h["valid"]:raise RuntimeError("Artifact integrity gate failed")
-    pipe=ViFinQARetrievalPipeline(ProjectPaths.from_repository(root),load_config(cp),use_dense=not a.no_dense); items=[]; cache={}; errs=[]; rec=0
+    if a.max_formula_support_tables < 1:
+        raise ValueError("--max-formula-support-tables must be positive")
+    pipe=ViFinQARetrievalPipeline(ProjectPaths.from_repository(root),load_config(cp),use_dense=not a.no_dense); items=[]; cache={}; errs=[]; rec=0; formula_support_tables=0; formula_support_requested=0; formula_support_truncated_questions=0
     for pos,it in enumerate(loadj(qp),1):
         qid=int(it["id"]); q=str(it["question"]); fam=it.get("weak_family")
         try:
@@ -181,12 +271,26 @@ def main():
                         if nu not in ds and no>=max(.28,ro+.15): ds[nu]=desc_adj(n,r); aset[nu]=n; rec+=1
             cs=[record(d,aset[u],q,plan,metric) for u,d in ds.items()]; cs.sort(key=lambda x:(x["review_score"],x["evidence_features"]["metric_overlap"],-(x.get("original_retrieval_rank") or 10**9)),reverse=True); cs=cs[:a.max_review_candidates]
             for r,c in enumerate(cs,1): c["rank"]=r; u=c["internal_table_uid"]; cache.setdefault(u,table(aset[u]))
-            items.append({"id":qid,"question":q,"weak_family":fam,"question_plan":plan,"effective_metric":metric,"retrieval_candidate_count":len(got),"candidate_count":len(cs),"recovered_adjacent_count":sum(c["candidate_source"]!="retrieved" for c in cs),"candidates":cs}); print(f"[{pos}] Q{qid}: {len(got)} -> {len(cs)}")
+            formula=infer_formula_spec(q)
+            support_added=0; support_available=0
+            if formula is not None:
+                pool,requests=_formula_support_asset_rows(pipe.store,formula,plan)
+                if requests:
+                    supports,support_available=formula_support_assets(formula,plan,pool,max_tables=a.max_formula_support_tables)
+                    formula_support_requested+=support_available
+                    if support_available>len(supports): formula_support_truncated_questions+=1
+                    for support in supports:
+                        _,was_added=add_formula_support_table(cache,support,question_id=qid,formula_id=str(formula.get("formula_id") or ""))
+                        # A normal retrieval table can also be an exact formula
+                        # source, but it is not a new immutable bundle table.
+                        if was_added: support_added+=1
+                    formula_support_tables+=support_added
+            items.append({"id":qid,"question":q,"weak_family":fam,"question_plan":plan,"effective_metric":metric,"retrieval_candidate_count":len(got),"candidate_count":len(cs),"recovered_adjacent_count":sum(c["candidate_source"]!="retrieved" for c in cs),"formula_metadata_support_table_count":support_added,"formula_metadata_support_available":support_available,"candidates":cs}); print(f"[{pos}] Q{qid}: {len(got)} -> {len(cs)} | formula support {support_added}/{support_available}")
         except Exception as e:
             errs.append({"id":qid,"question":q,"error":repr(e)}); print("ERROR",qid,e)
             if not a.allow_errors:break
     rp,tp,ep=out/"review_items.jsonl",out/"tables.jsonl",out/"errors.jsonl"; writej(rp,items); writej(tp,cache.values()); writej(ep,errs)
-    man={"schema_version":3,"created_at_utc":datetime.now(timezone.utc).isoformat(),"git_commit":commit,"config_path":str(cp),"config_sha256":sha(cp),"questions_path":str(qp),"questions_sha256":sha(qp),"question_count":len(loadj(qp)),"review_item_count":len(items),"unique_table_count":len(cache),"retrieval_top_k":a.top_k,"max_review_candidates":a.max_review_candidates,"neighbor_radius":a.neighbor_radius,"recovered_adjacent_candidates":rec,"use_dense":not a.no_dense,"artifact_health":h,"error_count":len(errs)}; mp=out/"manifest.json"; mp.write_text(json.dumps(man,ensure_ascii=False,indent=2),encoding="utf-8"); (out/"SHA256SUMS").write_text("".join(f"{sha(out/n)}  {n}\n" for n in ["manifest.json","review_items.jsonl","tables.jsonl","errors.jsonl"]),encoding="utf-8")
+    man={"schema_version":3,"created_at_utc":datetime.now(timezone.utc).isoformat(),"git_commit":commit,"config_path":str(cp),"config_sha256":sha(cp),"questions_path":str(qp),"questions_sha256":sha(qp),"question_count":len(loadj(qp)),"review_item_count":len(items),"unique_table_count":len(cache),"retrieval_top_k":a.top_k,"max_review_candidates":a.max_review_candidates,"neighbor_radius":a.neighbor_radius,"recovered_adjacent_candidates":rec,"formula_metadata_support":{"enabled":True,"policy":FORMULA_BUNDLE_SUPPORT_POLICY,"candidate_source":FORMULA_BUNDLE_SUPPORT_CANDIDATE_SOURCE,"max_tables_per_question":a.max_formula_support_tables,"new_unique_table_count":formula_support_tables,"matched_table_count_before_per_question_cap":formula_support_requested,"truncated_question_count":formula_support_truncated_questions,"ui_candidate_effect":"not_added_to_review_candidates","answer_eligible":False,"training_eligible":False},"use_dense":not a.no_dense,"artifact_health":h,"error_count":len(errs)}; mp=out/"manifest.json"; mp.write_text(json.dumps(man,ensure_ascii=False,indent=2),encoding="utf-8"); (out/"SHA256SUMS").write_text("".join(f"{sha(out/n)}  {n}\n" for n in ["manifest.json","review_items.jsonl","tables.jsonl","errors.jsonl"]),encoding="utf-8")
     ar=out.parent/f"{out.name}.tar.gz"; ar.unlink(missing_ok=True)
     with tarfile.open(ar,"w:gz") as t:
         for n in ["manifest.json","review_items.jsonl","tables.jsonl","errors.jsonl","SHA256SUMS"]:t.add(out/n,arcname=n)

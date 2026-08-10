@@ -732,6 +732,15 @@ Một EvidenceSet có thể ghép nhiều bảng. `definition_status=ambiguous` 
 fail closed; `review_required` cần human xác nhận công thức. Multi-operand
 formula không được accept trực tiếp từ machine recommendation.
 
+Từ bundle export metadata-support v1, các operand controlled có entity, năm và
+statement-function allow-list có thể kéo raw statement table đúng ticker,
+năm/năm báo cáo kế tiếp và scope (nếu đã resolve) vào `tables.jsonl`. Đây là
+bundle inclusion có provenance `formula_metadata_support_v1`, không phải
+semantic retrieval, không xuất hiện trong compact candidate list và không
+thay đổi rank. Formula discovery mới nhìn thấy các UID này để bind exact
+row/cell; thiếu allow-list thì exporter fail closed, không kéo các note OCR
+không giới hạn. Inclusion này không mang answer hay training eligibility.
+
 Câu lọc/xếp hạng nhiều giai đoạn được route thành
 `multi_stage_selection_unresolved`, thay vì lấy công thức từ keyword xuất hiện
 đầu tiên. Q369 là controlled canary đầu tiên có stage planner theo entity; mọi

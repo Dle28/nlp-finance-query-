@@ -483,6 +483,17 @@ question plan phải được resolve, report year phải là năm operand hoặ
 cáo kế tiếp. Sau đó operand vẫn phải qua exact raw-row/cell binding; discovery
 không tạo answer hay label nào.
 
+Từ bundle export mới, với operand controlled đã có đủ `entity`, năm và
+`allowed_table_functions`, exporter còn đưa **raw statement table** tương ứng
+vào `tables.jsonl` qua metadata SQLite có kiểm soát. Các bảng này có
+`bundle_inclusion.formula_metadata_support`, được gắn
+`candidate_source=formula_metadata_support_v1` khi Formula EvidenceSet dùng
+chúng, và **không** được thêm vào `review_items.candidates`; do đó UI review
+không bị phình bởi các bảng phụ. Nó chỉ đọc asset/index đã hợp lệ, không rebuild
+corpus, lexical/dense index, không sửa retrieval rank và không tạo answer,
+review label hay training pair. Operand không có table-function allow-list bị
+bỏ qua có chủ ý thay vì export toàn bộ note/OCR của doanh nghiệp.
+
 Khi audit cho thấy statement tồn tại trong raw report nhưng bị thiếu hẳn khỏi
 bundle, chạy source completion ở chế độ **shadow**:
 

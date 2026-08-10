@@ -19,6 +19,7 @@ from .financial_metrics import fold_text, operand_match_score
 
 FORMULA_SOURCE_DISCOVERY_POLICY = "resolved_ticker_operand_year_or_following_report_v1"
 FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE = "formula_source_discovery_v1"
+FORMULA_BUNDLE_SUPPORT_CANDIDATE_SOURCE = "formula_metadata_support_v1"
 FORMULA_SOURCE_DISCOVERY_RANK_BASE = 1_000_000
 # This binding policy is distinct from execution: a selected primary source
 # remains evidence-only unless its formula family has an explicit executor.
@@ -178,6 +179,17 @@ def source_discovery_candidates(
             str(table.get("internal_table_uid") or ""),
         )
     )
+    def candidate_source(table: Mapping[str, Any]) -> str:
+        completion_source = (table.get("source_completion") or {}).get("candidate_source")
+        if completion_source:
+            return str(completion_source)
+        bundle_support = (table.get("bundle_inclusion") or {}).get(
+            "formula_metadata_support"
+        )
+        if bundle_support:
+            return FORMULA_BUNDLE_SUPPORT_CANDIDATE_SOURCE
+        return FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE
+
     return [
         {
             "internal_table_uid": str(table["internal_table_uid"]),
@@ -185,10 +197,7 @@ def source_discovery_candidates(
             "ticker": table.get("ticker"),
             "scope": table.get("scope"),
             "report_year": table.get("report_year"),
-            "candidate_source": (
-                (table.get("source_completion") or {}).get("candidate_source")
-                or FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE
-            ),
+            "candidate_source": candidate_source(table),
         }
         for index, table in enumerate(selected)
     ]

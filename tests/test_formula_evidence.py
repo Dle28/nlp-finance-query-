@@ -2,6 +2,7 @@ import unittest
 
 from finance_query.evidence_context import build_evidence_context
 from finance_query.formula_evidence import (
+    FORMULA_BUNDLE_SUPPORT_CANDIDATE_SOURCE,
     FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE,
     bind_operand_cell,
     formula_evidence_set,
@@ -354,6 +355,33 @@ class FormulaEvidenceTests(unittest.TestCase):
             },
         )
         self.assertEqual(candidates[0]["candidate_source"], "raw_source_completion_v1")
+
+    def test_bundle_formula_support_keeps_explicit_provenance(self):
+        formula = {"operands": [{"operand_id": "profit", "years": [2023], "required": True}]}
+        item = {"question_plan": {"tickers": ["ABC"]}, "candidates": []}
+        candidates = source_discovery_candidates(
+            item,
+            formula,
+            {
+                "support-u1": {
+                    "internal_table_uid": "support-u1",
+                    "ticker": "ABC",
+                    "scope": "consolidated",
+                    "report_year": 2023,
+                    "document_id": "ABC_financial_statements_2023_consolidated",
+                    "local_ordinal": 8,
+                    "bundle_inclusion": {
+                        "formula_metadata_support": {
+                            "policy": "resolved_operand_entity_year_or_following_statement_function_v1"
+                        }
+                    },
+                }
+            },
+        )
+        self.assertEqual(
+            candidates[0]["candidate_source"],
+            FORMULA_BUNDLE_SUPPORT_CANDIDATE_SOURCE,
+        )
 
     def test_operand_binds_exact_row_and_explicit_year_cell(self):
         table = _table()
