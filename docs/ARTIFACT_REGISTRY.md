@@ -13,6 +13,7 @@ report_segment
 direct_evidence
 formula_evidence
 query_program_shadow
+evaluation_dashboard
 review_decision
 ```
 

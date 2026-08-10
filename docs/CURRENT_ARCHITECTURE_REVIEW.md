@@ -320,6 +320,13 @@ thời giữ statement family/note path/layout. Nó chưa thay retrieval/evidenc
 2.678 bảng mơ hồ được giữ `unclassified` thay vì suy diễn. Contract và snapshot
 tại [`SEMANTIC_CATALOG.md`](SEMANTIC_CATALOG.md).
 
+P2 có Grounding Health Dashboard V1, join 1.012 reviews với Formula V6,
+Semantic Catalog và OCR profile. Tất cả candidate UID join được; dashboard cho
+thấy `no_candidate` tập trung ở conditional (64) và multi-entity/period (132),
+trong khi số candidate `review_required` vì OCR thấp. Vì vậy priority tiếp là
+coverage/binding có kiểm chứng, không phải bulk OCR correction/dense rebuild.
+Xem [`GROUNDING_HEALTH_DASHBOARD.md`](GROUNDING_HEALTH_DASHBOARD.md).
+
 ## 6. Kiến trúc đích nên đi theo
 
 ```text

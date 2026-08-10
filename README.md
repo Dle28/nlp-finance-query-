@@ -86,6 +86,8 @@ OCR Quality Profile V1 đo cell/layout có rủi ro từ V2/V3 mà không sửa 
 Semantic Catalog V1 nhóm vai trò bảng bằng metadata V2/V3/source heading, chỉ
 cho navigation/evaluation chứ không phải evidence, nằm tại
 [`docs/SEMANTIC_CATALOG.md`](docs/SEMANTIC_CATALOG.md).
+Dashboard read-only để đo bottleneck theo family, OCR triage và Formula
+EvidenceSet nằm tại [`docs/GROUNDING_HEALTH_DASHBOARD.md`](docs/GROUNDING_HEALTH_DASHBOARD.md).
 Sửa grid review cục bộ và UI an toàn được mô tả tại
 [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md); bước này không
 rebuild Kaggle, lexical index hay dense index.
