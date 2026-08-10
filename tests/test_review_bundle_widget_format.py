@@ -61,6 +61,15 @@ class ReviewBundleWidgetFormatTests(unittest.TestCase):
             "BÁO CÁO LƯU CHUYỂN TIỀN TỆ năm 2021",
         )
 
+    def test_report_context_prefers_normalized_segment_over_projected_heading(self):
+        self.assertEqual(
+            mod.report_context_text(
+                {"report_segment": {"source_heading": "5. Chi phí phạt"}},
+                {"context_heading": "OCR heading không đúng"},
+            ),
+            "5. Chi phí phạt",
+        )
+
     def test_summary_uses_metadata_and_exact_value_row(self):
         candidate = {
             "document_id": "QNS_financial_statements_2021_separate",
@@ -297,6 +306,25 @@ class ReviewBundleWidgetFormatTests(unittest.TestCase):
             trace["topic_label"],
             "4. TIỀN VÀ CÁC KHOẢN TƯƠNG ĐƯƠNG TIỀN",
         )
+
+    def test_context_trace_prefers_hash_bound_normalized_segment_heading(self):
+        trace = mod.context_trace(
+            {
+                "context_trace": {
+                    "source_title": "OCR context noisy 999",
+                    "period_labels": ["legacy"],
+                },
+                "report_segment": {
+                    "source_heading": "Báo cáo lưu chuyển tiền tệ năm 2023",
+                    "period_labels": ["31/12/2023"],
+                    "unit_labels": ["VND"],
+                    "compact_descriptor": "Báo cáo lưu chuyển tiền tệ — Lưu chuyển tiền tệ",
+                },
+            }
+        )
+        self.assertEqual(trace["source_title"], "Báo cáo lưu chuyển tiền tệ năm 2023")
+        self.assertEqual(trace["period_labels"], ["31/12/2023"])
+        self.assertEqual(trace["unit_labels"], ["VND"])
 
     def test_machine_review_formats_evidence_and_collapses_votes(self):
         rendered = mod.machine_html(

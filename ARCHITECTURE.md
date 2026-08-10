@@ -747,6 +747,19 @@ provenance `direct_metadata_support_v1` vẫn không xuất hiện trong compact
 Direct EvidenceSet phải tái kiểm tra V2 raw-row identity, canonical header và
 period-bound cell; support chỉ là recall, không phải evidence hay label.
 
+## 16.2 Report segment normalization
+
+`report_segments_v1.jsonl` là sidecar điều hướng/hash-bound: một UID bảng có
+raw context digest, heading cùng trang sau khi cắt table/trang trước, function,
+section, period/unit labels và một descriptor ngắn `chức năng · phần · kỳ · đơn
+vị`. Heading bắt đầu tại tên báo cáo, descriptor tuyệt đối không chứa row, công
+thức hay số liệu. Sidecar không sửa OCR, không đổi grid, không suy diễn tiêu đề
+hay số liệu và có
+`evidence_eligible=false`, `training_eligible=false`. UI ưu tiên heading này
+để giảm nhiễu; mọi decision/evidence vẫn trỏ exact V2 row/cell.
+V4 chỉ có thể đọc `unit_labels` hash-bound để nhận diện đơn vị nguồn, không
+được dùng heading/descriptor để bind metric, period, rank hay promote nhãn.
+
 Câu lọc/xếp hạng nhiều giai đoạn được route thành
 `multi_stage_selection_unresolved`, thay vì lấy công thức từ keyword xuất hiện
 đầu tiên. Q369 là controlled canary đầu tiên có stage planner theo entity; mọi

@@ -34,6 +34,7 @@ from finance_query.plan_overrides import (
     canonical_sha256,
     validate_plan_overrides,
 )
+from finance_query.report_segments import validate_report_segment_sidecar
 from finance_query.table_structure import sha256_file, validate_structure_sidecar
 
 import auto_review_bundle_v31 as v31
@@ -75,6 +76,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bundle-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--evidence-context", type=Path, default=None)
+    parser.add_argument(
+        "--report-segments",
+        type=Path,
+        default=None,
+        help=(
+            "Optional hash-bound report-segment sidecar. It can supply only "
+            "source-derived heading/unit navigation metadata; raw V2 rows and "
+            "headers remain the sole evidence."
+        ),
+    )
     parser.add_argument("--quarantine-output", type=Path, default=None)
     parser.add_argument(
         "--question-plan-overrides",
@@ -568,8 +579,14 @@ def raw_source_unit(table: dict[str, Any]) -> str | None:
     hinted = table.get("unit_hint")
     if isinstance(hinted, str) and hinted:
         return hinted
+    segment = table.get("report_segment") or {}
     context = " ".join(
         [
+            # These labels were extracted from V2 canonical source headers and
+            # are hash-bound to this exact grid.  They make unit lookup robust
+            # to OCR/HTML debris in broader surrounding prose; they do not
+            # supply a metric, value, or period binding.
+            " ".join(str(value) for value in segment.get("unit_labels") or []),
             str(table.get("context_before") or ""),
             str((table.get("context_trace") or {}).get("source_title") or ""),
             " ".join((table.get("context_trace") or {}).get("unit_labels") or []),
@@ -941,6 +958,27 @@ def main() -> None:
         )
     tables = by_uid(v3.load_jsonl(structure_path), "V2 structures")
     contexts = by_uid(v3.load_jsonl(context_path), "evidence contexts")
+    requested_segments = args.report_segments
+    default_segments = bundle / "report_segments_v1.jsonl"
+    segment_path = requested_segments or default_segments
+    segment_count = 0
+    if requested_segments is not None and not segment_path.is_file():
+        raise FileNotFoundError(segment_path)
+    if segment_path.is_file():
+        segment_path = segment_path.resolve()
+        segment_manifest = validate_report_segment_sidecar(bundle, segment_path)
+        segments = by_uid(v3.load_jsonl(segment_path), "report segments")
+        if len(segments) != int(segment_manifest.get("segment_count") or -1):
+            raise ValueError("Report-segment UID/count contract is invalid")
+        unknown_segments = sorted(set(segments) - set(tables))
+        if unknown_segments:
+            raise RuntimeError(
+                "Report-segment sidecar has an unknown table UID: "
+                + unknown_segments[0]
+            )
+        for uid, segment in segments.items():
+            tables[uid]["report_segment"] = segment
+        segment_count = len(segments)
     validated, candidate_total = v3.attach_structure_validation(items, bundle)
 
     reviews: list[dict[str, Any]] = []
@@ -966,6 +1004,12 @@ def main() -> None:
     print("Status counts:", dict(Counter(str(row["consensus_status"]) for row in reviews)))
     print("Exact V2 candidate rows:", f"{validated}/{candidate_total}")
     print("Quarantined candidates:", len(quarantine))
+    if segment_count:
+        print(
+            "Attached normalized report segments:",
+            segment_count,
+            "(navigation/unit metadata only; raw V2 rows remain evidence)",
+        )
     if args.question_plan_overrides is not None:
         print("Applied source-bound plan overrides:", len(overrides))
     if args.direct_evidence is not None:

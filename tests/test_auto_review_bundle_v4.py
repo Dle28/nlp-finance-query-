@@ -17,6 +17,21 @@ spec.loader.exec_module(mod)
 
 
 class AutonomousReviewV4Tests(unittest.TestCase):
+    def test_hash_bound_segment_unit_is_navigation_metadata_not_a_value(self):
+        self.assertEqual(
+            mod.raw_source_unit(
+                {
+                    "rows": [["Tiền", "100"]],
+                    "report_segment": {
+                        "unit_labels": ["Triệu đồng"],
+                        "evidence_eligible": False,
+                        "training_eligible": False,
+                    },
+                }
+            ),
+            "million_vnd",
+        )
+
     def test_no_eligible_candidate_records_the_current_context_protocol(self):
         review, _quarantine = mod.autonomous_review_item(
             {

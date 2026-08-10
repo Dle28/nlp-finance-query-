@@ -26,9 +26,11 @@ sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 # ``sys.modules``. Reload them so a running notebook never combines a new
 # widget with an older operand-matcher signature or table-structure contract.
 import finance_query.financial_metrics as financial_metrics  # noqa: E402
+import finance_query.report_segments as report_segments  # noqa: E402
 import finance_query.table_structure as table_structure  # noqa: E402
 
 financial_metrics = importlib.reload(financial_metrics)
+report_segments = importlib.reload(report_segments)
 table_structure = importlib.reload(table_structure)
 
 fold_text = financial_metrics.fold_text
@@ -36,6 +38,7 @@ formula_is_multi_operand = financial_metrics.formula_is_multi_operand
 infer_formula_spec = financial_metrics.infer_formula_spec
 operand_match_score = financial_metrics.operand_match_score
 validate_structure_sidecar = table_structure.validate_structure_sidecar
+validate_report_segment_sidecar = report_segments.validate_report_segment_sidecar
 
 try:
     import ipywidgets as widgets
@@ -70,6 +73,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Optional V2 table-structure sidecar. Defaults to "
             "<bundle-dir>/tables_structured_v2.jsonl when present."
+        ),
+    )
+    parser.add_argument(
+        "--report-segments",
+        type=Path,
+        default=None,
+        help=(
+            "Optional hash-bound report_segments_v1.jsonl sidecar. It provides "
+            "compact source headings/context only and never replaces raw evidence."
         ),
     )
     parser.add_argument(
@@ -142,6 +154,11 @@ def compact_text(value: Any, limit: int | None = None) -> str:
 
 def report_context_text(table: dict[str, Any], candidate: dict[str, Any]) -> str:
     """Prefer the projected heading and keep raw report context as fallback only."""
+    normalized_heading = compact_text(
+        (table.get("report_segment") or {}).get("source_heading"), 420
+    )
+    if normalized_heading:
+        return normalized_heading
     heading = compact_text(candidate.get("context_heading"), 420)
     raw = str(table.get("context_before") or "")
     # The text after the last table is the heading exported by V3. Keeping this
@@ -232,17 +249,20 @@ def has_verified_structure(table: dict[str, Any]) -> bool:
 
 def context_trace(table: dict[str, Any]) -> dict[str, Any]:
     trace = table.get("context_trace") or {}
+    segment = table.get("report_segment") or {}
     topic = trace.get("topic") or {}
     return {
-        "source_title": compact_text(trace.get("source_title"), 420),
+        "source_title": compact_text(
+            segment.get("source_heading") or trace.get("source_title"), 420
+        ),
         "topic_label": compact_text(
             (topic.get("label") if isinstance(topic, dict) else "")
             or trace.get("topic_label"),
             240,
         ),
-        "period_labels": [str(value) for value in trace.get("period_labels") or []],
-        "unit_labels": [str(value) for value in trace.get("unit_labels") or []],
-        "summary": compact_text(trace.get("summary"), 520),
+        "period_labels": [str(value) for value in segment.get("period_labels") or trace.get("period_labels") or []],
+        "unit_labels": [str(value) for value in segment.get("unit_labels") or trace.get("unit_labels") or []],
+        "summary": compact_text(segment.get("compact_descriptor") or trace.get("summary"), 520),
     }
 
 
@@ -917,6 +937,24 @@ class BundleReviewer:
             for uid, structure in structures.items():
                 self.tables[uid] = {**self.tables[uid], **structure}
             self.structure_count = len(structures)
+        requested_segments = args.report_segments
+        default_segments = bundle / "report_segments_v1.jsonl"
+        segment_path = requested_segments or default_segments
+        self.segment_count = 0
+        if requested_segments and not requested_segments.is_file():
+            raise FileNotFoundError(requested_segments)
+        if segment_path.is_file():
+            segment_path = segment_path.resolve()
+            segment_manifest = validate_report_segment_sidecar(bundle, segment_path)
+            segments = {str(row.get("internal_table_uid") or ""): row for row in load_jsonl(segment_path)}
+            if "" in segments or len(segments) != int(segment_manifest.get("segment_count") or -1):
+                raise ValueError("Report-segment UID/count contract is invalid")
+            unknown_segments = sorted(set(segments) - set(self.tables))
+            if unknown_segments:
+                raise RuntimeError("Report-segment sidecar has an unknown table UID: " + unknown_segments[0])
+            for uid, segment in segments.items():
+                self.tables[uid]["report_segment"] = segment
+            self.segment_count = len(segments)
         self.machine = {
             int(row["id"]): row
             for row in load_jsonl(args.machine_reviews)
@@ -1060,8 +1098,11 @@ class BundleReviewer:
         trace = context_trace(table)
         # A numbered note/topic is the tightest exact source context.  Keep the
         # longer title in the collapsed trace instead of repeating it up front.
+        normalized_heading = compact_text(
+            (table.get("report_segment") or {}).get("source_heading"), 420
+        )
         context_heading = html.escape(
-            trace["topic_label"] or report_context_text(table, candidate)
+            normalized_heading or trace["topic_label"] or report_context_text(table, candidate)
         )
         operand_matches = candidate_operand_matches(self.current_formula, candidate, table)
         assessment = relevance_assessment(table, question, self.current_formula, candidate)
@@ -1117,6 +1158,12 @@ class BundleReviewer:
             f"<div>{html.escape(period_unit_text)}</div></details>"
         )
 
+        summary_html = (
+            "<div style='margin:-3px 0 8px;color:#4a5568'><b>Tóm tắt bảng:</b> "
+            f"{html.escape(trace['summary'])}</div>"
+            if trace["summary"]
+            else ""
+        )
         context_box = widgets.HTML(
             "<div style='padding:10px 12px;background:#f5f7fb;border:1px solid #d9e0ea;"
             "border-radius:7px;font-size:12px;line-height:1.55'>"
@@ -1127,6 +1174,7 @@ class BundleReviewer:
             "<div style='font-size:11px;text-transform:uppercase;letter-spacing:.04em;"
             "color:#667085'><b>Ngữ cảnh/tiêu đề nguồn</b></div>"
             f"<div style='margin:3px 0 8px;font-size:13px;color:#263238'>{context_heading}</div>"
+            f"{summary_html}"
             f"<div style='padding:6px 8px;background:{assessment_color[0]};border-left:4px solid {assessment_color[1]};'>"
             f"<b>{html.escape(assessment['label'])}:</b> {html.escape(assessment['reason'])}</div>"
             f"{operand_text}"

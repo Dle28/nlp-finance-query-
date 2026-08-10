@@ -490,6 +490,32 @@ vào UI candidate. Sau repair V2, `build_direct_evidence_sets.py` phải xác nh
 lại raw metric identity, source header và đúng period cell; phrase support chỉ
 tăng recall, tuyệt đối không tự tạo machine-silver.
 
+## Chuẩn hóa report segment
+
+Để tách OCR/HTML boilerplate khỏi ngữ cảnh đọc nhanh, build sidecar từ bundle
+đã có V2/V3 hợp lệ:
+
+```bash
+python scripts/build_report_segments.py \
+  --bundle-dir ~/ViFinQA_review/run_full_metadata_support_v1 \
+  --evidence-context ~/ViFinQA_review/run_full_metadata_support_v1/tables_evidence_context_v3.jsonl \
+  --output ~/ViFinQA_review/run_full_metadata_support_v1/report_segments_v1.jsonl
+```
+
+Mỗi segment giữ UID, document, raw-context SHA, heading cùng trang, chức năng
+bảng, section, kỳ và đơn vị đã quan sát. Heading của báo cáo bắt đầu đúng tại
+tên báo cáo (không kéo tên công ty/boilerplate trước đó); dòng tóm tắt chỉ có
+**chức năng · phần (nếu không trùng) · kỳ · đơn vị**, không serialise row,
+công thức hay số liệu. Nó bỏ table của trang trước/HTML noise và có
+`evidence_eligible=false`, `training_eligible=false`. Widget tự dùng sidecar
+khi có mặt, hoặc có thể chỉ rõ `--report-segments ...`. Raw grid V2 vẫn là bằng
+chứng duy nhất.
+
+`auto_review_bundle_v4.py` cũng tự attach sidecar này khi nó có trong bundle
+(hoặc nhận `--report-segments ...`). Chỉ `unit_labels` đã hash-bound mới có thể
+giúp đọc đơn vị; title/descriptor không tham gia bind row, period, điểm semantic
+hay quyết định `machine_calibrated`.
+
 Từ bundle export mới, với operand controlled đã có đủ `entity`, năm và
 `allowed_table_functions`, exporter còn đưa **raw statement table** tương ứng
 vào `tables.jsonl` qua metadata SQLite có kiểm soát. Các bảng này có
