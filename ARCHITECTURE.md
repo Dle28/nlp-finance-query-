@@ -766,8 +766,11 @@ raw context digest, heading cùng trang sau khi cắt table/trang trước, func
 section, period/unit labels và một descriptor ngắn `chức năng · phần · kỳ · đơn
 vị`. Với child heading đánh số, nó còn giữ parent heading nguồn rõ ràng cùng
 trang (không lấy table cell hay title OCR suy đoán). Heading bắt đầu tại tên báo
-cáo, descriptor tuyệt đối không chứa row, công thức hay số liệu. Sidecar không
-sửa OCR, không đổi grid, không suy diễn tiêu đề hay số liệu và có
+cáo. Reader heading chỉ hiển thị prefix nguồn trước một sentence boundary đã
+liệt kê; không đủ boundary thì UI dùng descriptor thay vì cắt câu OCR thành
+một title mới. Descriptor tuyệt đối không chứa row, công thức hay số liệu.
+Sidecar không sửa OCR, không đổi grid, không suy diễn tiêu đề hay số liệu;
+manifest ghi policy `source_heading_metadata_only_no_numeric_inference_v2` và có
 `evidence_eligible=false`, `training_eligible=false`. UI ưu tiên heading này
 để giảm nhiễu; mọi decision/evidence vẫn trỏ exact V2 row/cell.
 Manifest Direct EvidenceSet giữ filename/SHA-256 của segment đã dùng; V4 chỉ

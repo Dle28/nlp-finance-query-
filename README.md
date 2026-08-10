@@ -523,9 +523,13 @@ python scripts/build_report_segments.py \
 
 Mỗi segment giữ UID, document, raw-context SHA, heading cùng trang, chức năng
 bảng, section, kỳ và đơn vị đã quan sát. Heading của báo cáo bắt đầu đúng tại
-tên báo cáo (không kéo tên công ty/boilerplate trước đó); dòng tóm tắt chỉ có
-**chức năng · phần (nếu không trùng) · kỳ · đơn vị**, không serialise row,
-công thức hay số liệu. Nó bỏ table của trang trước/HTML noise và có
+tên báo cáo (không kéo tên công ty/boilerplate trước đó). Với note dài, UI chỉ
+hiện prefix nguồn trước một câu diễn giải đã nhận diện; nếu không xác định
+được ranh giới tiêu đề, UI hạ về dòng tóm tắt **chức năng · phần (nếu không
+trùng) · kỳ · đơn vị**. Không serialise row, công thức hay số liệu. Nó bỏ table
+của trang trước/HTML noise. Manifest ghi policy
+`source_heading_metadata_only_no_numeric_inference_v2` để phân biệt lần chuẩn
+hóa đọc nhanh, và có
 `evidence_eligible=false`, `training_eligible=false`. Widget tự dùng sidecar
 khi có mặt, hoặc có thể chỉ rõ `--report-segments ...`. Raw grid V2 vẫn là bằng
 chứng duy nhất.

@@ -18,10 +18,22 @@ from .table_structure import normalize_space, sha256_file
 
 
 SEGMENT_VERSION = 1
+NORMALIZATION_POLICY = "source_heading_metadata_only_no_numeric_inference_v2"
 MAX_SOURCE_HEADING_CHARS = 140
+MAX_READER_HEADING_CHARS = 108
 PAGE_RE = re.compile(r"={3,}\s*PAGE\s*\d+\s*={3,}", re.IGNORECASE)
+# A note title can be ``35. Tên note`` or ``9.6 Tên sub-note``.  Restrict
+# numeric components to one/two digits and require an uppercase title token:
+# accepting arbitrary dotted numbers turns OCR prose such as ``4.997 tỷ`` into
+# a fake heading.  This deliberately drops uncertain headings; V3 function,
+# period and unit metadata remains available as the readable fallback.
 NUMBERED_HEADING_RE = re.compile(
-    r"(?:^|\s)((?:[IVXLCDM]+|\d+(?:\.\d+)*)\s*[.)]\s*[^\n]{3,180})",
+    r"(?<![\w.])"
+    r"(?:"
+    r"(?:[IVXLCDM]+|\d{1,2})\s*[.)]"
+    r"|\d{1,2}(?:\.\d{1,2}){1,2}(?:\s*[.)])?"
+    r")"
+    r"(?=\s+[A-ZÀ-ỸĐ])",
     re.IGNORECASE,
 )
 NUMERIC_SUBHEADING_RE = re.compile(r"^(\d+)(?:\.\d+)+\s*[.)]?\s+", re.IGNORECASE)
@@ -29,11 +41,37 @@ STATEMENT_RE = re.compile(
     r"(?:bảng\s+cân\s+đối\s+kế\s+toán|báo\s+cáo\s+kết\s+quả\s+hoạt\s+động\s+kinh\s+doanh|báo\s+cáo\s+lưu\s+chuyển\s+tiền\s+tệ)",
     re.IGNORECASE,
 )
+# A phrase naming a report in narrative prose is not a report title.  The
+# source must immediately show a title-only qualifier such as the reporting
+# date, financial year, scope, or form number.  This is presentation metadata,
+# but failing closed avoids a misleading title above the source grid.
+STATEMENT_TITLE_SUFFIX_RE = re.compile(
+    r"\s*(?:(?:hợp\s+nhất|riêng)\s*)?"
+    r"(?:tại\s+ngày|cho\s+năm(?:\s+tài\s+chính)?|năm\s+tài\s+chính\s+kết\s+thúc|mẫu\s+số)\b",
+    re.IGNORECASE,
+)
 BOILERPLATE_RE = re.compile(
     r"\s+(?:mẫu\s+(?:số\s+)?[A-Z0-9 .\-–/]+|\(\s*ban\s+hành\s+theo\b).*",
     re.IGNORECASE,
 )
 WORD_RE = re.compile(r"\w+", re.UNICODE)
+# These are source-observed sentence starters, not accounting-topic guesses.
+# They are only used to hide the explanatory continuation after an already
+# recognised numbered title in the compact reader view. The full source
+# excerpt stays in ``source_heading`` for audit and direct-evidence provenance.
+READER_PROSE_START_RE = re.compile(
+    r"\s+(?=(?:"
+    r"ngoài\s+(?:các\s+)?(?:số\s+dư|khoản|thông\s+tin)\b"
+    r"|dưới\s+đây\b"
+    r"|số\s+(?:thuế|tiền|dư|liệu)\b"
+    r"|thay\s+đổi\s+(?:tài\s+sản|dự\s+phòng|vốn|số\s+dư|các\s+khoản)\b"
+    r"|độ\s+nhạy\s+đối\s+với\b"
+    r"|tổng\s+(?:doanh\s+thu|giá\s+trị)\s+(?:thể\s+hiện|bao\s+gồm)\b"
+    r"|quỹ\s+này\s+(?:được|là)\b"
+    r"|tại\s+ngày\b|trong\s+năm\b|với\s+giả\s+định\b|mỗi\s+cổ\s+phiếu\b"
+    r"))",
+    re.IGNORECASE,
+)
 
 
 def _html_tail(raw_context: object) -> str:
@@ -76,7 +114,11 @@ def _parent_heading(raw_context: object, heading: str) -> str:
 
 
 def _heading(text: str) -> tuple[str, str]:
-    statement = list(STATEMENT_RE.finditer(text))
+    statement = [
+        match
+        for match in STATEMENT_RE.finditer(text)
+        if STATEMENT_TITLE_SUFFIX_RE.match(text[match.end() :])
+    ]
     if statement:
         match = statement[-1]
         # Start precisely at the recognised report name.  The context preceding
@@ -93,7 +135,9 @@ def _heading(text: str) -> tuple[str, str]:
         # text node.  A bounded excerpt is less misleading than treating that
         # prose as a table title; the unchanged raw context remains available
         # for audit in the V2 source record.
-        heading = _trim_immediate_repeated_phrase(numbered[-1].group(1))
+        heading = _trim_immediate_repeated_phrase(
+            text[numbered[-1].start() : numbered[-1].start() + 180]
+        )
         return normalize_space(heading)[:MAX_SOURCE_HEADING_CHARS], "numbered_heading"
     return "", "none"
 
@@ -118,6 +162,29 @@ def _trim_immediate_repeated_phrase(text: str) -> str:
             ]:
                 return text[: words[start + width][1]].rstrip()
     return text
+
+
+def _reader_heading(source_heading: str, heading_kind: str) -> tuple[str, str]:
+    """Make a short display title while retaining the raw title excerpt.
+
+    Long heading-like OCR often contains the opening sentence of a note. A
+    compact reader must not paraphrase that sentence. It may display a prefix
+    only at one explicit source sentence boundary; otherwise it falls back to
+    V3's table-function descriptor rather than a noisy pseudo-title.
+    """
+    heading = normalize_space(source_heading)
+    if not heading:
+        return "", "fallback_to_descriptor"
+    if heading_kind == "numbered_heading":
+        boundary = READER_PROSE_START_RE.search(heading)
+        if boundary is not None:
+            prefix = normalize_space(heading[: boundary.start()])
+            if prefix and len(prefix) <= MAX_READER_HEADING_CHARS:
+                return prefix, "source_title_before_prose"
+    if len(heading) <= MAX_READER_HEADING_CHARS:
+        return heading, "source_heading"
+    # Do not truncate a long source phrase into a new implied title.
+    return "", "fallback_to_descriptor"
 
 
 def _unique(values: list[str], limit: int) -> list[str]:
@@ -235,6 +302,7 @@ def build_report_segment(
         unit_labels = [str(value) for value in trace.get("unit_labels") or [] if str(value)]
     period_labels = _unique(period_labels, 8)
     unit_labels = _unique(unit_labels, 4)
+    reader_heading, reader_heading_status = _reader_heading(heading, heading_source)
     return {
         "schema_version": SEGMENT_VERSION,
         "internal_table_uid": str(table["internal_table_uid"]),
@@ -247,6 +315,8 @@ def build_report_segment(
         "source_heading": heading,
         "source_heading_kind": heading_source,
         "source_parent_heading": parent_heading,
+        "reader_heading": reader_heading,
+        "reader_heading_status": reader_heading_status,
         "table_function": function,
         "table_section": section,
         "period_labels": period_labels,
@@ -254,7 +324,7 @@ def build_report_segment(
         "compact_descriptor": _descriptor(
             function, section, heading, period_labels, unit_labels
         ),
-        "normalization_policy": "source_heading_metadata_only_no_numeric_inference_v1",
+        "normalization_policy": NORMALIZATION_POLICY,
         "evidence_eligible": False,
         "training_eligible": False,
     }

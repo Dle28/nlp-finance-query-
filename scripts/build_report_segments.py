@@ -13,7 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from finance_query.evidence_context import validate_evidence_context_sidecar  # noqa: E402
-from finance_query.report_segments import SEGMENT_VERSION, build_report_segment  # noqa: E402
+from finance_query.report_segments import (  # noqa: E402
+    NORMALIZATION_POLICY,
+    SEGMENT_VERSION,
+    build_report_segment,
+)
 from finance_query.table_structure import sha256_file, validate_structure_sidecar  # noqa: E402
 
 
@@ -70,7 +74,7 @@ def main() -> None:
         "evidence_context_sha256": sha256_file(context_path),
         "segment_count": uid_count,
         "heading_kind_counts": dict(heading_counts),
-        "normalization_policy": "source_heading_metadata_only_no_numeric_inference_v1",
+        "normalization_policy": NORMALIZATION_POLICY,
         "evidence_eligible": False,
         "training_eligible": False,
         "sidecar_sha256": sha256_file(output),

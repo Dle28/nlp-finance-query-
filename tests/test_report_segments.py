@@ -95,6 +95,76 @@ class ReportSegmentTests(unittest.TestCase):
         self.assertEqual(segment["source_heading"], "9.6 Theo ngành nghề kinh doanh")
         self.assertEqual(segment["source_parent_heading"], "9 CHO VAY KHÁCH HÀNG")
 
+    def test_currency_or_prose_is_not_mistaken_for_numbered_heading(self):
+        table = {
+            "internal_table_uid": "u6",
+            "context_before": (
+                "4.997 tỷ VND là giá trị ghi sổ tại ngày 31/12/2023. "
+                "Tại ngày này, Công ty tiếp tục đánh giá khoản đầu tư."
+            ),
+        }
+        segment = build_report_segment(
+            table,
+            {"table_function": {"label": "Bảng chi tiết khoản đầu tư"}},
+        )
+        self.assertEqual(segment["source_heading"], "")
+        self.assertEqual(segment["source_heading_kind"], "none")
+        self.assertEqual(segment["compact_descriptor"], "Bảng chi tiết khoản đầu tư")
+
+    def test_statement_mentioned_in_prose_is_not_a_report_heading(self):
+        table = {
+            "internal_table_uid": "u7",
+            "context_before": (
+                "Khoản chi phí được ghi nhận vào báo cáo kết quả hoạt động kinh doanh "
+                "trong năm tại thời điểm phát sinh."
+            ),
+        }
+        segment = build_report_segment(
+            table,
+            {"table_function": {"label": "Báo cáo kết quả hoạt động kinh doanh"}},
+        )
+        self.assertEqual(segment["source_heading"], "")
+        self.assertEqual(segment["source_heading_kind"], "none")
+
+    def test_reader_heading_hides_recognised_explanatory_prose(self):
+        table = {
+            "internal_table_uid": "u8",
+            "context_before": (
+                "35. Các giao dịch chủ yếu với các bên liên quan "
+                "Ngoài số dư với các bên liên quan được trình bày trong thuyết minh khác"
+            ),
+        }
+        segment = build_report_segment(table, {"canonical_headers": {"columns": []}})
+        self.assertTrue(segment["source_heading"].startswith("35. Các giao dịch"))
+        self.assertEqual(
+            segment["reader_heading"], "35. Các giao dịch chủ yếu với các bên liên quan"
+        )
+        self.assertEqual(segment["reader_heading_status"], "source_title_before_prose")
+
+    def test_nested_numbered_heading_prefers_the_last_source_title(self):
+        table = {
+            "internal_table_uid": "u9",
+            "context_before": (
+                "22. TÌNH HÌNH THỰC HIỆN NGHĨA VỤ VỚI NGÂN SÁCH NHÀ NƯỚC "
+                "22.2 Thuế TNDN hoãn lại Thay đổi tài sản thuế TNDN hoãn lại"
+            ),
+        }
+        segment = build_report_segment(table, {"canonical_headers": {"columns": []}})
+        self.assertTrue(segment["source_heading"].startswith("22.2 Thuế TNDN hoãn lại"))
+        self.assertEqual(segment["reader_heading"], "22.2 Thuế TNDN hoãn lại")
+
+    def test_reader_never_truncates_a_long_prefix_before_prose(self):
+        table = {
+            "internal_table_uid": "u10",
+            "context_before": (
+                "37.3 Cam kết vốn và các nghĩa vụ liên quan đến dự án đầu tư "
+                "Các cam kết vốn đã được phê duyệt nhưng chưa được phản ánh"
+            ),
+        }
+        segment = build_report_segment(table, {"canonical_headers": {"columns": []}})
+        self.assertEqual(segment["reader_heading"], "")
+        self.assertEqual(segment["reader_heading_status"], "fallback_to_descriptor")
+
     def test_segment_manifest_rejects_wrong_context_or_training_flag(self):
         with tempfile.TemporaryDirectory() as temporary:
             bundle = Path(temporary)

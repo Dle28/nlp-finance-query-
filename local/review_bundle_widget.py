@@ -156,9 +156,18 @@ def compact_text(value: Any, limit: int | None = None) -> str:
 
 def report_context_text(table: dict[str, Any], candidate: dict[str, Any]) -> str:
     """Prefer the projected heading and keep raw report context as fallback only."""
-    normalized_heading = compact_text(
-        (table.get("report_segment") or {}).get("source_heading"), 420
-    )
+    segment = table.get("report_segment") or {}
+    # Newer segment builds deliberately expose an empty reader heading for an
+    # ambiguous prose excerpt. In that case the V3 descriptor is more truthful
+    # than falling back to the noisy raw title.
+    if "reader_heading" in segment:
+        normalized_heading = compact_text(segment.get("reader_heading"), 420)
+        if normalized_heading:
+            return normalized_heading
+        descriptor = compact_text(segment.get("compact_descriptor"), 420)
+        if descriptor:
+            return descriptor
+    normalized_heading = compact_text(segment.get("source_heading"), 420)
     if normalized_heading:
         return normalized_heading
     heading = compact_text(candidate.get("context_heading"), 420)
@@ -253,7 +262,12 @@ def context_trace(table: dict[str, Any]) -> dict[str, Any]:
     trace = table.get("context_trace") or {}
     segment = table.get("report_segment") or {}
     topic = trace.get("topic") or {}
-    normalized_heading = compact_text(segment.get("source_heading"), 420)
+    if "reader_heading" in segment:
+        normalized_heading = compact_text(segment.get("reader_heading"), 420)
+        if not normalized_heading:
+            normalized_heading = compact_text(segment.get("compact_descriptor"), 420)
+    else:
+        normalized_heading = compact_text(segment.get("source_heading"), 420)
     parent_heading = compact_text(segment.get("source_parent_heading"), 220)
     source_title = normalized_heading or compact_text(trace.get("source_title"), 420)
     if parent_heading and source_title and parent_heading.casefold() not in source_title.casefold():

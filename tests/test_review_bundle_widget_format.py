@@ -70,6 +70,21 @@ class ReviewBundleWidgetFormatTests(unittest.TestCase):
             "5. Chi phí phạt",
         )
 
+    def test_report_context_uses_descriptor_when_reader_title_is_ambiguous(self):
+        self.assertEqual(
+            mod.report_context_text(
+                {
+                    "report_segment": {
+                        "reader_heading": "",
+                        "compact_descriptor": "Thuyết minh báo cáo tài chính · kỳ: 2023",
+                        "source_heading": "Một đoạn OCR dài không đủ chắc là tiêu đề",
+                    }
+                },
+                {"context_heading": "Nguồn cũ"},
+            ),
+            "Thuyết minh báo cáo tài chính · kỳ: 2023",
+        )
+
     def test_summary_uses_metadata_and_exact_value_row(self):
         candidate = {
             "document_id": "QNS_financial_statements_2021_separate",
