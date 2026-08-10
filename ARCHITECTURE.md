@@ -1012,6 +1012,13 @@ training và review-status promotion, không đi vào corpus/index hay autonomou
 review mặc định. Nó vẫn phải qua cùng gate common-scope/unique-binding trước
 khi bất kỳ EvidenceSet nào được coi là đủ input.
 
+Source completion có thể chạy nhiều pass: pass sau dùng snapshot trước làm
+`base` và ghi snapshot combined mới, không overwrite artifact cũ. Chỉ UID có
+raw grid, source provenance và V3 context tái dựng hoàn toàn giống nhau mới
+được deduplicate; audit origins được union. Điều này cho phép audit missing
+operand và audit scope-gap cùng tồn tại mà không biến supplemental source
+thành corpus, answer hay training data.
+
 Một nhánh execution khác, tách biệt với source completion, hỗ trợ **duy nhất**
 `operating_cash_flow_argmax_period` ở chế độ shadow evaluation. Câu phải có
 một ticker, danh sách năm tường minh, metric CFO tường minh và yêu cầu maximum.

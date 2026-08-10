@@ -12,7 +12,8 @@ Modes:
 - preprocess: derive canonical header/period context from immutable V2 grids.
 - formula-evidence: derive exact-cell coverage for controlled formula operands.
 - source-completion: audit and revalidate raw tables omitted from the bundle;
-  emit a formula-coverage-only shadow sidecar with no label promotion.
+  then run a scope-gap pass into a combined formula-coverage-only shadow
+  sidecar with no label promotion.
 - autonomous: V4 machine self-review and source-gated machine-silver export.
 - autotrain: train only when enough V4 machine-silver pairs have accumulated.
 """
@@ -200,6 +201,13 @@ def main() -> None:
     source_completion_context = bundle / "source_completion_context_v1.jsonl"
     source_completion_formula = bundle / "formula_evidence_sets_context_v3_source_completion_shadow.jsonl"
     source_completion_formula_audit = source_completion_formula.with_suffix(".audit.json")
+    source_completion_scope_audit = bundle / "formula_source_completion_scope_audit_v1.json"
+    source_completion_combined_tables = bundle / "source_completion_combined_v1.jsonl"
+    source_completion_combined_context = bundle / "source_completion_combined_context_v1.jsonl"
+    source_completion_combined_formula = (
+        bundle / "formula_evidence_sets_context_v3_source_completion_combined_shadow.jsonl"
+    )
+    source_completion_combined_formula_audit = source_completion_combined_formula.with_suffix(".audit.json")
 
     if args.mode == "preprocess":
         command = [
@@ -304,9 +312,65 @@ def main() -> None:
             ],
             root,
         )
+        # The first pass covers genuinely missing operands. Re-audit that
+        # revalidated shadow with the narrow scope-gap policy so a staged
+        # multi-entity program can prove whether a common scope exists. The
+        # second completion snapshot *inherits* the first one; it does not
+        # replace previously revalidated raw source tables.
+        run(
+            [
+                sys.executable,
+                str(root / "scripts/audit_formula_source_coverage.py"),
+                "--bundle-dir", str(bundle),
+                "--formula-evidence", str(source_completion_formula),
+                "--reports-root", str(completion_reports),
+                "--include-scope-gap-operands",
+                "--output", str(source_completion_scope_audit),
+            ],
+            root,
+        )
+        run(
+            [
+                sys.executable,
+                str(root / "scripts/build_source_completion_sidecar.py"),
+                "--bundle-dir", str(bundle),
+                "--source-audit", str(source_completion_scope_audit),
+                "--reports-root", str(completion_reports),
+                "--base-tables", str(source_completion_tables),
+                "--base-contexts", str(source_completion_context),
+                "--tables-output", str(source_completion_combined_tables),
+                "--contexts-output", str(source_completion_combined_context),
+            ],
+            root,
+        )
+        run(
+            [
+                sys.executable,
+                str(root / "scripts/build_formula_evidence_sets.py"),
+                "--bundle-dir", str(bundle),
+                "--output", str(source_completion_combined_formula),
+                "--evidence-context", str(evidence_context),
+                "--discover-source-operands",
+                "--source-completion-tables", str(source_completion_combined_tables),
+                "--source-completion-context", str(source_completion_combined_context),
+            ],
+            root,
+        )
+        run(
+            [
+                sys.executable,
+                str(root / "scripts/analyze_formula_evidence.py"),
+                "--bundle-dir", str(bundle),
+                "--formula-evidence", str(source_completion_combined_formula),
+                "--output", str(source_completion_combined_formula_audit),
+            ],
+            root,
+        )
         print("\nRaw-source completion audit:", source_completion_audit)
         print("Revalidated supplemental tables:", source_completion_tables)
-        print("Coverage-only formula shadow:", source_completion_formula)
+        print("Scope-gap audit:", source_completion_scope_audit)
+        print("Combined supplemental tables:", source_completion_combined_tables)
+        print("Coverage-only formula shadow:", source_completion_combined_formula)
         print("No corpus/index, review status, answer, execution record, or training label was changed.")
         return
 

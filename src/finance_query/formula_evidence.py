@@ -20,7 +20,13 @@ from .financial_metrics import fold_text, operand_match_score
 FORMULA_SOURCE_DISCOVERY_POLICY = "resolved_ticker_operand_year_or_following_report_v1"
 FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE = "formula_source_discovery_v1"
 FORMULA_SOURCE_DISCOVERY_RANK_BASE = 1_000_000
-EQUIVALENT_COMPARATIVE_WITNESS_FORMULAS = {"operating_cash_flow_argmax_period"}
+# This binding policy is distinct from execution: a selected primary source
+# remains evidence-only unless its formula family has an explicit executor.
+EQUIVALENT_COMPARATIVE_WITNESS_FORMULAS = {
+    "operating_cash_flow_argmax_period",
+    "cfo_positive_multiyear_max_net_margin",
+}
+EXECUTION_BACKED_COMPOSED_FORMULAS = {"operating_cash_flow_argmax_period"}
 
 
 def _is_balance_sheet_opening_header(label: str, year: int) -> bool:
@@ -70,6 +76,42 @@ def _balance_sheet_row_metric_is_exact(
         for hint in operand.get("metric_hints") or []
         if fold_text(str(hint))
     )
+
+
+def _income_statement_total_net_profit_row_is_exact(
+    operand: Mapping[str, Any], row: list[Any]
+) -> bool:
+    """Keep a total net-profit operand off parent/NCI component rows.
+
+    ``Lợi nhuận sau thuế`` occurs three times in a standard consolidated
+    income statement: the total, the parent share and the non-controlling
+    share.  A lexical score cannot distinguish them.  This gate is deliberately
+    limited to the controlled net-margin numerator role and accepts only the
+    official total labels after removing a source row number and account-code
+    equation.  It does not alter the raw cell text.
+    """
+    if str(operand.get("role") or "") != "net_margin_numerator":
+        return True
+    label = next(
+        (
+            str(value).strip()
+            for value in row
+            if str(value).strip() and any(character.isalpha() for character in str(value))
+        ),
+        "",
+    )
+    label = re.sub(r"^\s*\d+(?:\.\d+)*\s*[.)]?\s*", "", label)
+    # Annual statement totals use both ``(60 = 50 - 51 - 52)`` and the
+    # shortened ``(50-51-52)`` notation. Strip only a parenthesized numeric
+    # equation, never prose in a source row label.
+    label = re.sub(r"\s*\(\s*[\d\s=+*/.-]+\)\s*$", "", label)
+    normalized_label = fold_text(label)
+    return normalized_label in {
+        "loi nhuan sau thue",
+        "loi nhuan sau thue thu nhap doanh nghiep",
+        "loi nhuan sau thue tndn",
+        "loi nhuan rong",
+    }
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -391,6 +433,11 @@ def operand_evidence_matches(
             continue
         if is_balance_sheet_operand and not _balance_sheet_row_metric_is_exact(operand, row):
             continue
+        if (
+            str((context.get("table_function") or {}).get("kind") or "") == "income_statement"
+            and not _income_statement_total_net_profit_row_is_exact(operand, row)
+        ):
+            continue
         binding = bind_operand_cell(operand, candidate, table, context, row_index)
         if binding.get("status") != "cell_bound":
             continue
@@ -496,7 +543,7 @@ def select_coherent_operand_matches(
 
         A comparative report can repeat an earlier period exactly. It is not a
         second value. This exception is deliberately available only to a
-        controlled argmax-year formula and still requires an explicit source
+        controlled allowlisted formula and still requires an explicit source
         unit, a same-year primary report, same ticker/scope, same parsed/raw
         value, and report years limited to the source year or its following
         comparative report.
@@ -655,7 +702,7 @@ def formula_evidence_set(
         "conditional_analytical",
         "cross_entity_comparison",
         "multi_entity_or_period_aggregation",
-    } and str(formula.get("formula_id") or "") not in EQUIVALENT_COMPARATIVE_WITNESS_FORMULAS:
+    } and str(formula.get("formula_id") or "") not in EXECUTION_BACKED_COMPOSED_FORMULAS:
         reason_codes.append("question_family_requires_composed_execution")
     selected_operand_matches: dict[str, dict[str, Any]] = {}
     scope_diagnostics = multi_entity_scope_diagnostics(coverage, operands)

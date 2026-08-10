@@ -499,6 +499,22 @@ review status, answer, execution ledger hoặc training label. Một raw table
 bổ sung vẫn phải qua common-scope/unique-binding gate; không được tự chọn
 `consolidated` hay `separate`.
 
+Nếu cần chạy audit bổ sung (ví dụ scope-gap) sau snapshot đầu, tạo một output
+mới có kế thừa thay vì thay thế snapshot cũ:
+
+```bash
+python scripts/build_source_completion_sidecar.py \
+  --bundle-dir ~/ViFinQA_review/run_002 \
+  --source-audit ~/ViFinQA_review/run_002/formula_source_completion_scope_audit.json \
+  --base-tables ~/ViFinQA_review/run_002/source_completion_tables_v1.jsonl \
+  --base-contexts ~/ViFinQA_review/run_002/source_completion_context_v1.jsonl \
+  --tables-output ~/ViFinQA_review/run_002/source_completion_combined_v1.jsonl \
+  --contexts-output ~/ViFinQA_review/run_002/source_completion_combined_context_v1.jsonl
+```
+
+UID trùng chỉ được gộp nếu raw grid, source provenance và V3 context y hệt;
+ngược lại command fail-closed. Base và output đều shadow-only.
+
 Với công thức nhiều entity theo stage, `audit_formula_source_coverage.py` có
 scope-gap probe để chỉ audit raw statement bị thiếu ở scope còn lại, dù operand
 đã có match ở một scope. Nó chỉ là đọc/audit (`--include-scope-gap-operands`,

@@ -50,6 +50,16 @@ sidecar V2. Trường hợp metric nằm ở exact heading và số nằm ở to
 
 Không được thay exact cells bằng câu diễn giải.
 
+Với numerator `Lợi nhuận sau thuế` của controlled net-margin plan, collector
+chỉ nhận exact total row (LNST/LNST thu nhập doanh nghiệp/LNST TNDN/LNST ròng).
+Các dòng LNST của công ty mẹ hoặc cổ đông không kiểm soát không được thay thế
+cho total, dù cùng có lexical overlap.
+
+Với controlled CFO multi-stage plan, annual primary có thể được chọn trước
+comparative witness của báo cáo năm kế tiếp **chỉ** khi raw value, parsed value,
+unit, ticker và scope trùng hoàn toàn. Đây là binding policy, không phải stage
+executor: EvidenceSet vẫn `partial` và không sinh answer/label cho plan này.
+
 ## Gate hoàn chỉnh
 
 EvidenceSet chỉ complete khi:
@@ -122,6 +132,13 @@ completion không được gọi bởi autonomous review hoặc execution ledger
 có thể tăng **coverage** của Formula EvidenceSet shadow sau khi validator kiểm
 UID/hash/context. Formula vẫn phải qua common-scope và unique-binding gate;
 nếu raw report có cả `consolidated` và `separate`, hệ thống không tự chọn scope.
+
+Một audit tiếp theo có thể kế thừa snapshot completion trước qua
+`build_source_completion_sidecar.py --base-tables ... --base-contexts ...`.
+Kết quả là snapshot shadow mới có union UID deterministically; UID lặp chỉ
+được nhận khi raw grid/provenance và rebuilt V3 context giống hệt, còn
+`origins` được hợp nhất. Output mới không được overwrite base snapshot và vẫn
+giữ `answer_eligible=false`, `training_eligible=false`.
 
 Với program nhiều entity mang `stage_binding_required`, audit có thể chạy thêm
 **scope-gap probe**. Probe chỉ tìm raw primary statement thiếu cho một operand

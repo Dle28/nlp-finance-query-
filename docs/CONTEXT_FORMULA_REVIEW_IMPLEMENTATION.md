@@ -298,3 +298,22 @@ trong `110/130/140/150`, hoặc liability fragment có đủ `300/310/330`. Vì 
 raw table có đúng row nhưng trước đây bị `semantic` có thể được audit lại, còn
 note table chứa một keyword đơn lẻ vẫn bị loại. Snapshot source-completion có
 tên tùy biến được cấp manifest kề bên để không overwrite snapshot V1 cũ.
+
+Runner `source-completion` chạy hai pass khi có formula staged nhiều entity:
+pass đầu materialize operand thiếu, pass hai audit scope-gap từ EvidenceSet
+shadow rồi tạo `source_completion_combined_v1`. Snapshot combined kế thừa
+snapshot đầu; UID lặp chỉ được nhận khi raw grid/provenance và context V3 khớp
+từng byte (ngoài danh sách `origins` được hợp nhất). Cả hai pass vẫn chỉ cấp
+coverage shadow, không có answer/training/review promotion.
+
+Trên `run_full_001`, snapshot combined có 18 raw tables và nâng Formula
+EvidenceSet có đủ operand từ 22 lên 26/136. Q472/Q489/Q547/Q551 có common
+scope `consolidated` sau pass này, nhưng vẫn partial vì stage executor chưa có
+và có comparative binding trùng; Q369 vẫn không có common scope (`HPG` chỉ
+`separate`, `MSR` chỉ `consolidated`). Không record nào được promote.
+
+Sau khi gate LNST total loại row Công ty mẹ/cổ đông không kiểm soát và policy
+comparative chỉ giữ primary khi exact value/unit trùng, bốn câu CFO đều có
+`selected_operand_matches` đủ (25/25 hoặc 15/15) trong `consolidated`. Chúng
+vẫn partial vì chưa có stage executor và vì source-completion không được dùng
+làm answer/training evidence.

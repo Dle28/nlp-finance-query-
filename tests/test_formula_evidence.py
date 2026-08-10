@@ -143,6 +143,48 @@ class FormulaEvidenceTests(unittest.TestCase):
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0]["row_index"], 1)
 
+    def test_income_statement_net_margin_uses_total_not_parent_or_nci_components(self):
+        operand = {
+            "operand_id": "net_profit",
+            "metric_hints": ["lợi nhuận sau thuế", "lợi nhuận ròng"],
+            "years": [2022],
+            "role": "net_margin_numerator",
+            "allowed_table_functions": ["income_statement"],
+        }
+        table = {
+            "internal_table_uid": "u1",
+            "ticker": "ABC",
+            "rows": [
+                ["Chỉ tiêu", "Mã số", "Năm 2022 VND"],
+                ["18. Lợi nhuận sau thuế thu nhập doanh nghiệp (50-51-52)", "60", "100"],
+                ["18.1 Lợi nhuận sau thuế của Công ty mẹ", "61", "90"],
+                ["18.2 Lợi nhuận sau thuế của cổ đông không kiểm soát", "62", "10"],
+            ],
+            "cell_provenance": [[{}, {}, {}] for _ in range(4)],
+        }
+        context = {
+            "quality": {"status": "review_ready"},
+            "table_function": {"kind": "income_statement"},
+            "canonical_headers": {
+                "columns": [
+                    {"column_index": 0, "source_label": "Chỉ tiêu"},
+                    {"column_index": 1, "source_label": "Mã số"},
+                    {"column_index": 2, "source_label": "Năm 2022 VND"},
+                ]
+            },
+            "row_profiles": [
+                {"row_index": index, "role": "data", "numeric_columns": [1, 2]}
+                for index in (1, 2, 3)
+            ],
+        }
+        matches = operand_evidence_matches(
+            operand,
+            {"internal_table_uid": "u1", "ticker": "ABC", "scope": "consolidated", "report_year": 2022, "rank": 1},
+            table,
+            context,
+        )
+        self.assertEqual([match["row_index"] for match in matches], [1])
+
     def test_equivalent_comparative_witnesses_need_same_year_primary_value_and_unit(self):
         operands = [{"operand_id": "cfo_2021", "entity": "ABC", "years": [2021]}]
         primary = {
@@ -169,6 +211,47 @@ class FormulaEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(selected, {})
         self.assertEqual(reasons, ["ambiguous_operand_bindings"])
+
+    def test_controlled_multistage_formula_can_select_identical_comparative_witness(self):
+        operands = [
+            {"operand_id": "aaa_cfo_2021", "entity": "AAA", "years": [2021]},
+            {"operand_id": "aaa_profit_2021", "entity": "AAA", "years": [2021]},
+            {"operand_id": "bbb_cfo_2021", "entity": "BBB", "years": [2021]},
+            {"operand_id": "bbb_profit_2021", "entity": "BBB", "years": [2021]},
+        ]
+
+        def match(entity, operand_id, raw, report_year):
+            return {
+                "ticker": entity,
+                "scope": "consolidated",
+                "report_year": report_year,
+                "internal_table_uid": f"{entity}-{operand_id}-{report_year}",
+                "source_unit": "vnd",
+                "binding": {"raw_value": raw, "parsed_value": raw},
+            }
+
+        coverage = {
+            "aaa_cfo_2021": [
+                match("AAA", "aaa_cfo_2021", "100", 2021),
+                match("AAA", "aaa_cfo_2021", "100", 2022),
+            ],
+            "aaa_profit_2021": [match("AAA", "aaa_profit_2021", "10", 2021)],
+            "bbb_cfo_2021": [match("BBB", "bbb_cfo_2021", "200", 2021)],
+            "bbb_profit_2021": [match("BBB", "bbb_profit_2021", "20", 2021)],
+        }
+        selected, reasons = select_coherent_operand_matches(
+            coverage,
+            operands,
+            allow_equivalent_comparative_witnesses=True,
+        )
+        self.assertEqual(reasons, [])
+        self.assertEqual(set(selected), set(coverage))
+        self.assertEqual(selected["aaa_cfo_2021"]["report_year"], 2021)
+        self.assertEqual(
+            selected["aaa_cfo_2021"]["selection_policy"],
+            "same_year_primary_with_identical_comparative_witnesses_v1",
+        )
+
     def test_source_discovery_uses_only_resolved_source_metadata(self):
         formula = {
             "operands": [
