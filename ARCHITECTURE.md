@@ -7,9 +7,12 @@
 >
 > **ML finds. Rules verify. Provenance decides. Executor calculates.**
 
-`QueryProgram` hiện mới ở shadow-only: nó chỉ compile/evaluate fixture operand
-đã grounded cho template allow-listed, không truy xuất OCR, không trả answer
-và không promote nhãn. Xem [`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md).
+`QueryProgram` hiện mới ở shadow-only: nó chỉ compile/evaluate operand đã
+grounded cho hai template allow-listed, kiểm coherent entity/năm/scope trước
+khi chạy, không truy xuất OCR, không trả answer và không promote nhãn. Kết quả
+canary (Q369 blocked đúng; Q551 chạy shadow từ 15 exact cells) tại
+[`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md) và
+[`docs/COMPLEX_QUERY_CANARY.md`](docs/COMPLEX_QUERY_CANARY.md).
 
 `OCR Quality Profile V1` là nhánh quan sát từ V2/V3: nó triage bảng có cell
 OCR/layout rủi ro nhưng không tự sửa content, làm evidence hay thay rank. Xem

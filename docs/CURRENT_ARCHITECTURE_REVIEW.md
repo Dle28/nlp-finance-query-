@@ -301,11 +301,15 @@ migration additive: manifest nguồn của từng sidecar vẫn là contract ch�
 đến khi consumer được chuyển từng bước sang logical resolution. Chi tiết tại
 [`ARTIFACT_REGISTRY.md`](ARTIFACT_REGISTRY.md).
 
-P0.5 đã có implementation shadow đầu tiên: `QueryProgram` chỉ compile template
-Quick Ratio → ΔGPM → Interest Coverage và chỉ evaluate operand map đã grounded
-do caller đưa vào. Trên bundle hiện tại, Q369 compile được nhưng bị
-`shadow_blocked` vì Formula EvidenceSet chưa complete/coherent; không answer,
-không label promotion. Contract và lệnh chạy tại [`QUERY_PROGRAM.md`](QUERY_PROGRAM.md).
+P0.5 đã có hai implementation shadow có allow-list: Quick Ratio → ΔGPM →
+Interest Coverage và CFO dương đa năm → argmax Net Margin. `QueryProgram` chỉ
+evaluate operand map đã grounded do Formula EvidenceSet selected, đồng thời
+kiểm entity/năm/một scope chung trước execution. Trên bundle hiện tại Q369
+compile nhưng `shadow_blocked` do definition/binding/scope; Q551 là một canary
+`shadow_complete` từ 15 exact cells. Cả hai không answer, không label
+promotion và không tạo training data. Contract/lệnh chạy tại
+[`QUERY_PROGRAM.md`](QUERY_PROGRAM.md), audit canary tại
+[`COMPLEX_QUERY_CANARY.md`](COMPLEX_QUERY_CANARY.md).
 
 P1 đã hoàn tất nhánh diagnostic đầu tiên: OCR Quality Profile V1 đọc V2/V3 và
 triage `normal`/`review_required`/`quarantine` theo parser warning, canonical

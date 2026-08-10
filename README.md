@@ -81,6 +81,9 @@ theo filename version nằm tại
 [`docs/ARTIFACT_REGISTRY.md`](docs/ARTIFACT_REGISTRY.md).
 QueryProgram shadow-only cho câu hỏi nhiều bước và boundary không tự trả lời/
 đổi nhãn nằm tại [`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md).
+Hai canary nhiều bước (một blocked đúng vì thiếu scope/binding, một chỉ chạy
+shadow từ exact cells) nằm tại
+[`docs/COMPLEX_QUERY_CANARY.md`](docs/COMPLEX_QUERY_CANARY.md).
 OCR Quality Profile V1 đo cell/layout có rủi ro từ V2/V3 mà không sửa OCR hay
 đổi evidence/rank nằm tại [`docs/OCR_QUALITY_PROFILE.md`](docs/OCR_QUALITY_PROFILE.md).
 Semantic Catalog V1 nhóm vai trò bảng bằng metadata V2/V3/source heading, chỉ

@@ -24,6 +24,8 @@ from finance_query.query_program import (  # noqa: E402
     QUERY_PROGRAM_SCHEMA_VERSION,
     QueryProgramError,
     compile_query_program,
+    evaluate_shadow_query_program,
+    operand_values_from_selected_matches,
     shadow_readiness,
 )
 
@@ -68,6 +70,7 @@ def main() -> None:
     formula_manifest = validate_manifest(bundle, evidence_path)
     rows: list[dict[str, Any]] = []
     compile_counts: Counter[str] = Counter()
+    shadow_execution_counts: Counter[str] = Counter()
     for evidence_set in load_jsonl(evidence_path):
         formula = evidence_set.get("formula") or {}
         try:
@@ -84,22 +87,36 @@ def main() -> None:
                         "detail": str(error),
                         "submission_eligible": False,
                     },
+                    "shadow_execution": None,
                     "execution_mode": "shadow_only",
                 }
             )
             compile_counts["compile_blocked"] += 1
+            shadow_execution_counts["not_run"] += 1
             continue
         readiness = shadow_readiness(evidence_set, program)
+        shadow_execution: dict[str, Any] | None = None
+        if program is not None and readiness["status"] == "shadow_ready":
+            extracted = operand_values_from_selected_matches(program, evidence_set)
+            shadow_execution = (
+                evaluate_shadow_query_program(program, extracted["operand_values"])
+                if extracted["status"] == "shadow_values_ready"
+                else extracted
+            )
         rows.append(
             {
                 "id": int(evidence_set["id"]),
                 "formula_id": str(formula.get("formula_id") or ""),
                 "program": None if program is None else program.to_dict(),
                 "readiness": readiness,
+                "shadow_execution": shadow_execution,
                 "execution_mode": "shadow_only",
             }
         )
         compile_counts[str(readiness["status"])] += 1
+        shadow_execution_counts[
+            "not_run" if shadow_execution is None else str(shadow_execution["status"])
+        ] += 1
     atomic_jsonl(output, rows)
     manifest = {
         "schema_version": QUERY_PROGRAM_SCHEMA_VERSION,
@@ -111,6 +128,7 @@ def main() -> None:
         "formula_evidence_schema_version": int(formula_manifest["schema_version"]),
         "program_count": sum(row["program"] is not None for row in rows),
         "readiness_counts": dict(sorted(compile_counts.items())),
+        "shadow_execution_counts": dict(sorted(shadow_execution_counts.items())),
         "execution_mode": "shadow_only",
         "submission_eligible": False,
         "sidecar_sha256": sha256_file(output),

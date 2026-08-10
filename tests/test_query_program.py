@@ -5,6 +5,7 @@ from finance_query.query_program import (
     QueryProgramError,
     compile_query_program,
     evaluate_shadow_query_program,
+    operand_values_from_selected_matches,
     shadow_readiness,
 )
 
@@ -14,6 +15,12 @@ QUESTION = (
     "năm 2022 thấp hơn trung vị. Công ty có mức thay đổi biên lợi nhuận gộp cao "
     "nhất từ năm 2022 sang năm 2023 có hệ số khả năng thanh toán lãi vay năm 2023 "
     "là bao nhiêu lần?"
+)
+
+CFO_NPM_QUESTION = (
+    "Trong nhóm GEE, GEX và SAM, xét các công ty có lưu chuyển tiền thuần từ hoạt động "
+    "kinh doanh dương trong cả ba năm 2022, 2023 và 2024, tỷ lệ lợi nhuận sau thuế trên "
+    "doanh thu thuần cao nhất năm 2024 là bao nhiêu %?"
 )
 
 
@@ -53,6 +60,32 @@ def values() -> dict[str, str]:
     for entity in ("hpg", "hsg", "msr", "nkg"):
         output[f"{entity}_profit_before_tax_2023"] = "30"
         output[f"{entity}_interest_expense_2023"] = "-10"
+    return output
+
+
+def cfo_program() -> object:
+    formula = infer_formula_spec(CFO_NPM_QUESTION)
+    assert formula is not None
+    compiled = compile_query_program(formula)
+    assert compiled is not None
+    return compiled
+
+
+def cfo_values() -> dict[str, str]:
+    output: dict[str, str] = {}
+    # GEE is filtered out (one negative CFO); GEX has the largest NPM (20%).
+    cfo = {
+        "gee": ("1", "-1", "1"),
+        "gex": ("1", "1", "1"),
+        "sam": ("1", "1", "1"),
+    }
+    for entity, values_by_year in cfo.items():
+        for year, value in zip((2022, 2023, 2024), values_by_year, strict=True):
+            output[f"{entity}_operating_cash_flow_{year}"] = value
+    margins = {"gee": ("1", "10"), "gex": ("20", "100"), "sam": ("15", "100")}
+    for entity, (profit, revenue) in margins.items():
+        output[f"{entity}_net_profit_2024"] = profit
+        output[f"{entity}_net_revenue_2024"] = revenue
     return output
 
 
@@ -114,3 +147,112 @@ class QueryProgramTests(unittest.TestCase):
                     "execution_status": "not_executed",
                 }
             )
+
+    def test_compiles_and_shadows_cfo_filter_then_net_margin_rank(self):
+        compiled = cfo_program()
+        self.assertEqual(compiled.program_id, "cfo_positive_multiyear_max_net_margin_v1")
+        self.assertEqual(compiled.screen_years, [2022, 2023, 2024])
+        self.assertEqual(compiled.target_year, 2024)
+        result = evaluate_shadow_query_program(compiled, cfo_values())
+        self.assertEqual(result["status"], "shadow_complete")
+        self.assertEqual(result["winner_entity"], "GEX")
+        self.assertEqual(result["result_value"], "20.0")
+        self.assertEqual(result["result_unit"], "percent")
+        self.assertEqual(result["stage_trace"]["eligible_entities"], ["GEX", "SAM"])
+        self.assertFalse(result["submission_eligible"])
+
+    def test_staged_partial_with_all_selected_operands_is_shadow_ready_only(self):
+        compiled = cfo_program()
+        selected = {
+            operand_id: {
+                "ticker": operand_id.split("_", maxsplit=1)[0].upper(),
+                "scope": "consolidated",
+                "report_year": int(operand_id.rsplit("_", maxsplit=1)[1]),
+                "source_unit": "vnd",
+                "binding": {
+                    "status": "cell_bound",
+                    "parsed_value": value,
+                    "parse_warnings": [],
+                }
+            }
+            for operand_id, value in cfo_values().items()
+        }
+        evidence = {
+            "formula": infer_formula_spec(CFO_NPM_QUESTION),
+            "operand_coverage_status": "complete",
+            "evidence_completeness": "partial",
+            "selected_operand_matches": selected,
+            "reason_codes": [
+                "formula_requires_stage_binding",
+                "question_family_requires_composed_execution",
+            ],
+        }
+        readiness = shadow_readiness(evidence, compiled)
+        self.assertEqual(readiness["status"], "shadow_ready")
+        extracted = operand_values_from_selected_matches(compiled, evidence)
+        self.assertEqual(extracted["status"], "shadow_values_ready")
+        self.assertFalse(readiness["submission_eligible"])
+
+    def test_staged_partial_blocks_mixed_selected_scopes(self):
+        compiled = cfo_program()
+        selected = {
+            operand_id: {
+                "ticker": operand_id.split("_", maxsplit=1)[0].upper(),
+                "scope": "consolidated" if operand_id.startswith("gee_") else "separate",
+                "report_year": int(operand_id.rsplit("_", maxsplit=1)[1]),
+                "source_unit": "vnd",
+                "binding": {
+                    "status": "cell_bound",
+                    "parsed_value": value,
+                    "parse_warnings": [],
+                },
+            }
+            for operand_id, value in cfo_values().items()
+        }
+        readiness = shadow_readiness(
+            {
+                "formula": infer_formula_spec(CFO_NPM_QUESTION),
+                "operand_coverage_status": "complete",
+                "evidence_completeness": "partial",
+                "selected_operand_matches": selected,
+                "reason_codes": [
+                    "formula_requires_stage_binding",
+                    "question_family_requires_composed_execution",
+                ],
+            },
+            compiled,
+        )
+        self.assertEqual(readiness["status"], "shadow_blocked")
+        self.assertIn("selected_operand_metadata_not_coherent", readiness["reason_codes"])
+
+    def test_staged_partial_blocks_mismatched_net_margin_units(self):
+        compiled = cfo_program()
+        selected = {
+            operand_id: {
+                "ticker": operand_id.split("_", maxsplit=1)[0].upper(),
+                "scope": "consolidated",
+                "report_year": int(operand_id.rsplit("_", maxsplit=1)[1]),
+                "source_unit": "million_vnd" if operand_id == "gex_net_profit_2024" else "vnd",
+                "binding": {
+                    "status": "cell_bound",
+                    "parsed_value": value,
+                    "parse_warnings": [],
+                },
+            }
+            for operand_id, value in cfo_values().items()
+        }
+        readiness = shadow_readiness(
+            {
+                "formula": infer_formula_spec(CFO_NPM_QUESTION),
+                "operand_coverage_status": "complete",
+                "evidence_completeness": "partial",
+                "selected_operand_matches": selected,
+                "reason_codes": [
+                    "formula_requires_stage_binding",
+                    "question_family_requires_composed_execution",
+                ],
+            },
+            compiled,
+        )
+        self.assertEqual(readiness["status"], "shadow_blocked")
+        self.assertIn("selected_operand_metadata_not_coherent", readiness["reason_codes"])

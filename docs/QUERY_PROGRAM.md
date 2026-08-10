@@ -6,19 +6,27 @@
 sau Formula EvidenceSet, không thay retrieval, không suy luận scope, không sửa
 OCR và không tạo evidence mới.
 
-V1 chỉ allow-list một mẫu có cấu trúc rõ ràng:
+V1 chỉ allow-list hai mẫu có cấu trúc rõ ràng:
 
 ```text
 Quick Ratio theo từng công ty
   → lọc nghiêm ngặt q < median(q)
   → argmax thay đổi Gross Margin có dấu
   → Interest Coverage của công ty thắng
+
+CFO theo từng công ty và từng năm screening
+  → chỉ giữ công ty có CFO > 0 ở mọi năm đã nêu
+  → argmax (Lợi nhuận sau thuế / Doanh thu thuần) ở năm đích
+  → xuất tỷ lệ của công ty thắng ở chế độ shadow
 ```
 
 Mỗi operand trong program vẫn là `operand_id` do Formula EvidenceSet khai báo
 và phải đã bind tới exact raw V2 cell. Mapping `(entity, role, year) →
 operand_id` được lưu trong program; executor không tự ghép ticker vào tên
-operand và không được đọc OCR/raw table.
+operand và không được đọc OCR/raw table. Trước khi chạy, selected bindings còn
+phải khớp entity, năm và **một scope chung không rỗng**; executor không chọn
+`consolidated`/`separate` thay EvidenceSet. Với Net Margin, tử số và mẫu số của
+mỗi entity còn phải có cùng source unit đã khai báo.
 
 ## Shadow-only contract
 
@@ -33,9 +41,10 @@ Artifact V1 có các cờ cố định:
 ```
 
 Shadow executor chỉ nhận các value đã coherent và grounded do caller cung cấp.
-Nó fail-closed khi thiếu operand, mẫu số bằng 0, không có entity qua điều kiện
-lọc, hoặc có tie ở bước xếp hạng. Kể cả khi arithmetic hoàn tất, output chỉ là
-trace để test executor, không phải answer/label và không thể chuyển thành
+Nó fail-closed khi thiếu operand, metadata binding không coherent, mẫu số bằng
+0, không có entity qua điều kiện lọc, hoặc có tie ở bước xếp hạng. Kể cả khi
+arithmetic hoàn tất, output chỉ là trace để test executor, không phải answer/
+label và không thể chuyển thành
 `machine_calibrated`.
 
 ## Input provenance bắt buộc
@@ -45,6 +54,10 @@ khi compile. Validator kiểm SHA của review items, raw tables, V2, V3, Formul
 sidecar và các source-completion/entity-resolution sidecar được Formula V6
 khai báo. Một Formula EvidenceSet partial hoặc không có coherent operand
 bindings được xuất hiện trong artifact nhưng trạng thái là `shadow_blocked`.
+Riêng một EvidenceSet `partial` chỉ được chạy shadow khi mọi operand đã
+selected exact, coverage `complete` và hai reason code còn lại chỉ là hand-off
+đã biết: `formula_requires_stage_binding` và
+`question_family_requires_composed_execution`.
 
 ```bash
 python scripts/build_query_program_shadow.py \
@@ -57,14 +70,29 @@ Output có manifest riêng chứa SHA của Formula EvidenceSet và manifest ngu
 Artifact này cần được đăng ký là dependency của `formula_evidence` trong
 workspace ArtifactRegistry.
 
+Mỗi dòng output có `readiness` và `shadow_execution`. `shadow_execution` là
+`null` nếu gate chưa thỏa. Manifest đếm tách `readiness_counts` và
+`shadow_execution_counts`, nên không thể nhầm “compile được” với “đã chạy” hay
+“được phép trả lời”.
+
 ## Kết quả canary hiện tại
 
-Trên bundle hiện có, chỉ một Formula EvidenceSet khớp template. Đó là Q369
-(HPG/HSG/MSR/NKG; Quick Ratio → thay đổi GPM → Interest Coverage). Program được
-compile để kiểm tra contract, nhưng vẫn **không thực thi**: Formula definition
-đang `review_required`, EvidenceSet `partial`, không có coherent bindings và
-các operand không có common global scope. Đây là kết quả đúng theo fail-closed
-policy, không phải thiếu answer được bù bằng suy luận.
+Trên snapshot Formula EvidenceSet V6 hiện tại, có 5 Formula EvidenceSet khớp
+hai template allow-list; 4 bị `shadow_blocked` và 1 `shadow_ready`. Artifact
+ghi 1 `shadow_complete`, vẫn với `submission_eligible=false`.
+
+- **Q369** (HPG/HSG/MSR/NKG; Quick Ratio → ΔGPM → Interest Coverage) chỉ
+  compile để kiểm tra contract. Nó vẫn blocked: definition `review_required`,
+  selected bindings rỗng và không có global scope chung. Audit source cho thấy
+  35 bảng đã nằm trong bundle nhưng chưa bind, thêm 1 metric raw không tìm thấy;
+  vì vậy source completion không phải cách sửa đúng.
+- **Q551** (GEE/GEX/SAM; CFO dương 2022–2024 → NPM 2024) là canary chạy được:
+  15 operand đã `cell_bound`, formula `defined`, và EvidenceSet đã chọn scope
+  chung `consolidated`. Executor chỉ đọc `binding.parsed_value` của 15 cell đó,
+  xuất stage trace để audit và không viết answer/label/training data.
+
+Chi tiết audit và ranh giới của hai canary ở
+[`COMPLEX_QUERY_CANARY.md`](COMPLEX_QUERY_CANARY.md).
 
 ## Điều kiện mở rộng
 
