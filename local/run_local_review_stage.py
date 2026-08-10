@@ -193,6 +193,7 @@ def main() -> None:
     autonomous_reviews = labels / f"machine_reviews_{run_tag}_autonomous{artifact_variant}.jsonl"
     autonomous_quarantine = labels / f"autonomous_quarantine_{run_tag}{artifact_variant}.jsonl"
     autonomous_silver = labels / f"machine_silver_labels_{run_tag}{artifact_variant}.jsonl"
+    direct_replay = labels / f"direct_evidence_replay_{run_tag}{artifact_variant}.jsonl"
     execution_ledger = labels / f"machine_execution_ledger_{run_tag}{artifact_variant}.jsonl"
     formula_evidence = bundle / "formula_evidence_sets_context_v3_discovered.jsonl"
     direct_evidence = bundle / "direct_evidence_sets_context_v3_discovered.jsonl"
@@ -432,9 +433,26 @@ def main() -> None:
         run(
             [
                 sys.executable,
+                str(root / "scripts/build_direct_evidence_replay.py"),
+                "--bundle-dir",
+                str(bundle),
+                "--machine-reviews",
+                str(autonomous_reviews),
+                "--evidence-context",
+                str(evidence_context),
+                "--output",
+                str(direct_replay),
+            ],
+            root,
+        )
+        run(
+            [
+                sys.executable,
                 str(root / "scripts/export_review_labels.py"),
                 "--machine-reviews",
                 str(autonomous_reviews),
+                "--direct-replay",
+                str(direct_replay),
                 "--output",
                 str(autonomous_silver),
             ],
@@ -458,6 +476,7 @@ def main() -> None:
             root,
         )
         print("\nAutonomous reviews:", autonomous_reviews)
+        print("Independent direct replay gate:", direct_replay)
         print("Quarantined dirty/ambiguous candidates:", autonomous_quarantine)
         print("V4 machine-silver labels only:", autonomous_silver)
         print("Exact-cell execution ledger (direct lookups + audited formula allow-list):", execution_ledger)
@@ -479,6 +498,8 @@ def main() -> None:
                 str(bundle / "tables.jsonl"),
                 "--label-provenance",
                 "machine_silver",
+                "--direct-replay",
+                str(direct_replay),
                 "--min-pairs",
                 str(args.autonomous_min_pairs),
                 "--defer-below-min",

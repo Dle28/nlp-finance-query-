@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
+from finance_query.direct_replay import DIRECT_REPLAY_PROTOCOL
 
 
 ROOT = Path(__file__).parents[1]
@@ -27,6 +28,7 @@ class ExportReviewLabelTests(unittest.TestCase):
 
     def test_machine_silver_export_requires_v3_exact_raw_metric(self) -> None:
         review = {
+            "id": 1,
             "consensus_status": "machine_calibrated",
             "machine_candidate_uid": "table-1",
             "structure_validation": {"validated": True},
@@ -36,18 +38,30 @@ class ExportReviewLabelTests(unittest.TestCase):
                 "selected_assessment": {"raw_metric_identity": {"exact": True}},
             },
         }
-        self.assertTrue(mod.machine_training_eligible(review))
+        replay = {
+            "protocol": DIRECT_REPLAY_PROTOCOL,
+            "status": "shadow_replay_ready",
+            "question_id": 1,
+            "machine_consensus_status": "machine_calibrated",
+            "valid_exact_candidates": [{"internal_table_uid": "table-1"}],
+        }
+        self.assertTrue(mod.machine_training_eligible(review, direct_replay=replay))
+
+        self.assertFalse(mod.machine_training_eligible(review, direct_replay=None))
+        replay["status"] = "shadow_ambiguous"
+        self.assertFalse(mod.machine_training_eligible(review, direct_replay=replay))
+        replay["status"] = "shadow_replay_ready"
 
         review["machine_self_review"]["selected_assessment"]["raw_metric_identity"][
             "exact"
         ] = False
-        self.assertFalse(mod.machine_training_eligible(review))
+        self.assertFalse(mod.machine_training_eligible(review, direct_replay=replay))
 
         review["machine_self_review"]["selected_assessment"]["raw_metric_identity"][
             "exact"
         ] = True
         review["machine_self_review"]["protocol"] = "raw_v2_canonical_context_v2"
-        self.assertFalse(mod.machine_training_eligible(review))
+        self.assertFalse(mod.machine_training_eligible(review, direct_replay=replay))
 
 
 if __name__ == "__main__":

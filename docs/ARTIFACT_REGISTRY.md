@@ -13,6 +13,9 @@ report_segment
 direct_evidence
 formula_evidence
 query_program_shadow
+query_fingerprint_census
+direct_evidence_replay
+machine_silver_training_input
 evaluation_dashboard
 review_decision
 ```

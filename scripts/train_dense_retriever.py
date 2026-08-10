@@ -18,11 +18,13 @@ concentrate gradient reduction on GPU 0 and cause avoidable OOMs on 2xT4.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 
 from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
+from finance_query.direct_replay import DIRECT_REPLAY_PROTOCOL
 from finance_query.retrieval import AssetStore
 
 
@@ -70,6 +72,12 @@ def parse_args() -> argparse.Namespace:
         help="Validate the declared supervision source before training.",
     )
     parser.add_argument(
+        "--direct-replay",
+        type=Path,
+        default=None,
+        help="Replay sidecar whose SHA must match every machine-silver label gate.",
+    )
+    parser.add_argument(
         "--min-pairs",
         type=int,
         default=1,
@@ -89,7 +97,13 @@ def model_text(model_name: str, text: str, *, query: bool) -> str:
     return text
 
 
-def validate_provenance(row: dict, provenance: str, line_number: int) -> None:
+def validate_provenance(
+    row: dict,
+    provenance: str,
+    line_number: int,
+    *,
+    expected_replay_sha: str | None = None,
+) -> None:
     if provenance == "human_verified":
         if str(row.get("annotation_status") or "") != "human_verified":
             raise ValueError(f"Line {line_number} is not a complete human_verified label")
@@ -112,9 +126,28 @@ def validate_provenance(row: dict, provenance: str, line_number: int) -> None:
         )
     if not bool(self_review.get("training_eligible")):
         raise ValueError(f"Line {line_number} is not training-eligible autonomous silver")
+    replay = row.get("direct_replay_gate") or {}
+    replay_sha = str(replay.get("replay_artifact_sha256") or "")
+    if (
+        str(replay.get("protocol") or "") != DIRECT_REPLAY_PROTOCOL
+        or str(replay.get("status") or "") != "shadow_replay_ready"
+        or int(replay.get("question_id") or -1) != int(row.get("id") or -2)
+        or str(replay.get("machine_selected_uid") or "")
+        not in {str(value) for value in row.get("positive_table_uids") or []}
+        or len(replay_sha) != 64
+        or any(character not in "0123456789abcdef" for character in replay_sha)
+        or replay_sha != expected_replay_sha
+        or replay.get("training_gate_only") is not True
+    ):
+        raise ValueError(f"Line {line_number} lacks a valid independent direct replay gate")
 
 
-def load_label_rows(path: Path, provenance: str) -> list[dict]:
+def load_label_rows(
+    path: Path,
+    provenance: str,
+    *,
+    expected_replay_sha: str | None = None,
+) -> list[dict]:
     rows: list[dict] = []
     with path.open(encoding="utf-8-sig") as file:
         for line_number, line in enumerate(file, start=1):
@@ -126,9 +159,22 @@ def load_label_rows(path: Path, provenance: str) -> list[dict]:
                 raise ValueError(
                     f"Line {line_number} must contain question and positive_table_uids"
                 )
-            validate_provenance(row, provenance, line_number)
+            validate_provenance(
+                row,
+                provenance,
+                line_number,
+                expected_replay_sha=expected_replay_sha,
+            )
             rows.append(row)
     return rows
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def bundle_search_text(table: dict) -> str:
@@ -199,7 +245,22 @@ def load_examples(
 def main() -> None:
     args = parse_args()
 
-    label_rows = load_label_rows(args.train_jsonl, args.label_provenance)
+    expected_replay_sha: str | None = None
+    if args.label_provenance == "machine_silver":
+        if args.direct_replay is None or not args.direct_replay.is_file():
+            raise FileNotFoundError("Machine-silver training requires --direct-replay")
+        expected_replay_sha = sha256_file(args.direct_replay)
+        manifest_path = args.direct_replay.with_suffix(".manifest.json")
+        if not manifest_path.is_file():
+            raise FileNotFoundError("Direct replay manifest is missing")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if str(manifest.get("sidecar_sha256") or "") != expected_replay_sha:
+            raise ValueError("Direct replay hash differs from its manifest")
+    label_rows = load_label_rows(
+        args.train_jsonl,
+        args.label_provenance,
+        expected_replay_sha=expected_replay_sha,
+    )
     pair_count = sum(
         len(row.get("positive_table_uids") or []) for row in label_rows
     )
@@ -276,6 +337,7 @@ def main() -> None:
         "label_provenance": args.label_provenance,
         "min_pairs": args.min_pairs,
         "bundle_tables": str(args.bundle_tables) if args.bundle_tables else None,
+        "direct_replay_sha256": expected_replay_sha,
     }
     (args.output_dir / "training_metadata.json").write_text(
         json.dumps(metadata, indent=2),

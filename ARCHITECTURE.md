@@ -172,11 +172,12 @@ source operands → filter → aggregate/rank → lookup/output
 
 ### Trạng thái dữ liệu hiện tại
 
-Trong 1.012 câu:
+Trong 1.012 câu, census đã materialize:
 
-- 893 câu đã có top-level operator cụ thể;
-- 119 câu còn `plan_required`;
-- 647 câu vẫn cảnh báo operand decomposition chưa đầy đủ.
+- 357 câu là `operator_contract_candidate`;
+- 536 câu cần operand decomposition;
+- 119 câu `abstain_unknown_program`;
+- có 185 fingerprint cấu trúc khác nhau.
 
 Các top-level operator hiện quan sát được:
 
@@ -498,8 +499,11 @@ quả. Shadow result không đủ điều kiện submission.
 
 ### Trạng thái
 
-Direct/percentage-change execution đã có contract hẹp. Multi-stage
-QueryProgram mới ở shadow canary; chưa hoàn tất generic operator DSL.
+Typed Operator Registry đã chạy shadow cho lookup/add/sum/subtract/difference,
+divide/change/mean/median/min/max/count. Mọi input phải được đối chiếu lại exact
+V2 cell, V3 source header, cell provenance, entity/year/scope/unit và numeric
+parse trước khi `execute_ast` nhận số. Multiply/CAGR chưa có dimensional/literal
+contract nên fail-closed. Multi-stage QueryProgram vẫn ở shadow canary.
 
 ---
 
@@ -520,13 +524,17 @@ unit/output contract
 ```
 
 Những câu khác wording nhưng cùng fingerprint dùng chung executor và test
-contract. Toàn bộ 1.012 câu vẫn chạy census tự động:
+contract. Census thực tế của toàn bộ 1.012 câu:
 
 ```text
-known fingerprint + exact evidence → Green / executable
-known fingerprint + ambiguous data → provisional / blocked
-unknown fingerprint               → needs_human / abstain
+operator_contract_candidate       357
+requires_operand_decomposition    536
+abstain_unknown_program            119
 ```
+
+Direct replay đã kiểm tra 358 câu direct: 63 ready, 49 ambiguous và 246
+blocked. Trong 62 status calibrated lịch sử, 58 vượt replay; bốn record còn lại
+không bị đổi provenance nhưng bị loại khỏi training input.
 
 ### Ba lớp kiểm định
 
@@ -546,11 +554,11 @@ accuracy cho gần hết corpus.
 
 | Thời gian | Việc thực hiện | Kết quả |
 | --- | --- | --- |
-| Giờ 0–2 | Sinh fingerprint/coverage matrix cho 1.012 câu | Biết contract nào phủ nhiều câu nhất |
-| Giờ 2–5 | Direct Evidence Replay | Tái kiểm 358 câu direct, không cần human đọc từng câu |
-| Giờ 5–8 | Generic operator registry | Dùng chung lookup/divide/subtract/sum/mean/min/max/count/change |
+| Giờ 0–2 | Sinh fingerprint/coverage matrix cho 1.012 câu | **Xong:** 185 fingerprint |
+| Giờ 2–5 | Direct Evidence Replay | **Xong:** 358 record, conflict-aware |
+| Giờ 5–8 | Generic operator registry | **Xong shadow:** exact V2/V3 source validation |
 | Giờ 8–10 | Migrate hai QueryProgram canary | Bỏ evaluator riêng ở mức template |
-| Giờ 10–12 | Regression, dashboard, artifact registry | Snapshot shadow reproducible |
+| Giờ 10–12 | Regression, dashboard, artifact registry | Registry **xong**; dashboard integration còn mở |
 
 GPU chỉ nên chạy song song để đề xuất operand/plan hoặc rerank. Quyết định cuối
 vẫn do CPU validator exact-source thực hiện.
@@ -587,6 +595,9 @@ vi đúng. Hoàn thành không có nghĩa ép 1.012 câu phải có answer.
 | Structured table | V2 | grid + cell provenance |
 | Evidence context | V3 | canonical header/period/unit |
 | Formula evidence | V6 | operand discovery và binding |
+| Query fingerprint census | V1 shadow | routing cấu trúc cho 1.012 câu |
+| Direct evidence replay | V1 shadow | revalidation V2/V3 conflict-aware |
+| Machine silver training input | V1 | 58 record đã qua replay gate |
 | Query program | Shadow V1 | multi-stage execution canary |
 | OCR profile | V1 | diagnostic/quarantine metadata |
 | Semantic catalog | V1 | navigation/evaluation metadata |
@@ -595,9 +606,13 @@ vi đúng. Hoàn thành không có nghĩa ép 1.012 câu phải có answer.
 ArtifactRegistry dùng logical name và dependency hash để tránh chọn nhầm file
 chỉ vì tên có `v2`, `v3`, `v31` hoặc `v4`.
 
+Checklist issue, gate và Definition of Done đang dùng để chốt kiến trúc:
+[`docs/ARCHITECTURE_COMPLETION_CHECKLIST.md`](docs/ARCHITECTURE_COMPLETION_CHECKLIST.md).
+
 ## 16. Tài liệu chuyên sâu còn giữ
 
 - [`docs/ARTIFACT_REGISTRY.md`](docs/ARTIFACT_REGISTRY.md)
+- [`docs/ARCHITECTURE_COMPLETION_CHECKLIST.md`](docs/ARCHITECTURE_COMPLETION_CHECKLIST.md)
 - [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md)
 - [`docs/FORMULA_EVIDENCE_SETS.md`](docs/FORMULA_EVIDENCE_SETS.md)
 - [`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md)

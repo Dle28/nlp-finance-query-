@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
+from finance_query.direct_replay import DIRECT_REPLAY_PROTOCOL
 
 
 spec = importlib.util.spec_from_file_location(
@@ -37,6 +38,7 @@ class ReviewTrainingGateTests(unittest.TestCase):
         self.assertFalse(mod.machine_training_eligible(legacy))
         grounded = {
             **legacy,
+            "id": 1,
             "structure_validation": {"validated": True, "structure_version": 2},
             "machine_self_review": {
                 "protocol": AUTONOMOUS_REVIEW_PROTOCOL,
@@ -44,7 +46,15 @@ class ReviewTrainingGateTests(unittest.TestCase):
                 "selected_assessment": {"raw_metric_identity": {"exact": True}},
             },
         }
-        self.assertTrue(mod.machine_training_eligible(grounded))
+        replay = {
+            "protocol": DIRECT_REPLAY_PROTOCOL,
+            "status": "shadow_replay_ready",
+            "question_id": 1,
+            "machine_consensus_status": "machine_calibrated",
+            "valid_exact_candidates": [{"internal_table_uid": "u1"}],
+        }
+        self.assertTrue(mod.machine_training_eligible(grounded, direct_replay=replay))
+        self.assertFalse(mod.machine_training_eligible(grounded, direct_replay=None))
 
 
 if __name__ == "__main__":

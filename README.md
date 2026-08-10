@@ -24,8 +24,10 @@ Tài liệu kiến trúc chuẩn: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 | Direct/Formula EvidenceSet | Đã vận hành; formula coverage còn thấp |
 | Reviewer V4 và provenance ledger | Đã vận hành |
 | Evaluation dashboard | Hoàn thành |
-| Training production | Chưa mở: 62 silver, gate là 200 |
-| Generic multi-stage execution | Shadow canary, chưa production |
+| Query fingerprint census | Hoàn thành: 1.012 câu, 185 fingerprint |
+| Direct exact-source replay | Hoàn thành shadow: 63 ready, 49 ambiguous, 246 blocked |
+| Training production | Chưa mở: 58 replay-gated silver, gate là 200 |
+| Generic operator execution | Grounded registry hoàn thành shadow; multi-stage chưa production |
 
 Snapshot review hiện tại:
 
@@ -93,6 +95,9 @@ Local derived sidecars
 
 Evaluation
   ├─ machine_reviews_*.jsonl
+  ├─ query_fingerprint_census_v1.jsonl
+  ├─ direct_evidence_replay_v1.jsonl
+  ├─ machine_silver_labels_replay_gated_v1.jsonl
   ├─ query_program_shadow_v1.jsonl
   └─ grounding_health_dashboard_v1.json
 ```
@@ -107,6 +112,28 @@ python scripts/build_artifact_registry.py \
   --workspace-root ~/ViFinQA_review \
   --validate-only
 ```
+
+Materialize census/replay mà không rebuild retrieval:
+
+```bash
+python scripts/build_query_fingerprint_census.py \
+  --bundle-dir "$BUNDLE" \
+  --formula-evidence "$BUNDLE/formula_evidence_sets_context_v3_entity_titles_v1.jsonl" \
+  --output "$EVAL/query_fingerprint_census_v1.jsonl"
+
+python scripts/build_direct_evidence_replay.py \
+  --bundle-dir "$BUNDLE" \
+  --machine-reviews "$EVAL/machine_reviews_1012_hierarchy_v3.jsonl" \
+  --output "$EVAL/direct_evidence_replay_v1.jsonl"
+
+python scripts/export_review_labels.py \
+  --machine-reviews "$EVAL/machine_reviews_1012_hierarchy_v3.jsonl" \
+  --direct-replay "$EVAL/direct_evidence_replay_v1.jsonl" \
+  --output "$EVAL/machine_silver_labels_replay_gated_v1.jsonl"
+```
+
+`BUNDLE` và `EVAL` là biến shell do người chạy đặt; script không đọc số từ
+summary và không thay đổi status trong machine review.
 
 ## Kaggle và GPU
 
@@ -163,6 +190,10 @@ python local/run_local_review_stage.py autonomous \
 
 Reviewer chỉ tạo `machine_calibrated` khi exact-source gates hoàn tất. Các câu
 khác giữ `machine_provisional` hoặc `needs_human`.
+
+Machine silver còn phải vượt Direct Evidence Replay độc lập. Snapshot hiện tại
+có 62 status `machine_calibrated`, nhưng chỉ 58 record đi vào training input;
+provenance lịch sử không bị đổi, bốn record không vượt replay bị consumer chặn.
 
 Không được đổi:
 
@@ -239,13 +270,15 @@ vẫn qua census tự động; chỉ một mẫu phân tầng của Green pool c
 Unknown hoặc ambiguous fingerprint tự abstain.
 
 Kế hoạch MVP 12 giờ và Definition of Done được mô tả trong
-[`ARCHITECTURE.md`](ARCHITECTURE.md).
+[`ARCHITECTURE.md`](ARCHITECTURE.md). Checklist issue và gate thực thi nằm tại
+[`docs/ARCHITECTURE_COMPLETION_CHECKLIST.md`](docs/ARCHITECTURE_COMPLETION_CHECKLIST.md).
 
 ## Tài liệu chuyên sâu
 
 | Chủ đề | Tài liệu |
 | --- | --- |
 | Artifact DAG và SHA | [`docs/ARTIFACT_REGISTRY.md`](docs/ARTIFACT_REGISTRY.md) |
+| Checklist chốt kiến trúc | [`docs/ARCHITECTURE_COMPLETION_CHECKLIST.md`](docs/ARCHITECTURE_COMPLETION_CHECKLIST.md) |
 | V2 structure | [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md) |
 | Formula EvidenceSet | [`docs/FORMULA_EVIDENCE_SETS.md`](docs/FORMULA_EVIDENCE_SETS.md) |
 | QueryProgram | [`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md) |
