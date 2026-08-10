@@ -499,6 +499,11 @@ review status, answer, execution ledger hoặc training label. Một raw table
 bổ sung vẫn phải qua common-scope/unique-binding gate; không được tự chọn
 `consolidated` hay `separate`.
 
+Với công thức nhiều entity theo stage, `audit_formula_source_coverage.py` có
+scope-gap probe để chỉ audit raw statement bị thiếu ở scope còn lại, dù operand
+đã có match ở một scope. Nó chỉ là đọc/audit (`--include-scope-gap-operands`,
+tuỳ chọn `--question-id`) và không tự chọn consolidated/separate hay tạo label.
+
 `complete` chỉ có nghĩa tất cả operand của formula đã có exact raw row/cell và
 không mơ hồ: một entity cần một binding duy nhất trong cùng scope; nhiều entity
 cần một scope không rỗng chung cho mọi entity và một binding duy nhất cho từng

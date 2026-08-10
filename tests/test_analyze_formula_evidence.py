@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from finance_query.source_completion import source_completion_manifest_path
 
 ROOT = Path(__file__).parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -17,6 +18,13 @@ spec.loader.exec_module(mod)
 
 
 class AnalyzeFormulaEvidenceTests(unittest.TestCase):
+    def test_custom_completion_snapshot_uses_its_adjacent_manifest(self) -> None:
+        bundle = Path("/tmp/bundle")
+        self.assertEqual(
+            source_completion_manifest_path(bundle / "source_completion_balance_codes_v1.jsonl"),
+            bundle / "source_completion_balance_codes_v1.manifest.json",
+        )
+
     def test_context_filename_uses_manifest_or_legacy_v1_fallback(self) -> None:
         bundle = Path("/tmp/bundle")
         self.assertEqual(
@@ -118,6 +126,25 @@ class AnalyzeFormulaEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(summary["fully_covered_but_not_complete_ids"], [1])
         self.assertEqual(summary["candidate_gate_rejection_counts"], {"candidate_scope_mismatch": 2})
+
+    def test_summary_exposes_scope_gate_without_treating_it_as_an_answer(self) -> None:
+        summary = mod.summarize(
+            [
+                {
+                    "id": 369,
+                    "formula": {"formula_id": "controlled_group_program"},
+                    "scope_diagnostics": {
+                        "entity_common_scopes": {"HPG": ["separate"], "MSR": ["consolidated"]},
+                        "global_common_scopes": [],
+                    },
+                }
+            ]
+        )
+        self.assertEqual(summary["scope_gate"]["global_common_scope_missing_ids"], [369])
+        self.assertEqual(
+            summary["scope_gate"]["entity_common_scope_patterns"],
+            {"HPG=separate": 1, "MSR=consolidated": 1},
+        )
 
 
 if __name__ == "__main__":

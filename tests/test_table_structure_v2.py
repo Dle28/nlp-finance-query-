@@ -19,6 +19,14 @@ script_spec.loader.exec_module(repair)
 
 BALANCE_TABLE = """<table><tr><td></td><td>Mã số</td><td>Thuyết minh</td><td>31/12/2019 VND</td><td>1/1/2019 VND</td></tr><tr><td colspan="5">TÀI SẢN</td></tr><tr><td>Tài sản ngắn hạn</td><td>100</td><td></td><td>4.326</td><td>3.511</td></tr><tr><td>Tiền</td><td rowspan="2">111</td><td>5</td><td>181</td><td>126</td></tr><tr><td>Tiền khác</td><td></td><td>11</td><td>12</td></tr></table>"""
 
+BALANCE_ASSET_FRAGMENT = """<table>
+<tr><td>Chỉ tiêu</td><td>Mã số</td><td>31/12/2022 VND</td></tr>
+<tr><td>Tài sản ngắn hạn</td><td>100</td><td>1.000</td></tr>
+<tr><td>Tiền và các khoản tương đương tiền</td><td>110</td><td>100</td></tr>
+<tr><td>Các khoản phải thu ngắn hạn</td><td>130</td><td>200</td></tr>
+<tr><td>Hàng tồn kho</td><td>140</td><td>300</td></tr>
+</table>"""
+
 
 class TableStructureV2Tests(unittest.TestCase):
     def test_row_signature_recovers_income_statement_with_damaged_title(self):
@@ -45,6 +53,18 @@ class TableStructureV2Tests(unittest.TestCase):
         )
         self.assertEqual(structure["table_function"]["kind"], "cash_flow_statement")
         self.assertEqual(structure["table_section"]["kind"], "cash_flow")
+
+    def test_balance_sheet_asset_fragment_has_structural_code_signature(self):
+        structure = parse_html_table(
+            BALANCE_ASSET_FRAGMENT,
+            context="Tiêu đề OCR bị mất hoàn toàn",
+        )
+        self.assertEqual(structure["table_function"]["kind"], "balance_sheet")
+        self.assertEqual(structure["table_function"]["specificity"], "structural")
+        self.assertEqual(
+            structure["table_function"]["matched_evidence"],
+            "row_signature:balance_sheet_asset_codes:100,110,130,140",
+        )
 
     def test_preserves_empty_cells_and_expands_spans(self):
         structure = parse_html_table(

@@ -24,6 +24,7 @@ if str(ROOT / "src") not in sys.path:
 
 from finance_query.source_completion import (  # noqa: E402
     operand_is_missing,
+    operand_requires_scope_gap_probe,
     raw_source_candidates,
     source_report_index,
 )
@@ -37,6 +38,21 @@ def parse_args() -> argparse.Namespace:
         "--reports-root",
         type=Path,
         default=ROOT / "data/ViFinQA/financial_statements",
+    )
+    parser.add_argument(
+        "--question-id",
+        action="append",
+        type=int,
+        default=[],
+        help="Restrict the audit to one or more question IDs; repeatable.",
+    )
+    parser.add_argument(
+        "--include-scope-gap-operands",
+        action="store_true",
+        help=(
+            "Also audit declared operands of staged multi-entity formulas even "
+            "when another scope already has a binding. Audit-only; never chooses a scope."
+        ),
     )
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
@@ -85,13 +101,21 @@ def main() -> None:
     }
     report_index = source_report_index(reports_root)
     findings: list[dict[str, Any]] = []
+    selected_ids = {int(value) for value in args.question_id}
     for evidence_set in formulas:
+        question_id = int(evidence_set["id"])
+        if selected_ids and question_id not in selected_ids:
+            continue
         formula = evidence_set.get("formula") or {}
         for operand in formula.get("operands") or []:
             operand_id = str(operand.get("operand_id") or "")
             if not operand_id or not bool(operand.get("required", True)):
                 continue
-            if not operand_is_missing(evidence_set, operand_id):
+            is_missing = operand_is_missing(evidence_set, operand_id)
+            is_scope_gap_probe = bool(args.include_scope_gap_operands) and operand_requires_scope_gap_probe(
+                evidence_set, operand
+            )
+            if not is_missing and not is_scope_gap_probe:
                 continue
             finding, candidates = raw_source_candidates(
                 operand,
@@ -101,10 +125,11 @@ def main() -> None:
             )
             findings.append(
                 {
-                    "id": int(evidence_set["id"]),
+                    "id": question_id,
                     "formula_id": str(formula.get("formula_id") or ""),
                     "operand_id": operand_id,
                     "operand": operand,
+                    "audit_trigger": "missing_operand" if is_missing else "scope_gap_probe",
                     "audit_finding": finding,
                     "raw_source_candidates": candidates,
                     "audit_only": True,

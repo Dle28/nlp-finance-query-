@@ -270,6 +270,60 @@ def _structural_statement_function(rows: list[list[str]]) -> dict[str, Any] | No
         for row in rows
     ]
 
+    # A Vietnamese balance sheet is often extracted as separate HTML tables:
+    # current assets, non-current assets, liabilities and equity.  No one
+    # fragment can contain the old four-line whole-statement signature below,
+    # even though the source rows themselves are exact.  Title text alone is
+    # too weak to promote a fragment.  The standard account-code + row-label
+    # combinations, however, are a high-specificity fingerprint of the
+    # primary statement and distinguish it from an explanatory note.
+    def has_code_label(code: str, phrase: str) -> bool:
+        for row, folded_row in zip(rows, folded_rows):
+            source_codes = {normalize_space(str(cell)) for cell in row}
+            if code in source_codes and phrase in folded_row:
+                return True
+        return False
+
+    asset_fragment_codes = {
+        code
+        for code, phrase in (
+            ("100", "tai san ngan han"),
+            ("110", "tien va cac khoan tuong duong tien"),
+            ("130", "cac khoan phai thu ngan han"),
+            ("140", "hang ton kho"),
+            ("150", "tai san ngan han khac"),
+        )
+        if has_code_label(code, phrase)
+    }
+    if "100" in asset_fragment_codes and len(asset_fragment_codes) >= 3:
+        return {
+            "kind": "balance_sheet",
+            "label": "Bảng cân đối kế toán",
+            "confidence": 0.99,
+            "specificity": "structural",
+            "matched_evidence": "row_signature:balance_sheet_asset_codes:"
+            + ",".join(sorted(asset_fragment_codes)),
+        }
+
+    liability_fragment_codes = {
+        code
+        for code, phrase in (
+            ("300", "no phai tra"),
+            ("310", "no ngan han"),
+            ("330", "no dai han"),
+        )
+        if has_code_label(code, phrase)
+    }
+    if liability_fragment_codes == {"300", "310", "330"}:
+        return {
+            "kind": "balance_sheet",
+            "label": "Bảng cân đối kế toán",
+            "confidence": 0.99,
+            "specificity": "structural",
+            "matched_evidence": "row_signature:balance_sheet_liability_codes:"
+            + ",".join(sorted(liability_fragment_codes)),
+        }
+
     signatures: tuple[
         tuple[str, str, tuple[str, ...], int], ...
     ] = (

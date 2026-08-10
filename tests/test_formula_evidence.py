@@ -3,7 +3,9 @@ import unittest
 from finance_query.evidence_context import build_evidence_context
 from finance_query.formula_evidence import (
     FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE,
+    bind_operand_cell,
     formula_evidence_set,
+    multi_entity_scope_diagnostics,
     operand_evidence_matches,
     select_coherent_operand_matches,
     source_discovery_candidates,
@@ -41,6 +43,105 @@ def _entity_table(uid: str, ticker: str) -> dict:
 
 
 class FormulaEvidenceTests(unittest.TestCase):
+
+    def test_balance_sheet_year_chooses_closing_header_not_opening_balance(self):
+        operand = {
+            "operand_id": "current_assets",
+            "metric_hints": ["tài sản ngắn hạn"],
+            "years": [2022],
+        }
+        candidate = {"report_year": 2022}
+        table = {
+            "rows": [
+                ["Chỉ tiêu", "Mã số", "31/12/2022 VND", "1/1/2022 VND"],
+                ["Tài sản ngắn hạn", "100", "120", "100"],
+            ],
+            "cell_provenance": [
+                [{}, {}, {}, {}],
+                [{}, {}, {"source_cell": 2}, {"source_cell": 3}],
+            ],
+        }
+        context = {
+            "table_function": {"kind": "balance_sheet"},
+            "canonical_headers": {
+                "columns": [
+                    {"column_index": 0, "source_label": "Chỉ tiêu"},
+                    {"column_index": 1, "source_label": "Mã số"},
+                    {"column_index": 2, "source_label": "31/12/2022 VND"},
+                    {"column_index": 3, "source_label": "1/1/2022 VND"},
+                ]
+            },
+            "row_profiles": [
+                {"row_index": 1, "role": "data", "numeric_columns": [1, 2, 3]}
+            ],
+        }
+        binding = bind_operand_cell(operand, candidate, table, context, 1)
+        self.assertEqual(binding["status"], "cell_bound")
+        self.assertEqual(binding["column_index"], 2)
+        self.assertEqual(
+            binding["binding_reason"],
+            "balance_sheet_closing_header_excludes_opening_date",
+        )
+
+    def test_balance_sheet_two_closing_dates_remain_ambiguous(self):
+        operand = {"operand_id": "current_assets", "years": [2022]}
+        table = {
+            "rows": [["Chỉ tiêu", "", ""], ["Tài sản ngắn hạn", "100", "120"]],
+            "cell_provenance": [[{}, {}, {}], [{}, {}, {}]],
+        }
+        context = {
+            "table_function": {"kind": "balance_sheet"},
+            "canonical_headers": {
+                "columns": [
+                    {"column_index": 1, "source_label": "30/6/2022 VND"},
+                    {"column_index": 2, "source_label": "31/12/2022 VND"},
+                ]
+            },
+            "row_profiles": [{"row_index": 1, "role": "data", "numeric_columns": [1, 2]}],
+        }
+        binding = bind_operand_cell(operand, {"report_year": 2022}, table, context, 1)
+        self.assertEqual(binding["status"], "ambiguous_period_column")
+
+    def test_balance_sheet_metric_rejects_subtotal_suffix_but_keeps_code_formula(self):
+        operand = {
+            "operand_id": "current_assets",
+            "metric_hints": ["tài sản ngắn hạn"],
+            "years": [2022],
+            "allowed_table_functions": ["balance_sheet"],
+        }
+        table = {
+            "internal_table_uid": "u1",
+            "ticker": "ABC",
+            "rows": [
+                ["Chỉ tiêu", "Mã số", "31/12/2022 VND"],
+                ["Tài sản ngắn hạn(100 = 110 + 130 + 140)", "100", "1000"],
+                ["Tài sản ngắn hạn khác", "150", "50"],
+            ],
+            "cell_provenance": [[{}, {}, {}], [{}, {}, {}], [{}, {}, {}]],
+        }
+        context = {
+            "quality": {"status": "review_ready"},
+            "table_function": {"kind": "balance_sheet"},
+            "canonical_headers": {
+                "columns": [
+                    {"column_index": 0, "source_label": "Chỉ tiêu"},
+                    {"column_index": 1, "source_label": "Mã số"},
+                    {"column_index": 2, "source_label": "31/12/2022 VND"},
+                ]
+            },
+            "row_profiles": [
+                {"row_index": 1, "role": "data", "numeric_columns": [1, 2]},
+                {"row_index": 2, "role": "data", "numeric_columns": [1, 2]},
+            ],
+        }
+        matches = operand_evidence_matches(
+            operand,
+            {"internal_table_uid": "u1", "ticker": "ABC", "scope": "separate", "report_year": 2022, "rank": 1},
+            table,
+            context,
+        )
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["row_index"], 1)
 
     def test_equivalent_comparative_witnesses_need_same_year_primary_value_and_unit(self):
         operands = [{"operand_id": "cfo_2021", "entity": "ABC", "years": [2021]}]
@@ -337,6 +438,31 @@ class FormulaEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence["evidence_completeness"], "partial")
         self.assertEqual(evidence["selected_operand_matches"], {})
         self.assertIn("no_common_scope_across_entity_operands", evidence["reason_codes"])
+        self.assertEqual(
+            evidence["scope_diagnostics"]["entity_common_scopes"],
+            {"AAA": ["separate"], "DCM": ["consolidated"]},
+        )
+        self.assertEqual(evidence["scope_diagnostics"]["global_common_scopes"], [])
+
+    def test_scope_diagnostics_lists_each_operand_without_selecting_a_scope(self):
+        diagnostics = multi_entity_scope_diagnostics(
+            {
+                "a_cash": [{"ticker": "AAA", "scope": "separate"}],
+                "a_debt": [{"ticker": "AAA", "scope": "consolidated"}],
+                "b_cash": [{"ticker": "BBB", "scope": "consolidated"}],
+            },
+            [
+                {"operand_id": "a_cash", "entity": "AAA"},
+                {"operand_id": "a_debt", "entity": "AAA"},
+                {"operand_id": "b_cash", "entity": "BBB"},
+            ],
+        )
+        self.assertEqual(diagnostics["entity_common_scopes"], {"AAA": [], "BBB": ["consolidated"]})
+        self.assertEqual(diagnostics["global_common_scopes"], [])
+        self.assertEqual(
+            diagnostics["operand_scope_sets"]["AAA"],
+            {"a_cash": ["separate"], "a_debt": ["consolidated"]},
+        )
 
     def test_candidate_with_wrong_ticker_cannot_supply_formula_evidence(self):
         table = _table()

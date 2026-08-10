@@ -49,6 +49,30 @@ def operand_is_missing(evidence_set: Mapping[str, Any], operand_id: str) -> bool
     return not bool((evidence_set.get("operand_matches") or {}).get(operand_id))
 
 
+def operand_requires_scope_gap_probe(
+    evidence_set: Mapping[str, Any], operand: Mapping[str, Any]
+) -> bool:
+    """Whether a staged multi-entity operand may audit an omitted scope table.
+
+    An operand can be present in (for example) a ``separate`` report while
+    another entity is provable only on a consolidated basis. Treating it as
+    simply "not missing" hides the raw table needed to determine whether a
+    common scope exists. This function does not bind the operand or choose a
+    scope: it only permits a read-only raw-source audit for explicit staged,
+    multi-entity programs with a declared entity per operand.
+    """
+    formula = evidence_set.get("formula") or {}
+    if str(formula.get("execution_status") or "") != "stage_binding_required":
+        return False
+    entities = {
+        str(value).strip()
+        for value in formula.get("entities") or []
+        if str(value).strip()
+    }
+    entity = str(operand.get("entity") or "").strip()
+    return len(entities) >= 2 and bool(entity) and entity in entities
+
+
 def _row_matches_metric(row: Iterable[Any], metric_hints: Iterable[str]) -> bool:
     folded_row = fold_text(" ".join(str(cell) for cell in row))
     return any(fold_text(hint) in folded_row for hint in metric_hints if fold_text(hint))
@@ -121,9 +145,15 @@ def raw_source_candidates(
 
     if not candidates:
         return "raw_metric_or_statement_not_found", []
+    # A scope-gap audit can find both a bundled `separate` table and an
+    # omitted `consolidated` counterpart.  The omitted source must remain
+    # materializable; do not let the existing sibling hide it behind the
+    # generic already-in-bundle status.
+    if any(not candidate["already_in_immutable_bundle"] for candidate in candidates):
+        return "raw_source_present_not_in_bundle", candidates
     if any(candidate["already_in_immutable_bundle"] for candidate in candidates):
         return "raw_table_already_in_bundle_but_unbound", candidates
-    return "raw_source_present_not_in_bundle", candidates
+    raise AssertionError("raw source candidate state was not classified")
 
 
 def _source_path_from_relative(reports_root: Path, relative_path: str) -> Path:
@@ -232,7 +262,17 @@ def revalidate_raw_source_candidate(
 
 
 def source_completion_manifest_path(tables_path: Path) -> Path:
-    return tables_path.with_name("source_completion_v1.manifest.json")
+    """Return a manifest path without colliding with another shadow snapshot.
+
+    The original V1 artifact name is part of the persisted bundle contract and
+    therefore keeps its historical manifest name.  Any explicitly versioned or
+    targeted completion table file receives an adjacent manifest, so a new
+    audit can be materialized alongside the prior snapshot instead of
+    overwriting it.
+    """
+    if tables_path.name == "source_completion_tables_v1.jsonl":
+        return tables_path.with_name("source_completion_v1.manifest.json")
+    return tables_path.with_suffix(".manifest.json")
 
 
 def validate_source_completion_sidecar(

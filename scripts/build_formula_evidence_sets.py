@@ -23,7 +23,10 @@ from finance_query.formula_evidence import (  # noqa: E402
     formula_evidence_set,
     source_discovery_candidates,
 )
-from finance_query.source_completion import validate_source_completion_sidecar  # noqa: E402
+from finance_query.source_completion import (  # noqa: E402
+    source_completion_manifest_path,
+    validate_source_completion_sidecar,
+)
 from finance_query.table_structure import validate_structure_sidecar  # noqa: E402
 
 
@@ -194,7 +197,9 @@ def main() -> None:
                 "contexts_file": completion_context_path.name,
                 "tables_sha256": sha256_file(completion_tables_path),
                 "contexts_sha256": sha256_file(completion_context_path),
-                "manifest_sha256": sha256_file(completion_tables_path.with_name("source_completion_v1.manifest.json")),
+                "manifest_sha256": sha256_file(
+                    source_completion_manifest_path(completion_tables_path)
+                ),
                 "answer_eligible": False,
                 "training_eligible": False,
             }

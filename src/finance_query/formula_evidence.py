@@ -8,17 +8,68 @@ is truly present before an executor is allowed to run.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping
 
 from .corpus import infer_unit
+from .binding import row_label
 from .execution import parse_decimal
-from .financial_metrics import operand_match_score
+from .financial_metrics import fold_text, operand_match_score
 
 
 FORMULA_SOURCE_DISCOVERY_POLICY = "resolved_ticker_operand_year_or_following_report_v1"
 FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE = "formula_source_discovery_v1"
 FORMULA_SOURCE_DISCOVERY_RANK_BASE = 1_000_000
 EQUIVALENT_COMPARATIVE_WITNESS_FORMULAS = {"operating_cash_flow_argmax_period"}
+
+
+def _is_balance_sheet_opening_header(label: str, year: int) -> bool:
+    """Whether a raw header explicitly names the opening date of ``year``.
+
+    A balance sheet often reports both 31/12/Y and 1/1/Y.  The latter is an
+    opening comparative balance, not an alternative annual Y value.  This is
+    deliberately a header interpretation only: no date, row or cell text is
+    rewritten and any other pair of dates remains ambiguous.
+    """
+    return bool(
+        re.search(
+            rf"(?<!\d)0?1\s*[/.-]\s*0?1\s*[/.-]\s*{year}(?!\d)",
+            str(label or ""),
+        )
+    )
+
+
+def _balance_sheet_row_metric_is_exact(
+    operand: Mapping[str, Any], row: list[Any]
+) -> bool:
+    """Require an exact account-row label for a balance-sheet operand.
+
+    A substring is not enough for balance-sheet totals: ``Tài sản ngắn hạn``
+    must not silently bind ``Tài sản ngắn hạn khác``.  Standard row formulas
+    such as ``(100 = 110 + ...)`` are structural annotations, so they are
+    removed only when the parenthesis begins with a three-digit account code
+    and equals sign.  This does not rewrite the source row; it only narrows a
+    high-impact operand-binding gate.
+    """
+    # Some source grids put the account code in c0 and the label in c1;
+    # others use c0 for the label.  Read the first non-empty text-bearing cell
+    # rather than relying on display-oriented ``row_label`` (which may retain
+    # an empty structural c2 as a trailing separator).
+    label = next(
+        (
+            str(value).strip()
+            for value in row
+            if str(value).strip() and any(character.isalpha() for character in str(value))
+        ),
+        row_label([str(value) for value in row]),
+    )
+    structural = re.match(r"^(.*?)(?:\(.*?\b\d{3}\s*=.*)?$", label)
+    normalized_label = fold_text(structural.group(1) if structural else label)
+    return bool(normalized_label) and any(
+        fold_text(str(hint)) == normalized_label
+        for hint in operand.get("metric_hints") or []
+        if fold_text(str(hint))
+    )
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -203,11 +254,35 @@ def bind_operand_cell(
             columns = explicit
             reason = "explicit_year_header"
         elif len(explicit) > 1:
-            return {
-                "status": "ambiguous_period_column",
-                "numeric_columns": numeric_columns,
-                "reason": "multiple raw canonical columns name the operand year",
-            }
+            # A primary balance sheet can present its closing date alongside
+            # `01/01/<year>`.  That opening balance belongs to the preceding
+            # period. Select only when one and exactly one non-opening raw
+            # header remains; multiple closing/interim headers still fail
+            # closed rather than guessing a period.
+            if str((context.get("table_function") or {}).get("kind") or "") == "balance_sheet":
+                closing = {
+                    index
+                    for index in explicit
+                    if not _is_balance_sheet_opening_header(
+                        str(_column_by_index(context, index).get("source_label") or ""),
+                        years[0],
+                    )
+                }
+                if len(closing) == 1 and closing != explicit:
+                    columns = closing
+                    reason = "balance_sheet_closing_header_excludes_opening_date"
+                else:
+                    return {
+                        "status": "ambiguous_period_column",
+                        "numeric_columns": numeric_columns,
+                        "reason": "multiple raw canonical columns name the operand year",
+                    }
+            else:
+                return {
+                    "status": "ambiguous_period_column",
+                    "numeric_columns": numeric_columns,
+                    "reason": "multiple raw canonical columns name the operand year",
+                }
         elif candidate_report_year == years[0]:
             current = {
                 index
@@ -295,6 +370,9 @@ def operand_evidence_matches(
         return []
     if not _allowed_table_function(operand, context):
         return []
+    is_balance_sheet_operand = (
+        str((context.get("table_function") or {}).get("kind") or "") == "balance_sheet"
+    )
     rows = table.get("rows") or []
     output: list[dict[str, Any]] = []
     periods = _period_labels(context)
@@ -310,6 +388,8 @@ def operand_evidence_matches(
         # Formula inputs are high impact.  A partial lexical overlap is useful
         # for UI discovery, but must not become an autonomous operand binding.
         if score < 1.0:
+            continue
+        if is_balance_sheet_operand and not _balance_sheet_row_metric_is_exact(operand, row):
             continue
         binding = bind_operand_cell(operand, candidate, table, context, row_index)
         if binding.get("status") != "cell_bound":
@@ -331,6 +411,59 @@ def operand_evidence_matches(
             }
         )
     return output
+
+
+def multi_entity_scope_diagnostics(
+    coverage: Mapping[str, list[dict[str, Any]]],
+    operands: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Describe, without selecting, the common-scope gate for many entities.
+
+    The returned intersections explain whether a block comes from raw-report
+    coverage or from an ambiguous retrieval set.  It is audit metadata only:
+    callers must still fail closed unless one global non-empty scope exists.
+    """
+    by_entity: dict[str, list[Mapping[str, Any]]] = {}
+    display_names: dict[str, str] = {}
+    for operand in operands:
+        entity = str(operand.get("entity") or "").strip()
+        if not entity:
+            return {}
+        key = entity.casefold()
+        by_entity.setdefault(key, []).append(operand)
+        display_names.setdefault(key, entity.upper())
+    if not by_entity:
+        return {}
+
+    entity_common_scopes: dict[str, list[str]] = {}
+    operand_scope_sets: dict[str, dict[str, list[str]]] = {}
+    scope_sets: list[set[str]] = []
+    for entity in sorted(by_entity):
+        scopes: set[str] | None = None
+        per_operand: dict[str, list[str]] = {}
+        for operand in by_entity[entity]:
+            operand_id = str(operand["operand_id"])
+            available = {
+                str(match.get("scope") or "")
+                for match in coverage.get(operand_id) or []
+                if str(match.get("ticker") or "").casefold() == entity
+                and str(match.get("scope") or "")
+            }
+            per_operand[operand_id] = sorted(available)
+            scopes = available if scopes is None else scopes & available
+        shared = scopes or set()
+        name = display_names[entity]
+        entity_common_scopes[name] = sorted(shared)
+        operand_scope_sets[name] = per_operand
+        scope_sets.append(shared)
+
+    global_common = set.intersection(*scope_sets) if scope_sets else set()
+    return {
+        "policy": "one_nonempty_scope_per_entity_and_global_common_scope_v1",
+        "entity_common_scopes": entity_common_scopes,
+        "global_common_scopes": sorted(global_common),
+        "operand_scope_sets": operand_scope_sets,
+    }
 
 
 def select_coherent_operand_matches(
@@ -413,26 +546,8 @@ def select_coherent_operand_matches(
         }
 
     if entity_scoped:
-        scope_sets: list[set[str]] = []
-        for entity in sorted(entities):
-            entity_operands = [
-                operand
-                for operand in operands
-                if str(operand.get("entity") or "").casefold() == entity
-            ]
-            scopes: set[str] | None = None
-            for operand in entity_operands:
-                operand_id = str(operand["operand_id"])
-                operand_scopes = {
-                    str(match.get("scope") or "")
-                    for match in coverage.get(operand_id) or []
-                    if str(match.get("ticker") or "").casefold() == entity
-                    and str(match.get("scope") or "")
-                }
-                scopes = operand_scopes if scopes is None else scopes & operand_scopes
-            scope_sets.append(scopes or set())
-
-        common_scopes = set.intersection(*scope_sets) if scope_sets else set()
+        diagnostics = multi_entity_scope_diagnostics(coverage, operands)
+        common_scopes = set(diagnostics.get("global_common_scopes") or [])
         if not common_scopes:
             return {}, ["no_common_scope_across_entity_operands"]
         if len(common_scopes) > 1:
@@ -543,6 +658,7 @@ def formula_evidence_set(
     } and str(formula.get("formula_id") or "") not in EQUIVALENT_COMPARATIVE_WITNESS_FORMULAS:
         reason_codes.append("question_family_requires_composed_execution")
     selected_operand_matches: dict[str, dict[str, Any]] = {}
+    scope_diagnostics = multi_entity_scope_diagnostics(coverage, operands)
     if not missing:
         selected_operand_matches, selection_reasons = select_coherent_operand_matches(
             coverage,
@@ -571,6 +687,7 @@ def formula_evidence_set(
         "evidence_completeness": evidence_completeness,
         "reason_codes": reason_codes,
         "candidate_gate_rejections": candidate_gate_rejections,
+        "scope_diagnostics": scope_diagnostics,
         "source_discovery": dict(item.get("_formula_source_discovery") or {}),
         "execution_status": "not_executed_source_evidence_only",
     }

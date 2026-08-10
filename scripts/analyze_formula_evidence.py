@@ -27,6 +27,7 @@ from finance_query.execution import parse_decimal  # noqa: E402
 from finance_query.formula_evidence import FORMULA_SOURCE_DISCOVERY_POLICY  # noqa: E402
 from finance_query.source_completion import (  # noqa: E402
     SOURCE_COMPLETION_PROTOCOL,
+    source_completion_manifest_path,
     validate_source_completion_sidecar,
 )
 
@@ -124,7 +125,7 @@ def source_completion_paths(bundle: Path, manifest: dict[str, Any]) -> tuple[Pat
     }.items():
         if str(completion.get(key) or "") != sha256_file(path):
             raise ValueError(f"Formula source-completion {key} does not match {path.name}")
-    manifest_path = tables_path.with_name("source_completion_v1.manifest.json")
+    manifest_path = source_completion_manifest_path(tables_path)
     if str(completion.get("manifest_sha256") or "") != sha256_file(manifest_path):
         raise ValueError("Formula source-completion manifest hash mismatch")
     validate_source_completion_sidecar(bundle, tables_path, contexts_path)
@@ -251,6 +252,8 @@ def validate_operand_matches(
 def summarize(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
     rows = list(rows)
     candidate_gate_rejections: Counter[str] = Counter()
+    scope_blocked_ids: list[int] = []
+    entity_scope_intersections: Counter[str] = Counter()
     for row in rows:
         candidate_gate_rejections.update(
             {
@@ -258,6 +261,17 @@ def summarize(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
                 for reason, count in (row.get("candidate_gate_rejections") or {}).items()
             }
         )
+        diagnostics = row.get("scope_diagnostics") or {}
+        if (
+            diagnostics
+            and not row.get("missing_operand_ids")
+            and not diagnostics.get("global_common_scopes")
+        ):
+            scope_blocked_ids.append(int(row["id"]))
+            for entity, scopes in (diagnostics.get("entity_common_scopes") or {}).items():
+                entity_scope_intersections[
+                    f"{entity}={'|'.join(str(scope) for scope in scopes) or 'none'}"
+                ] += 1
     return {
         "evidence_set_count": len(rows),
         "completeness_counts": dict(Counter(str(row.get("evidence_completeness") or "") for row in rows)),
@@ -273,6 +287,10 @@ def summarize(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
             for row in rows
             if not row.get("missing_operand_ids") and row.get("evidence_completeness") != "complete"
         ],
+        "scope_gate": {
+            "global_common_scope_missing_ids": scope_blocked_ids,
+            "entity_common_scope_patterns": dict(entity_scope_intersections),
+        },
     }
 
 

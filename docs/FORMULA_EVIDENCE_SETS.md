@@ -62,7 +62,13 @@ EvidenceSet chỉ complete khi:
    `entity/scope`; với formula nhiều thực thể, **một scope không rỗng** phải
    chung cho tất cả entity và từng operand của từng entity phải có đúng một
    binding trong scope đó. Không có scope chung, nhiều scope chung, hoặc nhiều
-   binding đều giữ EvidenceSet ở `partial`.
+binding đều giữ EvidenceSet ở `partial`.
+
+Với formula nhiều entity, EvidenceSet ghi thêm `scope_diagnostics`: tập scope
+chung của từng entity, tập scope chung toàn cục và scope khả dụng cho từng
+operand. Đây chỉ là thông tin audit để giải thích một block (ví dụ
+`HPG=separate`, `MSR=consolidated` nên không có scope toàn cục); nó **không**
+chọn scope, không hợp nhất báo cáo và không tạo answer.
 
 Grid `legacy_bundle_rows` không đủ điều kiện complete. Widget ẩn quick numeric
 view, khóa `Accept machine` và hạ lựa chọn có số liệu xuống partial cho đến khi
@@ -116,6 +122,12 @@ completion không được gọi bởi autonomous review hoặc execution ledger
 có thể tăng **coverage** của Formula EvidenceSet shadow sau khi validator kiểm
 UID/hash/context. Formula vẫn phải qua common-scope và unique-binding gate;
 nếu raw report có cả `consolidated` và `separate`, hệ thống không tự chọn scope.
+
+Với program nhiều entity mang `stage_binding_required`, audit có thể chạy thêm
+**scope-gap probe**. Probe chỉ tìm raw primary statement thiếu cho một operand
+đã có binding ở scope khác, để xác định liệu common scope có tồn tại hay không.
+Nó không chọn scope, không bind operand, không tạo answer và chỉ được bật bằng
+`--include-scope-gap-operands` (có thể giới hạn với `--question-id`).
 
 Câu có lọc/xếp hạng nhiều giai đoạn không được rút thành keyword công thức đầu
 tiên. Q369 hiện có controlled plan riêng:

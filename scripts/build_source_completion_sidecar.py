@@ -105,7 +105,10 @@ def main() -> None:
         }
         for candidate in finding.get("raw_source_candidates") or []:
             if bool(candidate.get("already_in_immutable_bundle")):
-                raise ValueError("Completion audit candidate unexpectedly belongs to immutable bundle")
+                # A scope-gap finding may intentionally contain a bundled
+                # sibling as audit context. Only the omitted raw table may be
+                # materialized into the supplemental sidecar.
+                continue
             uid = str(candidate.get("raw_table_uid") or "")
             if not uid:
                 raise ValueError("Completion audit candidate has no raw table UID")

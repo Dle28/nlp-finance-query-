@@ -289,3 +289,12 @@ binding). Không có `selected_operand_matches`, answer, execution record,
 review-status promotion hay training label nào được tạo. `source-completion`
 đã có trong `local/run_local_review_stage.py` để chạy lại audit → revalidation
 → shadow EvidenceSet; nó không sửa corpus/index hay bundle gốc.
+
+Khi raw report tách Bảng cân đối thành các table Tài sản/Nguồn vốn, preprocessor
+không dựa vào title OCR để coi chúng là primary statement. Nó chỉ nâng function
+`balance_sheet` lên `structural` nếu đúng row-label **và** account-code
+fingerprint chuẩn xuất hiện cùng nhau: asset fragment có `100` và ít nhất hai
+trong `110/130/140/150`, hoặc liability fragment có đủ `300/310/330`. Vì vậy
+raw table có đúng row nhưng trước đây bị `semantic` có thể được audit lại, còn
+note table chứa một keyword đơn lẻ vẫn bị loại. Snapshot source-completion có
+tên tùy biến được cấp manifest kề bên để không overwrite snapshot V1 cũ.
