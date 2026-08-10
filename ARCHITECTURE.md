@@ -1,1375 +1,614 @@
-# ViFinQA Architecture
+# ViFinQA — kiến trúc 8 mô-đun
 
-> Bản restatement theo góc nhìn architecture reviewer, gồm ranh giới module,
-> artifact contract, technical debt và roadmap, nằm tại
-> [`docs/CURRENT_ARCHITECTURE_REVIEW.md`](docs/CURRENT_ARCHITECTURE_REVIEW.md).
-> Tài liệu này giữ các contract triển khai chi tiết và lịch sử vận hành.
->
-> **ML finds. Rules verify. Provenance decides. Executor calculates.**
+> Tài liệu chuẩn để hiểu hệ thống hiện tại. Những tài liệu chuyên sâu trong
+> `docs/` chỉ giải thích contract của từng artifact; nếu có khác biệt, tài liệu
+> này mô tả luồng vận hành hiện hành.
 
-`QueryProgram` hiện mới ở shadow-only: nó chỉ compile/evaluate operand đã
-grounded cho hai template allow-listed, kiểm coherent entity/năm/scope trước
-khi chạy, không truy xuất OCR, không trả answer và không promote nhãn. Kết quả
-canary (Q369 blocked đúng; Q551 chạy shadow từ 15 exact cells) tại
-[`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md) và
-[`docs/COMPLEX_QUERY_CANARY.md`](docs/COMPLEX_QUERY_CANARY.md).
+## 1. Hệ thống đang giải quyết việc gì?
 
-`OCR Quality Profile V1` là nhánh quan sát từ V2/V3: nó triage bảng có cell
-OCR/layout rủi ro nhưng không tự sửa content, làm evidence hay thay rank. Xem
-[`docs/OCR_QUALITY_PROFILE.md`](docs/OCR_QUALITY_PROFILE.md).
-
-`Semantic Catalog V1` là metadata view song song từ V2/V3/Report Segment cho
-vai trò statement/note/schedule và layout; exact evidence vẫn đi trực tiếp từ
-V3 về raw V2. Xem [`docs/SEMANTIC_CATALOG.md`](docs/SEMANTIC_CATALOG.md).
-
-## 1. Mục tiêu kiến trúc
-
-Hệ thống được thiết kế theo nguyên tắc:
-
-> **Semantic retrieval để tìm ứng viên, deterministic grounding để chứng minh bằng chứng, human review để hiệu chỉnh, symbolic execution để tính toán.**
-
-Không coi đây là một hệ RAG chỉ gồm:
+ViFinQA đọc câu hỏi tài chính tiếng Việt và tìm bằng chứng trong báo cáo tài
+chính OCR. Khó khăn không nằm ở phép cộng/chia, mà ở việc chứng minh rằng một
+con số thuộc đúng:
 
 ```text
-question → embedding → nearest table → LLM answer
+công ty · báo cáo · scope · năm · bảng · dòng · cột · đơn vị
 ```
 
-ViFinQA có nhiều loại câu hỏi và bảng tài chính có cấu trúc phân cấp, nên kiến trúc phải tách rõ:
+Vì vậy hệ thống không hoạt động như chatbot RAG thông thường:
 
 ```text
-question understanding
-retrieval
-source grounding
-review/calibration
-binding
-reasoning
-execution
-validation
+câu hỏi → bảng gần nhất → mô hình đoán đáp án
 ```
 
-Current milestone tập trung vào bốn phần đầu.
+Luồng đúng là:
 
----
+```text
+câu hỏi
+  → hiểu dạng bài toán
+  → tìm bảng ứng viên
+  → dựng lại cấu trúc bảng
+  → bind đúng ô nguồn
+  → kiểm tra bằng chứng
+  → tính toán bằng rule
+  → trả kết quả hoặc từ chối an toàn
+```
 
-# 2. Operational architecture hiện tại
+Nguyên tắc ngắn gọn:
+
+```text
+ML tìm ứng viên.
+Rule kiểm chứng.
+Provenance quyết định trạng thái.
+Executor thực hiện phép tính.
+```
+
+## 2. Những điều không được phá vỡ
+
+| Quy tắc | Giải thích dễ hiểu |
+| --- | --- |
+| Raw report là nguồn gốc | Không sửa số OCR rồi giả rằng đó là số nguồn. |
+| Retrieval không phải evidence | Bảng rank 1 chỉ là ứng viên, chưa phải bằng chứng. |
+| Metadata không phải evidence | Tiêu đề/tóm tắt giúp tìm và đọc; không chứng minh giá trị số. |
+| Exact-cell grounding | Giá trị phải truy ngược được về đúng row, column và source cell. |
+| Không tự chọn scope | Nếu `consolidated` và `separate` còn mơ hồ thì phải dừng. |
+| Không tự nâng provenance | Bốn trạng thái nhãn luôn tách biệt. |
+| Fail closed | Thiếu hoặc mơ hồ thì `partial`/`blocked`, không đoán. |
+
+Bốn trạng thái provenance:
+
+| Trạng thái | Ý nghĩa | Được train? |
+| --- | --- | ---: |
+| `human_verified` | Human đã xác minh bằng chứng nguồn | Có, trọng số cao |
+| `machine_calibrated` | Máy qua toàn bộ gate độc lập | Có, sau training gate |
+| `machine_provisional` | Có ứng viên hợp lý nhưng chưa đủ gate | Không |
+| `needs_human` | Thiếu/mơ hồ/quarantine | Không |
+
+## 3. Bản đồ 8 mô-đun
 
 ```mermaid
-flowchart TD
-
-    Q[Question] --> PLAN[Question planner / router]
-    PLAN --> FILTER[Metadata filters: ticker/year/scope]
-
-    subgraph KAGGLE["Kaggle / GPU side"]
-        RAW[OCR financial reports] --> ASSET[Table assets]
-        ASSET --> LEX[SQLite FTS lexical index]
-        ASSET --> DEN[FAISS dense index]
-
-        FILTER --> LR[Lexical retrieval]
-        FILTER --> DR[Dense retrieval]
-        LEX --> LR
-        DEN --> DR
-
-        LR --> RRF[RRF / hybrid candidate fusion]
-        DR --> RRF
-        RRF --> TOPK[Top-K retrieved tables]
-
-        TOPK --> V3[V3 candidate repair + evidence projection]
-        V3 --> BUNDLE[Immutable review bundle]
-    end
-
-    BUNDLE --> DOWNLOAD[Download archive]
-
-    subgraph LOCAL["Local side"]
-        DOWNLOAD --> STRUCTURE[Raw-HTML table structure V2]
-        STRUCTURE --> CONTEXT[Canonical evidence context V3]
-        CONTEXT --> DIAG[Diagnostic gate]
-        DIAG --> AGENTS[Source-aware multi-agent cross-review]
-        AGENTS --> IDENTITY[Exact raw-row / raw-column / metric gate]
-        IDENTITY --> LEDGER[Full review and execution ledger]
-        LEDGER --> AUTO[Machine calibrated silver]
-        LEDGER --> PROV[Machine provisional audit]
-        LEDGER --> NEED[Needs human quarantine]
-        AUTO --> LABELS[Retrieval labels when threshold is met]
-    end
-
-    LABELS --> TRAIN[Retriever / reranker training & evaluation]
-    TRAIN --> FUTURE[Future binding + reasoning + answer execution]
+flowchart LR
+    RAW[Raw OCR reports] --> M1[1. Corpus / TableAsset]
+    Q[Question] --> M2[2. Question Planner]
+    M1 --> M3[3. Retrieval]
+    M2 --> M3
+    M3 --> B[Immutable Review Bundle]
+    B --> M4[4. V2/V3 Normalization]
+    M2 --> M5[5. Evidence Compiler]
+    M4 --> M5
+    M5 --> M6[6. Review + Provenance]
+    M6 --> M7[7. Evaluation + Training]
+    M5 --> M8[8. Execution + Submission]
+    M6 --> M8
 ```
+
+Mỗi mô-đun có một đầu vào, một đầu ra và một quyền hạn riêng. Mô-đun sau
+không được âm thầm sửa artifact của mô-đun trước.
 
 ---
 
-# 3. Phân chia Kaggle và Local
+## 4. Mô-đun 1 — Corpus và TableAsset
 
-## 3.1 Kaggle chịu workload nặng
+### Cách hiểu đơn giản
 
-Kaggle thực hiện:
+Mô-đun này cắt các báo cáo OCR thành những bảng có danh tính ổn định. Nó giống
+việc đánh số và niêm phong từng bảng trước khi tìm kiếm.
 
-```text
-corpus parsing
-build table assets
-build lexical index
-build dense embeddings/index
-hybrid retrieval
-candidate repair
-review bundle export
-```
-
-Các file nặng:
+### Input
 
 ```text
-artifacts/table_assets.jsonl
-artifacts/lexical_index.sqlite3
-artifacts/dense.index
-artifacts/dense_uids.jsonl
+raw financial report
+OCR text
+HTML-like tables
 ```
 
-Các thao tác build/rebuild dense không được chạy local mặc định.
-
-## 3.2 Local chịu review và calibration
-
-Local thực hiện:
+### Output chính
 
 ```text
-bundle integrity check
-diagnostic
-multi-agent review
-human seed review
-calibration
-rerun review
-final label export
+table_assets.jsonl
 ```
 
-Local không cần:
+Mỗi `TableAsset` giữ:
 
 ```text
-FAISS rebuild
-embedding toàn corpus
-GPU
-raw 146k-table indexing
+internal_table_uid
+document_id / ticker / report_year / scope
+raw rows và headers
+page/ordinal/offset
+source SHA và table SHA
+context_before
+search_text
 ```
 
-## 3.3 Bảng nguồn đã tái dựng (V2)
+`internal_table_uid` là identity. Các bước review không được tạo UID thay thế.
 
-Bundle V3 là immutable snapshot retrieval. Để sửa lỗi presentation do parser
-cũ bỏ ô trống hoặc không xử lý `rowspan`/`colspan`, local tạo sidecar
-`tables_structured_v2.jsonl` từ raw HTML report theo `internal_table_uid`.
+### Code chính
 
-```text
-immutable V3 bundle + raw report HTML
-        ↓ UID/hash verification
-rectangular grid with blank cells and expanded spans
-        ↓
-column labels + cell provenance + table function/purpose + context trace
-        ↓
-compact review UI / section gate / formula EvidenceSet
-```
+- `src/finance_query/corpus.py`
+- `src/finance_query/schemas.py`
+- `scripts/build_review_bundle_v3.py`
 
-Sidecar không thay raw source, không thay annotation provenance và không rebuild
-Kaggle/FTS/FAISS. Chi tiết contract: [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md).
+### Trạng thái
 
-### 3.4 Ngữ cảnh evidence chuẩn hóa (V3) và machine-silver boundary
-
-**Bảng nguồn đã tái dựng (V2)** là evidence lossless. **Ngữ cảnh evidence chuẩn
-hóa (V3)** là sidecar suy dẫn từ grid đó, không
-phải một lớp OCR correction: nó dựng header cha–con từ span provenance và chỉ
-hồi phục header dạng `td` khi bảng không có HTML header, tối đa ba hàng đứng
-trước data đều còn provenance hợp lệ, mỗi cột số có text nguồn và có cue
-kỳ/đơn vị/tham chiếu. Mã/heading nhóm hoặc số trần không được dùng làm header.
-Nếu không chứng minh đủ, bảng vẫn `needs_processing`.
-
-Một label máy chỉ vào tập `machine_calibrated`/machine-silver khi selected
-value row, cell và column header khớp raw V2, đồng thời significant token của
-metric khớp exact với raw row. Hai recovery contract source-bound được audit
-riêng: chỉ bỏ ticker/mốc kỳ/tiền tố query `Số dư`, hoặc ghép parent heading
-nguồn với row raw exact trong cùng table. Pipeline không bỏ các từ nghiệp vụ
-như `tổng`, `ngắn hạn`, `nguyên giá`. `machine_provisional` và `needs_human`
-vẫn là audit/quarantine và không thể vào training.
+Đã hoàn thành cho snapshot hiện tại trên Kaggle. Không rebuild corpus chỉ vì
+thay UI, evidence rule hay QueryProgram.
 
 ---
 
-# 4. Data flow
+## 5. Mô-đun 2 — Question Planner và QueryProgram
 
-## 4.1 Raw report
+### Cách hiểu đơn giản
 
-Input:
-
-```text
-data/ViFinQA/financial_statements/
-```
-
-Mỗi report chứa OCR text và table HTML-like structures.
-
-## 4.2 TableAsset
-
-Mỗi table được chuyển thành asset có identity ổn định:
-
-```json
-{
-  "internal_table_uid": "...",
-  "document_id": "...",
-  "ticker": "SAB",
-  "report_year": 2016,
-  "scope": "separate",
-  "page_no": 12,
-  "local_ordinal": 5,
-  "unit_hint": "vnd",
-  "context_before": "...",
-  "headers": [],
-  "rows": [],
-  "search_text": "..."
-}
-```
-
-`internal_table_uid` là identity nội bộ. Không model nào được phép tự tạo UID mới.
-
----
-
-# 5. Retrieval layer
-
-## 5.1 Lexical retrieval
-
-SQLite FTS được dùng cho exact/near-exact financial concepts:
+Planner biến một câu tiếng Việt thành “phiếu công việc” có cấu trúc:
 
 ```text
-"tiền và các khoản tương đương tiền"
-"bất động sản đầu tư"
-"giá trị còn lại"
-```
-
-Lexical retrieval có lợi khi metric wording trong query gần với table wording.
-
-## 5.2 Dense retrieval
-
-Dense embeddings xử lý semantic variation khi wording không giống hoàn toàn.
-
-Current baseline:
-
-```text
-intfloat/multilingual-e5-small
-```
-
-Research model có thể dùng BGE-M3 sau khi retrieval labels đủ tốt.
-
-## 5.3 Hybrid fusion
-
-Sparse + dense được fusion bằng Reciprocal Rank Fusion.
-
-```text
-lexical rank
-+
-dense rank
-→ fused candidate list
-```
-
-Không coi fused rank là bằng chứng đủ để auto-label.
-
----
-
-# 6. Root retrieval problem: context leakage
-
-Corpus hiện tại đưa `context_before` vào `search_text`.
-
-Điều này hữu ích để lấy heading/unit, nhưng tạo failure mode:
-
-```text
-TABLE N contains correct concept
-        ↓
-raw previous context leaks into TABLE N+1
-        ↓
-retriever retrieves TABLE N+1
-        ↓
-rank looks good but actual rows are wrong
-```
-
-Q13 là canary của lỗi này.
-
-Root fix dài hạn là rebuild corpus với context sạch hơn:
-
-```text
-current-table heading
-+
-current-table rows
-+
-controlled section context
-```
-
-thay vì raw previous context.
-
-Root fix này yêu cầu rebuild:
-
-```text
-table assets
-→ lexical index
-→ dense index
-```
-
-Vì vậy V3 hiện dùng repair layer để tiếp tục annotation trước khi rebuild toàn bộ corpus.
-
----
-
-# 7. V3 candidate repair
-
-V3 không thay đổi identity của table.
-
-Khi một retrieved candidate có dấu hiệu:
-
-```text
-query concept mạnh trong context_before
-nhưng yếu trong own rows
-```
-
-pipeline kiểm tra table đứng trước bằng:
-
-```text
-document_id
-+
-local_ordinal - 1
-```
-
-Recovered table được thêm với provenance:
-
-```json
-{
-  "candidate_source": "adjacent_previous_due_context",
-  "parent_retrieval_rank": 11,
-  "original_retrieval_rank": null
-}
-```
-
-Recovered candidate không được giả mạo là BM25/dense retrieval trực tiếp.
-
----
-
-# 8. Effective metric
-
-Planner đôi lúc tạo metric bị nhiễu bởi:
-
-```text
-ticker
-company name
-date
-year
-requested unit
-```
-
-Ví dụ query:
-
-```text
-Giá trị còn lại của bất động sản đầu tư của công ty mẹ IJC
-đến ngày 31 tháng 12 năm 2021 là bao nhiêu tỷ đồng?
-```
-
-Effective metric cần trở thành:
-
-```text
-Giá trị còn lại của bất động sản đầu tư
-```
-
-V3 giữ cả:
-
-```text
-question_plan original
-+
-effective_metric
-```
-
-để vừa audit planner vừa dùng metric sạch cho evidence grounding.
-
----
-
-# 9. Evidence projection
-
-Một table candidate chỉ hữu ích nếu hệ thống có thể chỉ ra bằng chứng người review đọc nhanh được.
-
-Không dùng:
-
-```text
-"Candidate #4 có vẻ đúng"
-```
-
-Mà dùng cấu trúc:
-
-```text
-TABLE
-COLUMNS
-VALUE
+cần chỉ tiêu gì?
+của công ty nào?
+năm nào?
+scope nào?
+phải thực hiện phép toán gì?
 ```
 
 Ví dụ:
 
 ```text
-TABLE: 10. Bất động sản đầu tư
-||
-COLUMNS: Nguyên giá | Hao mòn lũy kế | Giá trị còn lại
-||
-VALUE: Số cuối năm | 417.860.288.970 | 39.303.347.137 | 378.556.941.833
+"A chiếm bao nhiêu phần trăm B?"
+
+→ divide
+  numerator = A
+  denominator = B
+  same entity/year/scope = required
 ```
 
-Các field:
+### Hai mức IR
+
+**QuestionPlan** mô tả family, ticker, year, scope, unit, metric và phép toán
+cấp cao.
+
+**QueryProgram** mô tả câu nhiều bước dưới dạng stage:
 
 ```text
-context_heading
-anchor_row_index
-value_row_index
-best_row_index
-direct_evidence
-one_line_summary
-period_intent
-period_match
-evidence_features
+source operands → filter → aggregate/rank → lookup/output
 ```
 
-`direct_evidence` phải được ghép từ source table/context đã lưu.
+### Trạng thái dữ liệu hiện tại
 
-Không cho LLM tự viết evidence text rồi coi nó là source.
+Trong 1.012 câu:
 
-Table Structure V2 bổ sung lớp context có kiểm soát:
+- 893 câu đã có top-level operator cụ thể;
+- 119 câu còn `plan_required`;
+- 647 câu vẫn cảnh báo operand decomposition chưa đầy đủ.
 
-```text
-exact source title (audit)
-+ nearest numbered topic/note (quick view)
-+ observed period labels
-+ observed unit labels
-+ deterministic table function/purpose
-```
+Các top-level operator hiện quan sát được:
 
-Phân loại từ tiêu đề vùng thuyết minh mang `specificity=broad`; fallback tổng
-quát mang `specificity=generic`. Chúng không được trình bày như hiểu biết
-nghiệp vụ chắc chắn. UI ưu tiên topic ngắn, còn source title dài và rule
-evidence nằm trong trace thu gọn.
+| Operator | Số câu |
+| --- | ---: |
+| `lookup` | 339 |
+| `subtract` | 127 |
+| `max` | 118 |
+| `mean` | 105 |
+| `divide` | 102 |
+| `count` | 47 |
+| `min` | 30 |
+| `percentage_change` | 17 |
+| `sum` | 8 |
+| `plan_required` | 119 |
 
-Ngoài heading, primary statement được nhận diện bằng tập dòng chuẩn. Ví dụ một
-bảng có đồng thời `doanh thu thuần`, `lợi nhuận gộp` và `kế toán trước thuế`
-được đánh dấu `income_statement` với `specificity=structural`. Đây là metadata
-điều hướng; exact rows và cells vẫn là bằng chứng duy nhất cho số liệu.
+Con số này chứng minh rằng không cần hardcode 1.012 câu. Ta cần một thư viện
+operator nhỏ và một bộ phân rã operand tốt.
+
+### QueryProgram hiện tại
+
+Hai template đã được allow-list ở chế độ shadow:
+
+1. Quick Ratio → lọc dưới median → xếp hạng thay đổi Gross Margin → Interest
+   Coverage.
+2. CFO dương qua nhiều năm → lọc entity → xếp hạng Net Margin.
+
+Q369 compile nhưng bị chặn vì definition/binding/scope không coherent. Q551
+chạy `shadow_complete` từ 15 exact cells, nhưng không được tạo final answer hay
+nâng provenance.
+
+### Code chính
+
+- `src/finance_query/questions.py`
+- `src/finance_query/financial_metrics.py`
+- `src/finance_query/query_program.py`
+- `src/finance_query/plan_overrides.py`
+
+### Trạng thái
+
+Đã có baseline và canary; chưa hoàn tất DSL tổng quát. Đây là một trong hai
+bottleneck chính còn lại.
 
 ---
 
-# 10. Period-aware evidence selection
+## 6. Mô-đun 3 — Retrieval
 
-Một bảng tài chính thường có nhiều period:
+### Cách hiểu đơn giản
 
-```text
-Số đầu năm
-Số cuối năm
-Năm trước
-Năm nay
-```
-
-Question cue được map thành intent:
+Retrieval giống người thủ thư: nó đưa ra những bảng có khả năng liên quan,
+không được khẳng định bảng nào đúng.
 
 ```text
-cuối năm
-31/12
-31 tháng 12
-→ end
-
-đầu năm
-01/01
-→ start
+Lexical FTS: bắt cụm từ gần giống
+Dense E5: bắt ý nghĩa gần giống
+RRF: hợp nhất hai danh sách
+→ Top-K candidates
 ```
 
-Value-row selection ưu tiên period phù hợp.
+Adjacent-table recovery có thể bổ sung bảng đứng cạnh khi context bị lệch,
+nhưng candidate đó phải giữ provenance riêng và qua grounding guard.
 
-Nếu metric nằm ở heading nhưng value nằm ở `TỔNG CỘNG`, hệ thống phải có khả năng nối:
+### Output
+
+Immutable review bundle V3:
 
 ```text
-TABLE HEADING
-+
-TOTAL VALUE ROW
+manifest.json
+review_items.jsonl
+tables.jsonl
+errors.jsonl
 ```
+
+### Code chính
+
+- `src/finance_query/retrieval.py`
+- `src/finance_query/pipeline.py`
+- `kaggle/export_review_bundle_v3.py`
+
+### Trạng thái
+
+Đã hoàn thành cho snapshot hiện tại. Không cần rebuild FTS/FAISS/dense trong
+giai đoạn xây DSL và validator.
 
 ---
 
-# 11. Review bundle
+## 7. Mô-đun 4 — Chuẩn hóa nguồn V2/V3
 
-Kaggle export một bundle immutable:
+### Cách hiểu đơn giản
 
-```text
-vifinqa_review_bundle_v3/
-├── manifest.json
-├── review_items.jsonl
-├── tables.jsonl
-├── errors.jsonl
-└── SHA256SUMS
-```
-
-Archive:
+OCR có thể đọc đúng chữ nhưng làm lệch cột. Mô-đun này dựng lại “khung bảng”
+trước khi đọc số.
 
 ```text
-vifinqa_review_bundle_v3.tar.gz
+Raw table
+  → V2: dựng đúng grid, ô trống, rowspan, colspan
+  → V3: xác định header path, kỳ, đơn vị và quality
 ```
 
-`manifest.json` khóa:
+### V2 và V3 khác nhau thế nào?
+
+| Lớp | Chức năng | Không được làm |
+| --- | --- | --- |
+| **V2 Structure** | Khôi phục hình học bảng và provenance từng cell | Không sửa chữ/số OCR |
+| **V3 Evidence Context** | Chuẩn hóa header, period, unit, row profile | Không trở thành nguồn số mới |
+
+Hai nhánh metadata song song:
+
+- **OCR Quality Profile:** đánh dấu `normal`, `review_required`, `quarantine`;
+- **Semantic Catalog:** mô tả bảng là statement, note, schedule hay source
+  metadata.
+
+Hai nhánh này chỉ giúp điều hướng/audit. Exact evidence vẫn phải đi từ V3 về
+source cell V2.
+
+### Snapshot hiện tại
+
+29.509 bảng đã được profile OCR:
 
 ```text
-schema version
-git commit
-question hash
-artifact health
-question count
-top_k
-candidate counts
-error count
+normal           24.479
+review_required   4.854
+quarantine          176
 ```
 
-Local review không query live Kaggle indexes; nó đọc bundle tĩnh.
+### Code chính
 
-Lợi ích:
+- `src/finance_query/table_structure.py`
+- `src/finance_query/evidence_context.py`
+- `src/finance_query/ocr_quality.py`
+- `src/finance_query/semantic_catalog.py`
+- `src/finance_query/report_segments.py`
 
-```text
-reproducible
-versionable
-auditable
-review không đổi giữa chừng
-```
+### Trạng thái
+
+Đã hoàn thành cho snapshot hiện tại. Đây là lớp chuẩn hóa cấu trúc, không phải
+OCR correction engine.
 
 ---
 
-# 12. Diagnostic gate
+## 8. Mô-đun 5 — Evidence Compiler
 
-Trước auto-review phải chạy diagnostic.
+### Cách hiểu đơn giản
 
-Diagnostic không tạo label.
+Mô-đun này phải trả lời được câu hỏi:
 
-Nó phân biệt:
+> “Con số này nằm chính xác ở đâu trong báo cáo?”
 
-```text
-ADJACENT_CONTEXT_HIT
-RETRIEVAL_RISK
-EVIDENCE_RISK
-PLANNER_RISK
-AMBIGUOUS_TOPK
-COMPLEX_FAMILY_REVIEW
-LOOKS_REVIEWABLE
-```
+### Direct EvidenceSet
 
-Nguyên tắc:
+Dùng cho câu tra cứu trực tiếp. Một binding hợp lệ cần:
 
 ```text
-absence in Top-K != absence in corpus
+exact metric row
+exact period column/header
+exact value cell
+matching ticker/year/scope
+raw V2 provenance
 ```
 
-Do đó:
+### Formula EvidenceSet
+
+Dùng cho câu cần nhiều số. Câu được tách thành operand slots. Mỗi operand phải
+bind riêng; một bảng đúng cho một operand không làm toàn công thức complete.
+
+Với multi-entity, mọi operand phải có một reporting scope chung nếu contract
+yêu cầu. Duplicate, tie hoặc hai scope đều hợp lệ sẽ làm selection blocked.
+
+### Snapshot hiện tại
+
+Có 136 Formula EvidenceSet:
 
 ```text
-NO_CANDIDATE_IN_TOPK
+operand coverage complete       30
+full selected bindings           4
+evidence completeness complete   3
 ```
 
-không được chuyển thành:
+Vì vậy executor không phải bottleneck duy nhất; thiếu operand binding chính là
+vấn đề phải giải quyết để tăng coverage.
 
-```text
-NO_GOLD_IN_CORPUS
-```
+### Source completion
+
+Source completion chỉ tìm bảng raw bị thiếu khỏi immutable bundle. Nó không
+được sửa corpus/index, tạo answer hoặc tự chọn scope. Nếu bảng đã có nhưng chưa
+bind được, thêm lại bảng không giải quyết vấn đề.
+
+### Code chính
+
+- `src/finance_query/binding.py`
+- `src/finance_query/formula_evidence.py`
+- `src/finance_query/source_completion.py`
+- `scripts/build_direct_evidence_sets.py`
+- `scripts/build_formula_evidence_sets.py`
+
+### Trạng thái
+
+Direct evidence đã vận hành; Formula evidence V6 đã có contract chặt nhưng
+coverage còn thấp. Đây là bottleneck chính thứ hai.
 
 ---
 
-# 13. Source-aware multi-agent review
+## 9. Mô-đun 6 — Reviewer, critic và provenance
 
-Các "agent" hiện tại là independent reviewer modules trong code.
+### Cách hiểu đơn giản
 
-Không phải nhiều ChatGPT đang tự nói chuyện với nhau.
-
-## 13.1 lexical_agent
-
-Ưu tiên candidate có lexical rank tốt.
-
-## 13.2 dense_agent
-
-Ưu tiên semantic dense rank.
-
-## 13.3 metadata_agent
-
-Kiểm tra:
+Nhiều reviewer không có nghĩa là nhiều AI tự thuyết phục nhau. Các reviewer
+đọc những tín hiệu khác nhau:
 
 ```text
-ticker
-year
-scope
+lexical match
+dense match
+metadata match
+exact evidence
+challenger candidate
+grounding verifier
+confidence calibrator
 ```
 
-## 13.4 evidence_agent
+Consensus chỉ được tin khi exact-source validator đồng ý. Confidence cao không
+thể vượt qua binding fail.
 
-Đánh giá source-grounded evidence:
+### Snapshot hiện tại
+
+Trong 1.012 machine reviews:
 
 ```text
-metric overlap
-row score
-numeric evidence
-period match
+machine_calibrated     62
+machine_provisional   364
+needs_human           586
 ```
 
-## 13.5 challenger_agent
+62 calibrated hiện đều thuộc direct lookup. Điều này cho thấy hướng tăng nhanh
+nhất là **Direct Evidence Replay**: tái kiểm deterministic toàn bộ exact
+row/header/cell thay vì yêu cầu human đọc lại từng câu.
 
-Cố tìm candidate khác mạnh hơn candidate hiện tại.
+### Code chính
 
-Mục tiêu là giảm rank anchoring.
+- `scripts/auto_review_bundle_v4.py`
+- `scripts/build_review_ledger.py`
+- `scripts/train_review_calibrator.py`
+- `local/review_bundle_widget.py`
 
-## 13.6 grounding_agent
+### Trạng thái
 
-So `effective_metric` với `direct_evidence` thực sự của candidate.
-
-## 13.7 verifier
-
-Không chọn candidate mới. Nó chỉ trả lời candidate đã chọn có đủ support hay không.
-
-## 13.8 calibrator_agent
-
-Chỉ xuất hiện sau khi human review seed.
-
-Đây là supervised reviewer học từ candidate features, không học answer string.
+Đã vận hành. Chưa nên coi mọi `machine_provisional` là silver; cần replay và
+promotion policy độc lập.
 
 ---
 
-# 14. V3.1 grounding guard
+## 10. Mô-đun 7 — Evaluation và Training
 
-Recovered adjacent candidate có rủi ro false recovery.
+### Cách hiểu đơn giản
 
-Do đó V3.1 bắt buộc:
-
-```text
-adjacent candidate
-      ↓
-effective_metric vs direct_evidence
-      ↓
-token coverage gate
-+
-bigram coverage gate
-      ↓
-PASS → được vote
-FAIL → không được vote
-```
-
-Default conservative gate:
+Mô-đun 7 quyết định dữ liệu nào đủ sạch để học. Nó không làm dữ liệu trở nên
+đúng chỉ vì model cần thêm examples.
 
 ```text
-token coverage >= 0.85
-bigram ratio >= 0.45
+human_verified      → training eligible
+machine_calibrated  → eligible sau provenance/training gate
+machine_provisional → audit only
+needs_human         → quarantine
 ```
 
-Điều này bảo vệ khỏi trường hợp table kế bên có vài từ giống query nhưng không phải metric thực sự.
+Grounding Health Dashboard tách lỗi theo family, OCR quality, semantic role,
+candidate availability và Formula completeness.
+
+Training gate hiện đặt ở 200 machine-silver grounded; snapshot mới có 62. Do
+đó chưa train dense/reranker chính thức và không ghi đè baseline index.
+
+GPU có ích ở đây cho embedding, reranking và training sau khi đủ labels. GPU
+không thay thế exact-cell validation.
+
+### Code chính
+
+- `src/finance_query/evaluation_dashboard.py`
+- `scripts/build_evaluation_dashboard.py`
+- `scripts/export_review_labels.py`
+- `scripts/train_dense_retriever.py`
+- `scripts/train_pilot_candidate_reranker.py`
+
+### Trạng thái
+
+Evaluation đã hoàn thành; training production chưa mở vì chưa đạt gate.
 
 ---
 
-# 15. Consensus state machine
+## 11. Mô-đun 8 — Execution và Submission
 
-Machine review không chỉ có true/false.
+### Cách hiểu đơn giản
+
+Sau khi các số đầu vào đã được chứng minh, executor mới thực hiện phép tính.
+Nó dùng `Decimal` và operator allow-list, không dùng LLM để viết/chạy Python tùy
+ý.
+
+Các điều kiện fail-closed gồm:
 
 ```text
-retrieval_failure
-needs_human
-machine_provisional
-machine_high_confidence
-machine_calibrated
-human_verified
+operand thiếu
+cell không exact
+entity/year/scope không coherent
+unit không tương thích
+mẫu số bằng 0
+tie khi cần unique winner
+formula chưa defined
 ```
 
-Ý nghĩa:
+Submission compiler kiểm lại execution record và binding trước khi xuất kết
+quả. Shadow result không đủ điều kiện submission.
 
-### retrieval_failure
+### Code chính
 
-Không có candidate đủ support.
+- `src/finance_query/execution.py`
+- `src/finance_query/query_program.py`
+- `src/finance_query/submission.py`
+- `scripts/build_query_program_shadow.py`
+- `scripts/build_execution_ledger.py`
+- `scripts/compile_vifinqa_submission.py`
 
-Không có nghĩa gold không tồn tại.
+### Trạng thái
 
-### needs_human
-
-Agent disagreement hoặc grounding/verifier fail.
-
-### machine_provisional
-
-Có candidate hợp lý nhưng chưa đủ calibrated confidence.
-
-### machine_high_confidence
-
-Rule-based confidence mạnh, chủ yếu dùng cho direct lookup.
-
-### machine_calibrated
-
-Candidate qua source grounding + reviewer consensus + learned calibration threshold.
-
-### human_verified
-
-Người review trực tiếp xác nhận.
-
-Đây là label có provenance mạnh nhất.
+Direct/percentage-change execution đã có contract hẹp. Multi-stage
+QueryProgram mới ở shadow canary; chưa hoàn tất generic operator DSL.
 
 ---
 
-# 16. Collaborative Codex + human review strategy
+## 12. Không review 1.012 câu bằng cách nào?
 
-Không yêu cầu human review tất cả 60 câu.
+Ta không bỏ validation. Ta đổi đơn vị kiểm thử từ **câu hỏi** sang **contract
+fingerprint**.
 
-Luồng:
-
-```text
-machine review 60
-       ↓
-Codex review một batch với exact UID/rows
-       ↓
-human spot-check ~6 câu, ưu tiên disagreement + đủ family
-       ↓
-Codex đọc correction và review lại phần còn lại
-       ↓
-lặp đến khi có >=8 human cases dùng được cho calibration
-       ↓
-train calibrator + rerun 60
-       ↓
-giữ đủ mọi trạng thái trong review ledger
-```
-
-Seed queue cần chứa cả:
+Một fingerprint gồm:
 
 ```text
-machine-confident cases
-uncertain cases
-nhiều question families
+operator DAG
+operand roles
+entity/year cardinality
+scope policy
+allowed table functions
+unit/output contract
 ```
 
-Mục tiêu là vừa calibration vừa đo disagreement. Codex review luôn có `reviewer_type=codex_assisted`, `human_verified=false` và không được tự nâng thành human gold.
-
-## 16.1 Review unit cho câu phức tạp
-
-Direct lookup có thể review một table. Temporal/ratio/comparison/aggregation phải review một `EvidenceSet`:
+Những câu khác wording nhưng cùng fingerprint dùng chung executor và test
+contract. Toàn bộ 1.012 câu vẫn chạy census tự động:
 
 ```text
-question
-→ operand slots (entity, metric, year, scope)
-→ one or more exact table rows per slot
-→ completeness: complete | partial | missing
+known fingerprint + exact evidence → Green / executable
+known fingerprint + ambiguous data → provisional / blocked
+unknown fingerprint               → needs_human / abstain
 ```
 
-Một candidate đúng cho một operand vẫn có thể là positive retrieval table, nhưng toàn câu không được gọi complete khi operand khác còn thiếu.
-
-Formula planner hiện là tập rule có kiểm soát, chỉ tạo review template chứ
-không tính answer. Mỗi formula gồm `formula_id`, expression, definition status,
-required operands, period và role. Operand coverage giữ:
-
-```text
-operand_id
-→ candidate UID + rank
-→ exact row_index + exact row cells
-→ exact column labels/period context
-```
-
-Một EvidenceSet có thể ghép nhiều bảng. `definition_status=ambiguous` luôn
-fail closed; `review_required` cần human xác nhận công thức. Multi-operand
-formula không được accept trực tiếp từ machine recommendation.
-
-Từ bundle export metadata-support v1, các operand controlled có entity, năm và
-statement-function allow-list có thể kéo raw statement table đúng ticker,
-năm/năm báo cáo kế tiếp và scope (nếu đã resolve) vào `tables.jsonl`. Đây là
-bundle inclusion có provenance `formula_metadata_support_v1`, không phải
-semantic retrieval, không xuất hiện trong compact candidate list và không
-thay đổi rank. Formula discovery mới nhìn thấy các UID này để bind exact
-row/cell; thiếu allow-list thì exporter fail closed, không kéo các note OCR
-không giới hạn. Inclusion này không mang answer hay training eligibility.
-
-Với `direct_lookup`, metadata-support chỉ hoạt động khi plan resolve duy nhất
-một ticker và năm, và label raw chứa exact metric token sequence. Bảng có
-provenance `direct_metadata_support_v1` vẫn không xuất hiện trong compact UI.
-Direct EvidenceSet phải tái kiểm tra V2 raw-row identity, canonical header và
-period-bound cell; support chỉ là recall, không phải evidence hay label.
-
-`exact_raw_v2_metric_context_stripped_token_sequence_v1` là contract hẹp cho
-direct lookup: primary metric vẫn được giữ; fallback chỉ xóa ticker đã resolve,
-mốc kỳ đầy đủ ở cuối hoặc tiền tố query `Số dư`, rồi raw row phải exact token.
-Một token `năm` của metric thời hạn không được xóa. Tất cả modifier kế toán còn
-nguyên. `exact_raw_v2_source_parent_and_row_token_sequence_v1`
-phục hồi note hierarchy khi parent heading nguồn và row child đều là token
-sequence exact của câu hỏi; `source_context_sha256`, parent/child heading, row
-label và V2 cell phải khớp lại tại V4. Nếu có hai row/table exact cho giá trị
-khác nhau, critic giữ ambiguity và không promote.
-
-## 16.2 Report segment normalization
-
-`report_segments_v1.jsonl` là sidecar điều hướng/hash-bound: một UID bảng có
-raw context digest, heading cùng trang sau khi cắt table/trang trước, function,
-section, period/unit labels và một descriptor ngắn `chức năng · phần · kỳ · đơn
-vị`. Với child heading đánh số, nó còn giữ parent heading nguồn rõ ràng cùng
-trang (không lấy table cell hay title OCR suy đoán). Heading bắt đầu tại tên báo
-cáo. Reader heading chỉ hiển thị prefix nguồn trước một sentence boundary đã
-liệt kê; không đủ boundary thì UI dùng descriptor thay vì cắt câu OCR thành
-một title mới. Descriptor tuyệt đối không chứa row, công thức hay số liệu.
-Sidecar không sửa OCR, không đổi grid, không suy diễn tiêu đề hay số liệu;
-manifest ghi policy `source_heading_metadata_only_no_numeric_inference_v2` và có
-`evidence_eligible=false`, `training_eligible=false`. UI ưu tiên heading này
-để giảm nhiễu; mọi decision/evidence vẫn trỏ exact V2 row/cell.
-Manifest Direct EvidenceSet giữ filename/SHA-256 của segment đã dùng; V4 chỉ
-nhận hierarchy EvidenceSet khi hash này trùng chính segment đang attach.
-V4 chỉ có thể đọc `unit_labels` hash-bound để nhận diện đơn vị nguồn, không
-được dùng heading/descriptor để bind metric, period, rank hay promote nhãn.
-
-`report_entity_aliases_v1.jsonl` là lớp chuẩn hoá riêng cho thực thể báo cáo,
-không phải extension của evidence. Extractor chỉ đọc đầu **trang nguồn hiện
-tại** và chỉ trước marker report; nó yêu cầu masthead bắt đầu bằng legal
-organisation marker. Một tên công ty nằm trong table body (đối tác, bên liên
-quan) không thể thành alias. Alias legal-form được canonicalise hẹp (`CTCP` ↔
-`Công ty Cổ phần`), sau đó câu hỏi phải chứa nguyên sequence tên riêng và mọi
-match phải dẫn tới đúng một ticker. Resolver không suy ra `scope`.
-
-Formula EvidenceSet V6 hash-bind sidecar/manifest alias này. Resolution chỉ
-thêm ticker vào **in-memory discovery plan** cho Formula EvidenceSet; ngoài
-title alias, V6 chỉ nhận ticker viết hoa xuất hiện nguyên token trong question
-và dẫn đúng một ticker trong metadata nguồn bundle. Raw question plan,
-retrieval rank, raw V2 grid và review label không bị sửa. Một operand chỉ được
-bind sau exact row/cell gate. Riêng balance sheet header
-`Số cuối năm` có thể bind với năm operand khi và chỉ khi report metadata có
-cùng năm và đúng một raw canonical numeric column mang header đó; `Số đầu năm`,
-comparative report hoặc nhiều cột closing đều fail-closed.
-
-Câu lọc/xếp hạng nhiều giai đoạn được route thành
-`multi_stage_selection_unresolved`, thay vì lấy công thức từ keyword xuất hiện
-đầu tiên. Q369 là controlled canary đầu tiên có stage planner theo entity; mọi
-stage vẫn partial nếu thiếu exact-row EvidenceSet. Các pattern khác tiếp tục
-unresolved cho đến khi có rule riêng.
-
-Human có thể xác nhận phần evidence này bằng `human_verified_partial`. Nó được giữ trong ledger để Codex dùng ở vòng sau, nhưng không đi vào training subset cho đến khi evidence set complete.
-
----
-
-# 17. Review UI boundary
-
-`local/review_bundle_widget.py` sử dụng `ipywidgets`.
-
-Trước review số liệu, chạy `repair-tables --repair-force` để widget tự đọc
-`tables_structured_v2.jsonl`. UI chính chỉ hiển thị chức năng bảng, context
-ngắn, tối đa bốn exact rows liên quan, mức phù hợp và tóm tắt grounded; raw grid
-là phần mở rộng. Nếu phần kế
-toán của bảng mâu thuẫn rõ ràng với câu hỏi (ví dụ `asset` thay vì `liability`),
-machine acceptance bị chặn nhưng human vẫn có thể override có chủ đích.
-
-Với ratio/derived, UI hiện formula ở đầu câu, chỉ rõ operand đã có/đang thiếu
-và candidate nào hỗ trợ. Candidate không map được vào operand bị bỏ khỏi quick
-numeric view để giảm nhiễu nhưng full source grid vẫn mở được để kiểm tra.
-Legacy grid chưa được UID/hash-verified cũng không được dùng để tạo complete
-label. Khi build ledger, exact operand rows và column labels được đối chiếu lại
-với sidecar V2; mismatch làm tiến trình dừng.
-
-Positive human label từ UI cũ được bảo toàn trong audit ledger với
-`needs_review_refresh=true`, nhưng `training_eligible=false`. Sau khi human lưu
-lại trên V2, provenance human được giữ và structure gate mới được mở.
-
-Machine reviewer dùng cùng sidecar để bind projected `VALUE/ANCHOR` trở lại
-`best_row_index`. Candidate row mismatch bị loại trước consensus; machine label
-không có `structure_validation.validated=true` không qua final export gate.
-
-Nó phải chạy trong:
-
-```text
-Jupyter Notebook
-JupyterLab
-IPython notebook kernel
-```
-
-Command:
-
-```python
-%run local/review_bundle_widget.py \
-    --bundle-dir ... \
-    --machine-reviews ... \
-    --assistant-reviews ... \
-    --queue ... \
-    --output ...
-```
-
-`%run` là IPython magic.
-
-Không chạy `%run` trong Bash.
-
-Terminal chỉ dùng để:
-
-```text
-pull
-install
-diagnose
-baseline
-collaborate
-calibrate
-final
-launch jupyter
-```
-
----
-
-# 18. Calibration layer
-
-Human annotations tạo candidate-level training examples.
-
-Features hiện tại gồm:
-
-```text
-rank reciprocal
-lexical reciprocal
-dense reciprocal
-fused score
-metadata score
-row score
-metric overlap
-question overlap
-numeric evidence
-ticker match
-scope match
-year match
-```
-
-Baseline calibrator:
-
-```text
-StandardScaler
-+
-LogisticRegression(class_weight="balanced")
-```
-
-Evaluation dùng grouped split theo question ID để tránh candidate cùng question rơi vào cả train/test fold.
-
-Calibrator không được override grounding verifier.
-
----
-
-# 19. Label provenance và output boundary
-
-Final label phải giữ nguồn:
-
-```json
-{
-  "annotation_status": "human_verified",
-  "label_source": "human"
-}
-```
-
-hoặc:
-
-```json
-{
-  "annotation_status": "machine_calibrated",
-  "label_source": "machine"
-}
-```
-
-Không hợp nhất hai loại này thành một generic `verified=true`.
-
-Output được tách thành:
-
-```text
-review_ledger_60.jsonl     đủ mọi question/status/reviewer, dùng audit
-retriever_labels_v2.jsonl  chỉ training-eligible labels
-```
-
-`machine_provisional`, `needs_human` và `retrieval_failure` không bị xóa khỏi ledger chỉ vì chúng không được dùng để train.
-
-Training có thể dùng weighting khác nhau:
-
-```text
-human_verified          1.0
-machine_calibrated      < 1.0
-machine_provisional     không dùng mặc định
-```
-
----
-
-# 19.1 Pilot candidate reranker (shadow-only)
-
-Sau khi final label export, local có thể học một reranker nhỏ trên feature của
-**candidate đã tồn tại trong immutable bundle Top-K**. Đây không phải retriever
-training và không được rebuild dense/FAISS hoặc lexical index.
-
-```text
-review_items Top-K + final labels + provenance ledger
-→ candidate feature model
-→ GroupKFold theo question ID
-→ shadow ranking để audit
-```
-
-Negative supervision chỉ đến từ `human_verified` có V2 complete. Với
-`machine_calibrated`/`machine_high_confidence`, exact selected table là
-positive pseudo-label có weight; các candidate không được chọn là `unknown`,
-không được giả định là negative. Metric phải tách `human_verified_only` khỏi
-metric có pseudo-label, và chỉ nói về re-rank trong Top-K, không phải full
-corpus recall.
-
-Artifact luôn ở trạng thái shadow/hold cho đến khi đủ ít nhất 30 question
-`human_verified`, OOF human-only không giảm, và có holdout audit. Chi tiết
-contract và lệnh chạy ở [`docs/PILOT_CANDIDATE_RERANKER.md`](docs/PILOT_CANDIDATE_RERANKER.md).
-
----
-
-# 19.2 Autonomous source-processing and machine-silver loop
-
-Khi không có human reviewer, hệ thống không thay machine provenance bằng human
-gold. Luồng V4 trước hết tạo sidecar semantic riêng từ V2 raw-HTML grid:
-
-```text
-V2 cell provenance
-→ V2 canonical header parent/child path
-→ per-column period/unit context
-→ row role + source-quality gate
-→ review_ready | needs_processing | blocked
-```
-
-Header cha được khôi phục chỉ khi `cell_provenance` xác nhận đó là ô bị cover
-bởi span; OCR text/số và V2 grid gốc vẫn bất biến. Candidate muốn thành
-`machine_calibrated` silver phải có exact V2 row, canonical table
-`review_ready`, data-row binding, unique raw-header period/year-cell binding
-nếu câu hỏi yêu cầu đầu/cuối kỳ hoặc nêu rõ năm, consensus của retrieval/semantic/evidence/metadata/source,
-và critic không tìm thấy alternative gần ngang điểm.
-
-Năm trong metadata của report **không** tự bind giá trị vào một cột so sánh.
-V4 chỉ chọn cột có raw canonical header nêu đúng năm; fallback `Năm nay/Kỳ
-này` chỉ hợp lệ khi report year của candidate đúng bằng năm hỏi. Nếu không có
-một cột duy nhất thì giữ `row_bound`/`ambiguous_period_column`, không đoán.
-
-Trước V4 có thêm sidecar `direct_evidence_sets_context_v2_discovered.jsonl`
-để bù recall theo raw V2 cho `direct_lookup`, không rebuild lexical/dense
-index. Nó giới hạn bảng theo ticker/năm/scope của effective plan và chỉ thêm
-một row khi label có exact significant-token sequence, endpoint `đầu/cuối`
-không mâu thuẫn, table `review_ready` và cột số bind duy nhất qua canonical
-header. Hai raw row cùng table cùng match được ghi ambiguity và không chọn theo
-thứ tự. Sidecar hash-bind với bundle/V2/context/plan override; V4 và execution
-ledger vẫn lặp lại toàn bộ gate nên đây là source recall có provenance, không
-phải label hay answer tự suy diễn.
-
-Khi sidecar thay evidence của một UID đã có trong Top-K, nó cũng thay
-`one_line_summary` bằng `ticker | year | scope` và chính raw V2 value row.
-Không được kế thừa preview Top-K cũ: cùng UID có thể chứa một projected row
-khác với row raw vừa được bind. Summary này chỉ để audit/UI, không phải input
-để chọn candidate hay suy diễn answer.
-
-Một số metric là row label đã disclosed dù có từ giống phép tính, ví dụ `Tổng
-cộng tài sản`, `Tỷ lệ sở hữu`, `Lỗ chênh lệch tỷ giá`. Rule planner chỉ
-reclassify các form đơn chủ thể/đơn kỳ có pattern hẹp. Với bundle đã tạo, việc
-replan không sửa `review_items.jsonl`: `question_plan_overrides_v1.jsonl`
-bind hash câu hỏi và original plan, reason code, effective `lookup` plan.
-V4 copy effective plan và provenance vào review output; ledger dùng đúng plan
-đã review nhưng compiler vẫn yêu cầu raw V2 cell. Group/range/comparison hoặc
-formula nhiều operand không được đưa vào override.
-
-Canonical header cũng phải là prefix trước data row quan sát được đầu tiên.
-Nếu V2 heuristic đánh dấu một row số liệu nằm sau data là header, V2 loại row
-đó khỏi header path và ghi `nonleading_header_rows_excluded_from_canonical_path`;
-không ghép số liệu vào period label. Raw cells và marker V2 không bị sửa. Khi
-prefix còn lại không đủ label cột số, table bị `needs_processing`.
-
-`row_profiles.numeric_columns` chỉ chứa cell parse được đúng một số theo
-contract execution. Cell OCR có hình thức số nhưng ghép nhiều nhóm số được
-ghi riêng ở `unreliable_numeric_columns`; row chỉ có các cell đó mang role
-`data_with_unreliable_numeric` và không thể bind. Điều này là quarantine của
-derived context, không sửa/tách raw V2 grid.
-
-`tables_evidence_context_v1.jsonl` được giữ read-only để audit các sidecar lịch
-sử. Mọi review/evidence/execution mới dùng `tables_evidence_context_v2.jsonl`
-và manifest mang `numeric_binding_policy =
-one_reliable_raw_v2_number_per_cell`; consumer từ chối V2 sidecar thiếu
-contract này.
-
-```text
-machine_calibrated  source-gated autonomous silver; có thể train sau min size
-machine_provisional audit only; không train
-needs_human         quarantine only khi không có reviewer; không train
-human_verified      không được tự tạo trong autonomous flow
-```
-
-Dense fine-tuning chỉ bắt đầu từ tối thiểu 200 V4 silver pairs. Training tạo
-model mới và không rebuild/rewrite existing dense index. Nếu chưa đủ pairs,
-pipeline trả `deferred` thay vì tự nới evidence threshold. Xem
-[`docs/AUTONOMOUS_RAW_REVIEW.md`](docs/AUTONOMOUS_RAW_REVIEW.md).
-
-Semantic cross-encoder được chạy ở lớp audit sidecar V2, không nằm trong
-contract promotion. Một score chỉ tồn tại khi `value_row_index`,
-`best_row_index` hoặc `anchor_row_index` của candidate có mặt trong
-`evidence_window` và row đó khớp nguyên văn raw V2. Input đã chấm được lưu
-cùng SHA-256, rồi audit render lại từ V2/canonical context trước khi báo cáo
-margin. Vì vậy score semantic không thể thay thế exact row/cell, period/unit
-binding hay critic; nó chỉ có thể trở thành signal hạ mức sau một audit độc
-lập.
-
-Formula EvidenceSet V3/V6 dùng cùng parser fail-closed với execution ledger: một
-cell có nhiều nhóm số OCR ghép không phải numeric operand. `complete` đòi hỏi
-mỗi operand là đúng một raw V2 number có thể parse, ngoài các gate entity,
-scope, period và definition hiện có. Với nhiều entity, một scope không rỗng
-phải chung cho mọi entity và mỗi operand phải có một binding duy nhất trong
-scope đó; collector không ghép các scope riêng hoặc tự chọn giữa các binding.
-Khi V6 xuất ra execution evidence từ một resolver thực thể, record chỉ là
-`machine_provisional` trừ khi autonomous review độc lập đã là
-`machine_calibrated`; `grounded` mô tả raw binding, không phải promotion nhãn.
-
-Khi primary statement có trong raw report nhưng không nằm trong immutable
-bundle, `raw_source_completion_v1` tạo một supplemental sidecar tách biệt sau
-khi revalidate source/table SHA, deterministic UID, raw grid và V3 context.
-Sidecar chỉ có thể cấp coverage cho Formula EvidenceSet shadow; nó cấm answer,
-training và review-status promotion, không đi vào corpus/index hay autonomous
-review mặc định. Nó vẫn phải qua cùng gate common-scope/unique-binding trước
-khi bất kỳ EvidenceSet nào được coi là đủ input.
-
-Source completion có thể chạy nhiều pass: pass sau dùng snapshot trước làm
-`base` và ghi snapshot combined mới, không overwrite artifact cũ. Chỉ UID có
-raw grid, source provenance và V3 context tái dựng hoàn toàn giống nhau mới
-được deduplicate; audit origins được union. Điều này cho phép audit missing
-operand và audit scope-gap cùng tồn tại mà không biến supplemental source
-thành corpus, answer hay training data.
-
-Một nhánh execution khác, tách biệt với source completion, hỗ trợ **duy nhất**
-`operating_cash_flow_argmax_period` ở chế độ shadow evaluation. Câu phải có
-một ticker, danh sách năm tường minh, metric CFO tường minh và yêu cầu maximum.
-Executor revalidate exact V2 row/cell/header của từng năm báo cáo, ticker,
-scope, unit, table function `cash_flow_statement`, tính argmax duy nhất và
-fail-closed khi tie/mất binding. Comparative value lặp ở report năm kế tiếp chỉ
-được lưu witness sau khi raw string, parsed value, scope và unit giống hệt;
-binding chính luôn là report đúng năm. Record kết quả mang
-`submission_eligible=false`, `review_status_promoted=false`; compiler cấm nó
-vào submission và nó không tạo silver/training label. Không mở rộng quy tắc
-này sang ranking nhiều entity hay multi-stage.
-
----
-
-# 20. Question-family-specific evidence requirements
-
-## Direct lookup
-
-Cần tối thiểu:
-
-```text
-correct metadata
-metric grounded
-numeric value
-period/unit compatibility
-```
-
-## Temporal change
-
-Cần:
-
-```text
-operand t
-operand t-1
-period direction
-```
-
-Không được auto-pass chỉ vì một row có hai con số nếu chưa xác minh column meaning.
-
-## Ratio / derived
-
-Cần:
-
-```text
-numerator evidence
-denominator evidence
-formula identity
-unit compatibility
-```
-
-## Cross entity
-
-Cần evidence riêng cho:
-
-```text
-entity A
-entity B
-```
-
-## Aggregation
-
-Cần evidence set nhiều table/period/entity.
-
-Một single-table reviewer không đủ để gọi gold.
-
----
-
-# 21. Future binding layer
-
-Sau khi retrieval labels đủ tốt, architecture tiếp tục:
-
-```text
-selected table(s)
-→ row-path binding
-→ column/period binding
-→ exact cell binding
-→ unit resolver
-→ GroundedOperand
-```
-
-Target object:
-
-```json
-{
-  "metric": "cash_and_cash_equivalents",
-  "table_uid": "...",
-  "row_index": 4,
-  "column_index": 1,
-  "raw_value": "1.880.612.291.229",
-  "parsed_value": "1880612291229",
-  "source_unit": "VND",
-  "requested_unit": "billion_vnd"
-}
-```
-
----
-
-# 22. Future reasoning/execution layer
-
-Reasoning phải chuyển thành typed operation plan.
-
-Ví dụ temporal change:
-
-```text
-subtract(value_t, value_t_minus_1)
-```
-
-Ratio:
-
-```text
-divide(numerator, denominator)
-```
-
-Aggregation:
-
-```text
-sum(values)
-mean(values)
-argmax(values)
-count(filter(values))
-```
-
-LLM có thể đề xuất semantic operation, nhưng deterministic executor thực hiện arithmetic.
-
----
-
-# 23. Failure taxonomy
-
-Mọi failure phải có type.
-
-```text
-PLANNER_FAILURE
-DOCUMENT_ROUTING_FAILURE
-TABLE_RETRIEVAL_FAILURE
-CONTEXT_LEAKAGE_FAILURE
-EVIDENCE_PROJECTION_FAILURE
-ROW_BINDING_FAILURE
-COLUMN_BINDING_FAILURE
-UNIT_FAILURE
-FORMULA_FAILURE
-EXECUTION_FAILURE
-VALIDATION_FAILURE
-```
-
-Typed failures giúp biết phải sửa planner, retriever, projection hay reasoning thay vì retrain toàn bộ model.
-
----
-
-# 24. Repository modules
-
-```text
-src/finance_query/
-  corpus.py          raw report → TableAsset
-  table_structure.py raw HTML → rectangular grid + cell provenance
-  retrieval.py       lexical/dense/RRF
-  questions.py       planner/router
-  pipeline.py        orchestration
-  binding.py         row/cell binding baseline
-  execution.py       numeric/symbolic execution
-  schemas.py         typed records
-
-scripts/
-  build_review_bundle_v3.py
-  repair_review_bundle_tables.py  immutable bundle → local V2 sidecar
-  auto_review_bundle_v31.py
-  train_review_calibrator.py
-  export_review_labels.py
-  train_dense_retriever.py
-  train_reranker.py
-
-kaggle/
-  export_review_bundle_v3.py
-
-local/
-  diagnose_review_bundle.py
-  run_local_review_stage.py
-  review_bundle_widget.py
-```
-
----
-
-# 25. Current state machine của project
-
-```text
-KAGGLE BUILD
-   ↓
-REVIEW BUNDLE V3
-   ↓
-LOCAL DIAGNOSTIC
-   ↓
-SOURCE-AWARE BASELINE REVIEW
-   ↓
-HUMAN SEED
-   ↓
-CALIBRATION
-   ↓
-MACHINE CALIBRATED REVIEW
-   ↓
-HUMAN RESOLVE UNCERTAINTY
-   ↓
-VERIFIED RETRIEVAL LABELS
-   ↓
-RETRIEVER/RERANKER TRAINING
-   ↓
-ROW/CELL BINDING
-   ↓
-OPERAND REASONING
-   ↓
-DETERMINISTIC ANSWER EXECUTION
-```
-
-Không chuyển sang bước sau nếu bước trước chưa có evaluation gate đáng tin.
-
----
-
-# 26. Priority order
-
-Ưu tiên kỹ thuật hiện tại:
-
-```text
-P0 source correctness
-P1 table retrieval recall
-P2 evidence grounding
-P3 review precision/calibration
-P4 row/cell binding
-P5 operand coverage
-P6 formula execution
-P7 final answer generation
-```
-
-Nguyên tắc cuối:
-
-> **Không dùng model lớn để che lỗi retrieval hoặc provenance. Nếu bảng/evidence sai, answer đúng do may mắn vẫn được xem là failure.**
-
----
-
-# 27. Kiến trúc cần cải thiện tiếp
-
-Thứ tự đề xuất sau collaborative review:
-
-```text
-P0 operand planner
-   tách entity × metric × year × scope trước retrieval;
-   không dùng toàn bộ complex question làm effective_metric.
-
-P0 evidence schema
-   tách context_hint khỏi exact_row_evidence;
-   lưu header/value row indices và period-column binding rõ ràng.
-
-P0 evidence-set verifier
-   đánh giá completeness của toàn bộ operand set;
-   không dùng verdict của một candidate để đại diện câu multi-step.
-
-P1 two-stage calibration
-   candidate relevance probability
-   + evidence-set completeness probability.
-
-P1 evaluation gates
-   table recall@K, operand coverage, exact-row precision,
-   human/Codex disagreement và calibration error theo family.
-
-P2 corpus context rebuild
-   chỉ thực hiện sau khi retrieval labels đủ ổn định;
-   không rebuild dense trong vòng local review hiện tại.
-```
+### Ba lớp kiểm định
+
+1. **Census tự động:** chạy schema/hash/grounding gate cho 1.012/1.012 câu.
+2. **Fixture theo fingerprint:** positive, missing operand, wrong year/scope,
+   unit mismatch, zero denominator, tie và OCR malformed.
+3. **Risk-stratified audit:** lấy mẫu độc lập từ tập Green; fingerprint hiếm
+   hoặc rủi ro cao được audit nhiều hơn.
+
+Hai model đồng ý không phải là bằng chứng độc lập. Raw-source replay và
+mutation tests mới là validator độc lập với planner/model.
+
+## 13. Kế hoạch tăng tốc trong 12 giờ
+
+Mốc 12 giờ phù hợp để hoàn thiện **MVP shadow**, không đủ để tuyên bố production
+accuracy cho gần hết corpus.
+
+| Thời gian | Việc thực hiện | Kết quả |
+| --- | --- | --- |
+| Giờ 0–2 | Sinh fingerprint/coverage matrix cho 1.012 câu | Biết contract nào phủ nhiều câu nhất |
+| Giờ 2–5 | Direct Evidence Replay | Tái kiểm 358 câu direct, không cần human đọc từng câu |
+| Giờ 5–8 | Generic operator registry | Dùng chung lookup/divide/subtract/sum/mean/min/max/count/change |
+| Giờ 8–10 | Migrate hai QueryProgram canary | Bỏ evaluator riêng ở mức template |
+| Giờ 10–12 | Regression, dashboard, artifact registry | Snapshot shadow reproducible |
+
+GPU chỉ nên chạy song song để đề xuất operand/plan hoặc rerank. Quyết định cuối
+vẫn do CPU validator exact-source thực hiện.
+
+Sau 12 giờ, kết quả hợp lệ mong đợi là:
+
+- 1.012 câu được route thành fingerprint hoặc abstain có reason code;
+- direct questions được replay deterministic;
+- operator chung chạy shadow;
+- không tự nâng provenance hoặc train dense;
+- coverage report cho biết chính xác bước nào còn thiếu.
+
+## 14. Khi nào được coi là hoàn thành 8 mô-đun?
+
+“Có đủ tám file/module” chưa phải hoàn thành. Definition of Done là:
+
+1. 1.012/1.012 câu đi qua schema và routing census.
+2. Mọi output là `executable` hoặc `abstain` có reason code rõ ràng.
+3. Mọi value truy ngược được exact V2 row/header/cell.
+4. Scope, period, entity và unit đều coherent.
+5. Provenance không bị promotion ngầm.
+6. Artifact registry và dependency hash validate được.
+7. Green pool đạt ngưỡng precision đã định trên audit độc lập.
+8. Training/submission chỉ đọc artifact đủ eligibility.
+
+Một hệ thống có thể hoàn thành dù vẫn còn `needs_human`: từ chối đúng là hành
+vi đúng. Hoàn thành không có nghĩa ép 1.012 câu phải có answer.
+
+## 15. Artifact và version hiện hành
+
+| Tên logic | Artifact/schema | Vai trò |
+| --- | --- | --- |
+| Raw table | Review Bundle V3 | snapshot candidate và raw table |
+| Structured table | V2 | grid + cell provenance |
+| Evidence context | V3 | canonical header/period/unit |
+| Formula evidence | V6 | operand discovery và binding |
+| Query program | Shadow V1 | multi-stage execution canary |
+| OCR profile | V1 | diagnostic/quarantine metadata |
+| Semantic catalog | V1 | navigation/evaluation metadata |
+| Evaluation dashboard | V1 | trạng thái grounding toàn corpus |
+
+ArtifactRegistry dùng logical name và dependency hash để tránh chọn nhầm file
+chỉ vì tên có `v2`, `v3`, `v31` hoặc `v4`.
+
+## 16. Tài liệu chuyên sâu còn giữ
+
+- [`docs/ARTIFACT_REGISTRY.md`](docs/ARTIFACT_REGISTRY.md)
+- [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md)
+- [`docs/FORMULA_EVIDENCE_SETS.md`](docs/FORMULA_EVIDENCE_SETS.md)
+- [`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md)
+- [`docs/COMPLEX_QUERY_CANARY.md`](docs/COMPLEX_QUERY_CANARY.md)
+- [`docs/OCR_QUALITY_PROFILE.md`](docs/OCR_QUALITY_PROFILE.md)
+- [`docs/SEMANTIC_CATALOG.md`](docs/SEMANTIC_CATALOG.md)
+- [`docs/GROUNDING_HEALTH_DASHBOARD.md`](docs/GROUNDING_HEALTH_DASHBOARD.md)
+- [`docs/AUTONOMOUS_RAW_REVIEW.md`](docs/AUTONOMOUS_RAW_REVIEW.md)
+- [`docs/SUBMISSION_EXECUTION_PIPELINE.md`](docs/SUBMISSION_EXECUTION_PIPELINE.md)
+- [`docs/KAGGLE_TO_LOCAL_REVIEW.md`](docs/KAGGLE_TO_LOCAL_REVIEW.md)
+
+Tài liệu snapshot cũ được loại khỏi nhánh hiện hành sau khi nội dung còn đúng
+đã được hợp nhất vào tài liệu này. Lịch sử vẫn có thể xem hoặc khôi phục bằng
+Git.
