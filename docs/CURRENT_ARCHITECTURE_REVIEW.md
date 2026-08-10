@@ -307,6 +307,13 @@ do caller đưa vào. Trên bundle hiện tại, Q369 compile được nhưng b�
 `shadow_blocked` vì Formula EvidenceSet chưa complete/coherent; không answer,
 không label promotion. Contract và lệnh chạy tại [`QUERY_PROGRAM.md`](QUERY_PROGRAM.md).
 
+P1 đã hoàn tất nhánh diagnostic đầu tiên: OCR Quality Profile V1 đọc V2/V3 và
+triage `normal`/`review_required`/`quarantine` theo parser warning, canonical
+header coverage và layout number non-nested. Nó không sửa OCR và chưa tác động
+retrieval/evidence/training. Snapshot 29.509 bảng là 24.479/4.854/176. Chi tiết
+tại [`OCR_QUALITY_PROFILE.md`](OCR_QUALITY_PROFILE.md); Semantic Catalog vẫn là
+bước P1 còn lại.
+
 ## 6. Kiến trúc đích nên đi theo
 
 ```text

@@ -11,6 +11,10 @@
 đã grounded cho template allow-listed, không truy xuất OCR, không trả answer
 và không promote nhãn. Xem [`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md).
 
+`OCR Quality Profile V1` là nhánh quan sát từ V2/V3: nó triage bảng có cell
+OCR/layout rủi ro nhưng không tự sửa content, làm evidence hay thay rank. Xem
+[`docs/OCR_QUALITY_PROFILE.md`](docs/OCR_QUALITY_PROFILE.md).
+
 ## 1. Mục tiêu kiến trúc
 
 Hệ thống được thiết kế theo nguyên tắc:
