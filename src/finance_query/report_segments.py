@@ -24,6 +24,7 @@ NUMBERED_HEADING_RE = re.compile(
     r"(?:^|\s)((?:[IVXLCDM]+|\d+(?:\.\d+)*)\s*[.)]\s*[^\n]{3,180})",
     re.IGNORECASE,
 )
+NUMERIC_SUBHEADING_RE = re.compile(r"^(\d+)(?:\.\d+)+\s*[.)]?\s+", re.IGNORECASE)
 STATEMENT_RE = re.compile(
     r"(?:bảng\s+cân\s+đối\s+kế\s+toán|báo\s+cáo\s+kết\s+quả\s+hoạt\s+động\s+kinh\s+doanh|báo\s+cáo\s+lưu\s+chuyển\s+tiền\s+tệ)",
     re.IGNORECASE,
@@ -41,6 +42,37 @@ def _html_tail(raw_context: object) -> str:
     tail = PAGE_RE.split(tail)[-1]
     text = BeautifulSoup(tail, "lxml").get_text(" ", strip=True)
     return normalize_space(text)
+
+
+def _source_page_text(raw_context: object) -> str:
+    """Return current-page source text while retaining parent headings.
+
+    Unlike ``_html_tail`` this deliberately retains preceding source tables on
+    the page.  It is used only to recover a numbered parent heading for a
+    numbered child heading; raw grid cells remain out of report segments.
+    """
+    page = PAGE_RE.split(str(raw_context or ""))[-1]
+    return normalize_space(BeautifulSoup(page, "lxml").get_text(" ", strip=True))
+
+
+def _parent_heading(raw_context: object, heading: str) -> str:
+    """Find an explicit root heading for a numbered child heading, if any."""
+    match = NUMERIC_SUBHEADING_RE.match(heading)
+    if match is None:
+        return ""
+    root = match.group(1)
+    # A root note heading in these reports often appears as ``9 CHO VAY ...``
+    # whereas its child table is ``9.6 Theo ...``.  Require an uppercase
+    # source title and reject ``9.`` so row numbers/subheadings cannot become
+    # an invented parent context.
+    pattern = re.compile(
+        rf"(?:^|\s){re.escape(root)}(?!\s*\.)\s+([A-ZÀ-ỸĐ][A-ZÀ-ỸĐ\s\-–]{{4,120}})(?=\s*\(|\s*$)",
+        re.UNICODE,
+    )
+    matches = list(pattern.finditer(_source_page_text(raw_context)))
+    if not matches:
+        return ""
+    return normalize_space(f"{root} {matches[-1].group(1)}")[:MAX_SOURCE_HEADING_CHARS]
 
 
 def _heading(text: str) -> tuple[str, str]:
@@ -180,6 +212,7 @@ def build_report_segment(
     raw_context = str(table.get("context_before") or "")
     clean_context = _html_tail(raw_context)
     heading, heading_source = _heading(clean_context)
+    parent_heading = _parent_heading(raw_context, heading)
     trace = context.get("context_trace") or table.get("context_trace") or {}
     function = context.get("table_function") or table.get("table_function") or {}
     section = context.get("table_section") or table.get("table_section") or {}
@@ -213,6 +246,7 @@ def build_report_segment(
         "source_context_sha256": hashlib.sha256(raw_context.encode("utf-8")).hexdigest(),
         "source_heading": heading,
         "source_heading_kind": heading_source,
+        "source_parent_heading": parent_heading,
         "table_function": function,
         "table_section": section,
         "period_labels": period_labels,

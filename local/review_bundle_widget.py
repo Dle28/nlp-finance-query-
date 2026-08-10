@@ -251,9 +251,14 @@ def context_trace(table: dict[str, Any]) -> dict[str, Any]:
     trace = table.get("context_trace") or {}
     segment = table.get("report_segment") or {}
     topic = trace.get("topic") or {}
+    normalized_heading = compact_text(segment.get("source_heading"), 420)
+    parent_heading = compact_text(segment.get("source_parent_heading"), 220)
+    source_title = normalized_heading or compact_text(trace.get("source_title"), 420)
+    if parent_heading and source_title and parent_heading.casefold() not in source_title.casefold():
+        source_title = parent_heading + " › " + source_title
     return {
         "source_title": compact_text(
-            segment.get("source_heading") or trace.get("source_title"), 420
+            source_title, 420
         ),
         "topic_label": compact_text(
             (topic.get("label") if isinstance(topic, dict) else "")
@@ -1098,9 +1103,11 @@ class BundleReviewer:
         trace = context_trace(table)
         # A numbered note/topic is the tightest exact source context.  Keep the
         # longer title in the collapsed trace instead of repeating it up front.
-        normalized_heading = compact_text(
-            (table.get("report_segment") or {}).get("source_heading"), 420
-        )
+        segment = table.get("report_segment") or {}
+        normalized_heading = compact_text(segment.get("source_heading"), 420)
+        parent_heading = compact_text(segment.get("source_parent_heading"), 220)
+        if parent_heading and normalized_heading and parent_heading.casefold() not in normalized_heading.casefold():
+            normalized_heading = parent_heading + " › " + normalized_heading
         context_heading = html.escape(
             normalized_heading or trace["topic_label"] or report_context_text(table, candidate)
         )

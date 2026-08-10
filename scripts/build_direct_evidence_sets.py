@@ -30,6 +30,7 @@ from finance_query.plan_overrides import (
     canonical_sha256,
     validate_plan_overrides,
 )
+from finance_query.report_segments import validate_report_segment_sidecar
 from finance_query.table_structure import sha256_file, validate_structure_sidecar
 
 import auto_review_bundle_v4 as v4
@@ -38,6 +39,24 @@ import auto_review_bundle_v4 as v4
 SCHEMA_VERSION = 1
 END_ROW_MARKERS = ("cuối năm", "cuối kỳ")
 START_ROW_MARKERS = ("đầu năm", "đầu kỳ")
+TRAILING_PERIOD_PATTERNS = (
+    re.compile(r"\s+(?:trong\s+)?năm\s+(?:19|20)\d{2}\s*$", re.IGNORECASE),
+    re.compile(
+        r"\s+(?:vào|tại|đến)?\s*(?:cuối|đầu)\s+(?:năm|kỳ)(?:\s+(?:19|20)\d{2})?\s*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\s+(?:đến|tại|vào)\s+ngày\s+\d{1,2}(?:\s*[/.-]|\s+tháng\s+)\d{1,2}(?:\s*[/.-]|\s+năm\s+)(?:19|20)?\d{2}\s*$",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\s+(?:ngày\s+)?31\s+tháng\s+12\s+năm\s*$", re.IGNORECASE),
+)
+TRAILING_PARENT_ENTITY_RE = re.compile(r"\s+(?:tại\s+)?công\s+ty\s+mẹ\s*$", re.IGNORECASE)
+LEADING_BALANCE_DESCRIPTOR_RE = re.compile(r"^số\s+dư\s+", re.IGNORECASE)
+FINANCIAL_PARENT_TOKENS = {
+    "tài", "sản", "nợ", "vốn", "doanh", "thu", "chi", "phí", "vay",
+    "tiền", "lợi", "nhuận", "hàng", "tồn", "kho", "đầu", "tư", "phải", "trả",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,6 +65,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--evidence-context", type=Path, default=None)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--question-plan-overrides", type=Path, default=None)
+    parser.add_argument(
+        "--report-segments",
+        type=Path,
+        default=None,
+        help=(
+            "Optional hash-bound normalized report segments. Explicit parent-heading "
+            "plus exact row recovery is enabled only when this sidecar is valid."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -81,6 +109,135 @@ def metric_tokens(value: object) -> list[str]:
     ]
 
 
+def compact_space(value: object) -> str:
+    return " ".join(str(value or "").split())
+
+
+def context_free_metric_variants(item: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return exact-match metric variants with only query-context removed.
+
+    The primary effective metric remains the first and preferred variant.  A
+    second variant is permitted solely to remove an already-resolved ticker, a
+    trailing date/endpoint phrase, or the leading query descriptor ``Số dư``.
+    The latter describes the requested balance rather than changing the line
+    item; it is retained in the primary form and only used when a raw row
+    exactly matches the shorter form.  Accounting modifiers such as ``tổng``
+    and ``ngắn hạn`` are deliberately untouched: removing them could turn a
+    subtotal or a different balance-sheet line into a false positive.
+    """
+    original = compact_space(item.get("effective_metric"))
+    original_tokens = metric_tokens(original)
+    if not original_tokens:
+        return []
+    variants = [
+        {
+            "matched_metric": original,
+            "tokens": original_tokens,
+            "policy": "exact_raw_v2_metric_token_sequence_v1",
+            "removed_context": [],
+        }
+    ]
+    stripped = original
+    removed: list[str] = []
+    for pattern in TRAILING_PERIOD_PATTERNS:
+        match = pattern.search(stripped)
+        if match is not None:
+            removed.append(compact_space(match.group(0)))
+            stripped = stripped[: match.start()]
+            break
+    plan = item.get("question_plan") or {}
+    for ticker in sorted(
+        {str(value).strip() for value in plan.get("tickers") or [] if str(value).strip()},
+        key=len,
+        reverse=True,
+    ):
+        pattern = re.compile(rf"(?<!\w){re.escape(ticker)}(?!\w)", re.IGNORECASE)
+        match = pattern.search(stripped)
+        if match is not None:
+            removed.append(match.group(0))
+            stripped = pattern.sub(" ", stripped)
+    entity_match = TRAILING_PARENT_ENTITY_RE.search(stripped)
+    if entity_match is not None:
+        removed.append(compact_space(entity_match.group(0)))
+        stripped = stripped[: entity_match.start()]
+    balance_match = LEADING_BALANCE_DESCRIPTOR_RE.search(stripped)
+    if balance_match is not None:
+        removed.append(compact_space(balance_match.group(0)))
+        stripped = stripped[balance_match.end() :]
+    stripped = compact_space(stripped)
+    stripped_tokens = metric_tokens(stripped)
+    # A one-token fallback after context removal (for example merely ``tiền``)
+    # would be too broad for automatic source discovery unless it was already
+    # the original metric, which is represented above.
+    if (
+        stripped_tokens
+        and stripped_tokens != original_tokens
+        and len(stripped_tokens) >= 2
+    ):
+        variants.append(
+            {
+                "matched_metric": stripped,
+                "tokens": stripped_tokens,
+                "policy": "exact_raw_v2_metric_context_stripped_token_sequence_v1",
+                "removed_context": removed,
+            }
+        )
+    return variants
+
+
+def contains_token_sequence(tokens: list[str], phrase: list[str]) -> bool:
+    return bool(phrase) and any(
+        tokens[index : index + len(phrase)] == phrase
+        for index in range(max(0, len(tokens) - len(phrase) + 1))
+    )
+
+
+def context_axis_metric_variant(
+    question: str,
+    table: dict[str, Any],
+    row: list[Any],
+    *,
+    original_metric: str,
+) -> dict[str, Any] | None:
+    """Bind a source parent heading and a child row, without inferring values.
+
+    Some note tables encode the requested metric in an explicit parent heading
+    and the requested category in the exact row (for example ``Cho vay khách
+    hàng`` → ``Theo ngành nghề`` → ``Thương mại``).  The source parent and
+    row must each occur as contiguous token sequences in the question.  This
+    is a recovery of source hierarchy, not semantic similarity: any missing or
+    non-exact axis simply returns ``None``.
+    """
+    segment = table.get("report_segment") or {}
+    parent = compact_space(segment.get("source_parent_heading"))
+    child = compact_space(segment.get("source_heading"))
+    label = v4.row_label([str(value) for value in row])
+    parent_tokens = metric_tokens(parent)
+    row_tokens = metric_tokens(label)
+    question_tokens = metric_tokens(question)
+    if (
+        len(parent_tokens) < 2
+        or len(row_tokens) < 2
+        or not (set(parent_tokens) & FINANCIAL_PARENT_TOKENS)
+        or not contains_token_sequence(question_tokens, parent_tokens)
+        or not contains_token_sequence(question_tokens, row_tokens)
+    ):
+        return None
+    return {
+        "original_metric": original_metric,
+        "matched_metric": parent + " | " + label,
+        "tokens": parent_tokens + row_tokens,
+        "policy": "exact_raw_v2_source_parent_and_row_token_sequence_v1",
+        "removed_context": [],
+        "context_evidence": {
+            "source_context_sha256": segment.get("source_context_sha256"),
+            "parent_heading": parent,
+            "source_heading": child,
+            "row_label": label,
+        },
+    }
+
+
 def row_endpoint_compatible(question: str, label: str) -> bool:
     """Reject a row that explicitly names the endpoint opposite the question."""
     requirement = v4.period_requirement(question)
@@ -100,6 +257,7 @@ def base_candidate(
     scope: str,
     row_index: int,
     row: list[Any],
+    metric_variant: dict[str, Any],
     bundle_inclusion: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create an exact-row candidate without inheriting a stale Top-K preview.
@@ -120,6 +278,14 @@ def base_candidate(
         )
         if value
     )
+    context_evidence = metric_variant.get("context_evidence") or {}
+    source_context = compact_space(context_evidence.get("parent_heading"))
+    direct_evidence = "VALUE: " + source_row
+    if source_context:
+        # ``||`` is the V3 evidence-field delimiter.  It lets structure
+        # validation isolate the exact VALUE row while retaining the explicit
+        # source parent as separate context evidence.
+        direct_evidence = "CONTEXT: " + source_context + " || " + direct_evidence
     return {
         "internal_table_uid": uid,
         # Source-discovery is a deterministic recall supplement, not a
@@ -133,8 +299,12 @@ def base_candidate(
         "scope_match": True,
         "year_match": True,
         "report_year": report_year,
+        # This metric is either the original effective metric or a narrowly
+        # audited context-free form.  V4 still proves it against the exact raw
+        # row, and separately binds the stripped period through the header.
+        "effective_metric": metric_variant["matched_metric"],
         "best_row_index": row_index,
-        "direct_evidence": "VALUE: " + source_row,
+        "direct_evidence": direct_evidence,
         # This intentionally replaces any retrieved preview for the same UID.
         # It is a display/audit field only, not a fact used by the reviewer.
         "one_line_summary": (
@@ -147,9 +317,19 @@ def base_candidate(
             "numeric": True,
         },
         "source_discovery": {
-            "policy": "exact_raw_v2_metric_token_sequence_v1",
+            "policy": metric_variant["policy"],
             "row_index": row_index,
             "source_row": [str(value) for value in row],
+            "metric_match": {
+                "original_metric": metric_variant["original_metric"],
+                "matched_metric": metric_variant["matched_metric"],
+                "removed_context": list(metric_variant["removed_context"]),
+            },
+            **(
+                {"context_evidence": context_evidence}
+                if context_evidence
+                else {}
+            ),
             **(
                 {"bundle_table_origin": "direct_metadata_support_v1"}
                 if (bundle_inclusion or {}).get("direct_metadata_support")
@@ -190,11 +370,32 @@ def main() -> None:
     contexts = {
         str(row["internal_table_uid"]): row for row in load_jsonl(context_path)
     }
+    requested_segments = args.report_segments
+    default_segments = bundle / "report_segments_v1.jsonl"
+    segment_path = requested_segments or default_segments
+    segment_manifest: dict[str, Any] | None = None
+    segments: dict[str, dict[str, Any]] = {}
+    if requested_segments is not None and not segment_path.is_file():
+        raise FileNotFoundError(segment_path)
+    if segment_path.is_file():
+        segment_path = segment_path.resolve()
+        segment_manifest = validate_report_segment_sidecar(bundle, segment_path)
+        segments = {
+            str(row.get("internal_table_uid") or ""): row
+            for row in load_jsonl(segment_path)
+        }
+        if "" in segments or len(segments) != int(segment_manifest.get("segment_count") or -1):
+            raise ValueError("Report-segment UID/count contract is invalid")
     tables = {
         uid: {**base, **structures[uid]}
         for uid, base in base_tables.items()
         if uid in structures
     }
+    unknown_segments = sorted(set(segments) - set(tables))
+    if unknown_segments:
+        raise RuntimeError("Report-segment sidecar has an unknown table UID: " + unknown_segments[0])
+    for uid, segment in segments.items():
+        tables[uid]["report_segment"] = segment
     table_by_metadata: dict[tuple[str, int | None, str], list[tuple[str, dict[str, Any]]]] = defaultdict(list)
     for uid, table in tables.items():
         table_by_metadata[
@@ -215,69 +416,141 @@ def main() -> None:
         if family != "direct_lookup":
             continue
         family_counts[family] += 1
-        planned_tokens = metric_tokens(item.get("effective_metric"))
+        metric_variants = context_free_metric_variants(item)
+        variants_by_tokens = {
+            tuple(variant["tokens"]): {
+                **variant,
+                "original_metric": compact_space(item.get("effective_metric")),
+            }
+            for variant in metric_variants
+        }
         matches_by_uid: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        if planned_tokens:
-            tickers = {str(value) for value in plan.get("tickers") or [] if str(value)}
-            years = {int(value) for value in plan.get("years") or [] if isinstance(value, int)}
-            requested_scope = str(plan.get("scope") or "")
-            for (ticker, report_year, scope), indexed_tables in table_by_metadata.items():
-                if tickers and ticker not in tickers:
+        tickers = {str(value) for value in plan.get("tickers") or [] if str(value)}
+        years = {int(value) for value in plan.get("years") or [] if isinstance(value, int)}
+        requested_scope = str(plan.get("scope") or "")
+        indexed_target_tables = [
+            (uid, table)
+            for (ticker, report_year, scope), indexed_tables in table_by_metadata.items()
+            if (not tickers or ticker in tickers)
+            and (not years or report_year in years)
+            and (not requested_scope or scope == requested_scope)
+            for uid, table in indexed_tables
+        ]
+        if variants_by_tokens:
+            for uid, table in indexed_target_tables:
+                context = contexts[uid]
+                if str((context.get("quality") or {}).get("status") or "") != "review_ready":
                     continue
-                if years and report_year not in years:
-                    continue
-                if requested_scope and scope != requested_scope:
-                    continue
-                for uid, table in indexed_tables:
-                    context = contexts[uid]
-                    if str((context.get("quality") or {}).get("status") or "") != "review_ready":
+                for row_index, row in enumerate(table.get("rows") or []):
+                    label = v4.row_label([str(value) for value in row])
+                    metric_variant = variants_by_tokens.get(tuple(metric_tokens(label)))
+                    if (
+                        metric_variant is None
+                        or not row_endpoint_compatible(str(item.get("question") or ""), label)
+                    ):
                         continue
-                    for row_index, row in enumerate(table.get("rows") or []):
-                        label = v4.row_label([str(value) for value in row])
-                        if (
-                            metric_tokens(label) != planned_tokens
-                            or not row_endpoint_compatible(str(item.get("question") or ""), label)
-                        ):
-                            continue
-                        candidate = base_candidate(
-                            uid=uid,
-                            ticker=str(table.get("ticker") or ""),
-                            report_year=table.get("report_year"),
-                            scope=str(table.get("scope") or ""),
-                            row_index=row_index,
-                            row=row,
-                            bundle_inclusion=table.get("bundle_inclusion"),
-                        )
-                        provisional = {
-                            **candidate,
-                            "structure_validation": {
-                                "validated": True,
-                                "row_index": row_index,
-                            },
+                    candidate = base_candidate(
+                        uid=uid,
+                        ticker=str(table.get("ticker") or ""),
+                        report_year=table.get("report_year"),
+                        scope=str(table.get("scope") or ""),
+                        row_index=row_index,
+                        row=row,
+                        metric_variant=metric_variant,
+                        bundle_inclusion=table.get("bundle_inclusion"),
+                    )
+                    provisional = {
+                        **candidate,
+                        "structure_validation": {
+                            "validated": True,
+                            "row_index": row_index,
+                        },
+                    }
+                    assessment = v4.candidate_assessment(
+                        item,
+                        provisional,
+                        table,
+                        context,
+                        token_gate=0.85,
+                        bigram_gate=0.45,
+                    )
+                    binding = assessment.get("value_binding") or {}
+                    identity = assessment.get("raw_metric_identity") or {}
+                    if (
+                        binding.get("status") != "cell_bound"
+                        or not bool((assessment.get("grounding") or {}).get("guard_pass"))
+                        or not bool(identity.get("exact"))
+                    ):
+                        continue
+                    candidate["source_discovery"].update(
+                        {
+                            "raw_row_label": identity.get("raw_row_label"),
+                            "value_binding": binding,
                         }
-                        assessment = v4.candidate_assessment(
-                            item,
-                            provisional,
-                            table,
-                            context,
-                            token_gate=0.85,
-                            bigram_gate=0.45,
-                        )
-                        binding = assessment.get("value_binding") or {}
-                        identity = assessment.get("raw_metric_identity") or {}
-                        if (
-                            binding.get("status") != "cell_bound"
-                            or not bool((assessment.get("grounding") or {}).get("guard_pass"))
-                            or not bool(identity.get("exact"))
-                        ):
-                            continue
-                        candidate["source_discovery"].update(
-                            {
-                                "raw_row_label": identity.get("raw_row_label"),
-                                "value_binding": binding,
-                            }
-                        )
-                        matches_by_uid[uid].append(candidate)
+                    )
+                    matches_by_uid[uid].append(candidate)
+        # Source hierarchy recovery is deliberately a fallback.  An ordinary
+        # exact row label always wins; this path is only for a table whose
+        # metric is explicitly in the parent heading and category in its row.
+        if not matches_by_uid and segments:
+            original_metric = compact_space(item.get("effective_metric"))
+            for uid, table in indexed_target_tables:
+                context = contexts[uid]
+                if str((context.get("quality") or {}).get("status") or "") != "review_ready":
+                    continue
+                for row_index, row in enumerate(table.get("rows") or []):
+                    metric_variant = context_axis_metric_variant(
+                        str(item.get("question") or ""),
+                        table,
+                        row,
+                        original_metric=original_metric,
+                    )
+                    label = v4.row_label([str(value) for value in row])
+                    if (
+                        metric_variant is None
+                        or not row_endpoint_compatible(str(item.get("question") or ""), label)
+                    ):
+                        continue
+                    candidate = base_candidate(
+                        uid=uid,
+                        ticker=str(table.get("ticker") or ""),
+                        report_year=table.get("report_year"),
+                        scope=str(table.get("scope") or ""),
+                        row_index=row_index,
+                        row=row,
+                        metric_variant=metric_variant,
+                        bundle_inclusion=table.get("bundle_inclusion"),
+                    )
+                    provisional = {
+                        **candidate,
+                        "structure_validation": {
+                            "validated": True,
+                            "row_index": row_index,
+                        },
+                    }
+                    assessment = v4.candidate_assessment(
+                        item,
+                        provisional,
+                        table,
+                        context,
+                        token_gate=0.85,
+                        bigram_gate=0.45,
+                    )
+                    binding = assessment.get("value_binding") or {}
+                    identity = assessment.get("raw_metric_identity") or {}
+                    if (
+                        binding.get("status") != "cell_bound"
+                        or not bool((assessment.get("grounding") or {}).get("guard_pass"))
+                        or not bool(identity.get("exact"))
+                    ):
+                        continue
+                    candidate["source_discovery"].update(
+                        {
+                            "raw_row_label": identity.get("raw_row_label"),
+                            "value_binding": binding,
+                        }
+                    )
+                    matches_by_uid[uid].append(candidate)
         candidates: list[dict[str, Any]] = []
         ambiguous_same_table_rows: list[dict[str, Any]] = []
         for uid, matches in sorted(matches_by_uid.items()):
@@ -300,6 +573,13 @@ def main() -> None:
                 "family": family,
                 "effective_question_plan_sha256": canonical_sha256(plan),
                 "effective_metric": item.get("effective_metric"),
+                "metric_variants": [
+                    {
+                        key: variant[key]
+                        for key in ("matched_metric", "policy", "removed_context")
+                    }
+                    for variant in metric_variants
+                ],
                 "candidates": candidates,
                 "ambiguous_same_table_rows": ambiguous_same_table_rows,
             }
@@ -316,6 +596,8 @@ def main() -> None:
         "evidence_context_sha256": sha256_file(context_path),
         "question_plan_override_file": None if override_path is None else override_path.name,
         "question_plan_overrides_sha256": None if override_path is None else sha256_file(override_path),
+        "report_segments_file": None if segment_manifest is None else segment_path.name,
+        "report_segments_sha256": None if segment_manifest is None else sha256_file(segment_path),
         "question_count": len(output_rows),
         "candidate_count": candidate_count,
         "ambiguous_same_table_count": ambiguous_table_count,

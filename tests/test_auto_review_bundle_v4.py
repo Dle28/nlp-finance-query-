@@ -17,6 +17,12 @@ spec.loader.exec_module(mod)
 
 
 class AutonomousReviewV4Tests(unittest.TestCase):
+    def test_direct_evidence_segment_contract_requires_complete_pair(self):
+        with self.assertRaisesRegex(ValueError, "segment manifest contract"):
+            mod.validate_direct_evidence_segment_contract(
+                {"report_segments_file": "report_segments_v1.jsonl"}, None
+            )
+
     def test_hash_bound_segment_unit_is_navigation_metadata_not_a_value(self):
         self.assertEqual(
             mod.raw_source_unit(
@@ -312,7 +318,8 @@ class AutonomousReviewV4Tests(unittest.TestCase):
             "question_plan": {"family": "direct_lookup", "operands": [{"metric": "Tiền"}]},
             # The nondiscriminative source/metadata selectors select this
             # earlier candidate by legacy order; semantic/evidence/challenger
-            # select the raw-label-identical candidate instead.
+            # select the raw-label-identical candidate instead. The related
+            # row must not remain in a direct-answer critic pool.
             "candidates": [
                 candidate("distractor", "Chi phí | 90", rank=1, row_score=0.40),
                 candidate("good", "Tiền | 100", rank=2, row_score=1.0),
@@ -332,7 +339,7 @@ class AutonomousReviewV4Tests(unittest.TestCase):
         self.assertEqual(review["consensus_status"], "machine_calibrated")
         self.assertEqual(
             review["machine_self_review"]["selection_policy"],
-            "strict_raw_metric_identity_tiebreak",
+            "ordinary_multi_view_consensus",
         )
         self.assertTrue(selected["raw_metric_identity"]["exact"])
 
@@ -345,6 +352,40 @@ class AutonomousReviewV4Tests(unittest.TestCase):
             bigram_gate=0.45,
         )
         self.assertFalse(noise["raw_metric_identity"]["exact"])
+
+    def test_raw_metric_identity_accepts_only_current_source_parent_and_exact_row(self):
+        table = {
+            "internal_table_uid": "u_context",
+            "rows": [["", "Năm 2022"], ["Thương mại", "72.917.566"]],
+            "report_segment": {
+                "source_context_sha256": "a" * 64,
+                "source_parent_heading": "9 CHO VAY KHÁCH HÀNG",
+                "source_heading": "9.6 Theo ngành nghề kinh doanh",
+            },
+        }
+        candidate = {
+            "effective_metric": "9 CHO VAY KHÁCH HÀNG | Thương mại",
+            "source_discovery": {
+                "policy": "exact_raw_v2_source_parent_and_row_token_sequence_v1",
+                "context_evidence": {
+                    "source_context_sha256": "a" * 64,
+                    "parent_heading": "9 CHO VAY KHÁCH HÀNG",
+                    "source_heading": "9.6 Theo ngành nghề kinh doanh",
+                    "row_label": "Thương mại",
+                },
+            },
+        }
+        identity = mod.raw_metric_identity({}, candidate, table, {"row_index": 1})
+        self.assertTrue(identity["exact"])
+        self.assertEqual(
+            identity["reason"],
+            "exact_source_parent_heading_and_raw_row_token_sequence",
+        )
+
+        candidate["source_discovery"]["context_evidence"]["parent_heading"] = "9 TIỀN GỬI"
+        self.assertFalse(
+            mod.raw_metric_identity({}, candidate, table, {"row_index": 1})["exact"]
+        )
 
     def test_raw_metric_identity_ignores_only_standalone_note_reference(self):
         table = {
@@ -579,6 +620,47 @@ class AutonomousReviewV4Tests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "plan hash"):
             mod.apply_direct_source_discovery([item], [discovered])
 
+    def test_direct_source_discovery_accepts_only_audited_context_metric_variant(self):
+        plan = {"family": "direct_lookup", "operands": [{"metric": "Quỹ"}]}
+        item = {
+            "id": 100,
+            "question": "Quỹ HT1 cuối năm là bao nhiêu?",
+            "weak_family": "direct_lookup",
+            "question_plan": plan,
+            "candidates": [],
+        }
+        discovered = {
+            "schema_version": 1,
+            "id": 100,
+            "family": "direct_lookup",
+            "effective_question_plan_sha256": mod.canonical_sha256(plan),
+            "effective_metric": "Quỹ khen thưởng HT1 cuối năm",
+            "candidates": [
+                {
+                    "internal_table_uid": "u1",
+                    "candidate_source": "raw_v2_direct_source_discovery",
+                    "best_row_index": 2,
+                    "effective_metric": "Quỹ khen thưởng",
+                    "source_discovery": {
+                        "policy": "exact_raw_v2_metric_context_stripped_token_sequence_v1",
+                        "metric_match": {
+                            "original_metric": "Quỹ khen thưởng HT1 cuối năm",
+                            "matched_metric": "Quỹ khen thưởng",
+                            "removed_context": ["cuối năm", "HT1"],
+                        },
+                    },
+                }
+            ],
+            "ambiguous_same_table_rows": [],
+        }
+        count, ambiguous = mod.apply_direct_source_discovery([item], [discovered])
+        self.assertEqual((count, ambiguous), (1, 0))
+        self.assertEqual(item["candidates"][0]["effective_metric"], "Quỹ khen thưởng")
+
+        discovered["candidates"][0]["source_discovery"]["metric_match"]["removed_context"] = []
+        with self.assertRaisesRegex(ValueError, "context-stripped metric"):
+            mod.apply_direct_source_discovery([item], [discovered])
+
     def test_missing_period_header_cannot_be_autonomous_silver(self):
         table = {
             "internal_table_uid": "u1",
@@ -616,6 +698,146 @@ class AutonomousReviewV4Tests(unittest.TestCase):
             item, {"u1": table}, {"u1": context}, 0.85, 0.45, 0.67, 0.84
         )
 
+        self.assertNotEqual(review["consensus_status"], "machine_calibrated")
+
+    def test_exact_metric_row_excludes_related_row_from_direct_critic_pool(self):
+        def table(uid: str, label: str, value: str) -> dict:
+            return {
+                "internal_table_uid": uid,
+                "rows": [["", "Năm 2023"], [label, value]],
+                "header_row_indices": [0],
+                "cell_provenance": [
+                    [
+                        {
+                            "anchor_row": row,
+                            "anchor_column": column,
+                            "covered_by_span": False,
+                        }
+                        for column in range(2)
+                    ]
+                    for row in range(2)
+                ],
+                "source_provenance": {},
+            }
+
+        def candidate(uid: str, label: str) -> dict:
+            return {
+                "internal_table_uid": uid,
+                "rank": 1,
+                "candidate_source": "retrieved",
+                "metadata_score": 1.0,
+                "ticker_match": True,
+                "scope_match": True,
+                "year_match": True,
+                "report_year": 2023,
+                "best_row_index": 1,
+                "direct_evidence": f"VALUE: {label} | 100",
+                "evidence_features": {
+                    "row_score": 1.0,
+                    "metric_overlap": 1.0,
+                    "question_overlap": 1.0,
+                    "numeric": True,
+                },
+                "structure_validation": {"validated": True, "row_index": 1},
+            }
+
+        exact = table("u_exact", "Tiền", "100")
+        related = table("u_related", "Tổng tiền", "999")
+        item = {
+            "id": 1,
+            "question": "Tiền năm 2023 là bao nhiêu?",
+            "weak_family": "direct_lookup",
+            "effective_metric": "Tiền",
+            "question_plan": {"family": "direct_lookup", "operands": [{"metric": "Tiền"}]},
+            "candidates": [candidate("u_exact", "Tiền"), candidate("u_related", "Tổng tiền")],
+        }
+
+        review, _quarantine = mod.autonomous_review_item(
+            item,
+            {"u_exact": exact, "u_related": related},
+            {
+                "u_exact": build_evidence_context(exact),
+                "u_related": build_evidence_context(related),
+            },
+            0.85,
+            0.45,
+            0.67,
+            0.84,
+        )
+
+        pool = review["machine_self_review"]["candidate_pool"]
+        self.assertEqual(pool["grounding_eligible_count"], 2)
+        self.assertEqual(pool["raw_metric_identity_eligible_count"], 1)
+        self.assertTrue(pool["raw_metric_identity_filter_applied"])
+        self.assertTrue(review["machine_self_review"]["critic_accepts"])
+        self.assertEqual(review["machine_candidate_uid"], "u_exact")
+        self.assertEqual(review["consensus_status"], "machine_calibrated")
+
+    def test_conflicting_exact_metric_rows_remain_in_direct_critic_pool(self):
+        def table(uid: str, value: str) -> dict:
+            return {
+                "internal_table_uid": uid,
+                "rows": [["", "Năm 2023"], ["Tiền", value]],
+                "header_row_indices": [0],
+                "cell_provenance": [
+                    [
+                        {
+                            "anchor_row": row,
+                            "anchor_column": column,
+                            "covered_by_span": False,
+                        }
+                        for column in range(2)
+                    ]
+                    for row in range(2)
+                ],
+                "source_provenance": {},
+            }
+
+        def candidate(uid: str, value: str) -> dict:
+            return {
+                "internal_table_uid": uid,
+                "rank": 1,
+                "candidate_source": "retrieved",
+                "metadata_score": 1.0,
+                "ticker_match": True,
+                "scope_match": True,
+                "year_match": True,
+                "report_year": 2023,
+                "best_row_index": 1,
+                "direct_evidence": f"VALUE: Tiền | {value}",
+                "evidence_features": {
+                    "row_score": 1.0,
+                    "metric_overlap": 1.0,
+                    "question_overlap": 1.0,
+                    "numeric": True,
+                },
+                "structure_validation": {"validated": True, "row_index": 1},
+            }
+
+        first, second = table("u1", "100"), table("u2", "90")
+        item = {
+            "id": 1,
+            "question": "Tiền năm 2023 là bao nhiêu?",
+            "weak_family": "direct_lookup",
+            "effective_metric": "Tiền",
+            "question_plan": {"family": "direct_lookup", "operands": [{"metric": "Tiền"}]},
+            "candidates": [candidate("u1", "100"), candidate("u2", "90")],
+        }
+
+        review, _quarantine = mod.autonomous_review_item(
+            item,
+            {"u1": first, "u2": second},
+            {"u1": build_evidence_context(first), "u2": build_evidence_context(second)},
+            0.85,
+            0.45,
+            0.67,
+            0.84,
+        )
+
+        pool = review["machine_self_review"]["candidate_pool"]
+        self.assertEqual(pool["raw_metric_identity_eligible_count"], 2)
+        self.assertTrue(pool["raw_metric_identity_filter_applied"])
+        self.assertFalse(review["machine_self_review"]["critic_accepts"])
         self.assertNotEqual(review["consensus_status"], "machine_calibrated")
 
 

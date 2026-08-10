@@ -69,6 +69,11 @@ STRICT_FINANCIAL_TOKEN_EXPANSIONS = {
 STRICT_TIEBREAK_MIN_SEMANTIC = 0.90
 STRICT_TIEBREAK_MIN_EVIDENCE = 0.85
 DIRECT_EVIDENCE_SCHEMA_VERSION = 1
+DIRECT_SOURCE_POLICIES = {
+    "exact_raw_v2_metric_token_sequence_v1",
+    "exact_raw_v2_metric_context_stripped_token_sequence_v1",
+    "exact_raw_v2_source_parent_and_row_token_sequence_v1",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -121,12 +126,33 @@ def by_uid(rows: list[dict[str, Any]], name: str) -> dict[str, dict[str, Any]]:
     return output
 
 
+def validate_direct_evidence_segment_contract(
+    manifest: dict[str, Any], report_segments: Path | None
+) -> None:
+    """Bind hierarchy-aware direct discovery to the exact segment sidecar."""
+    segment_file = manifest.get("report_segments_file")
+    segment_hash = manifest.get("report_segments_sha256")
+    if (segment_file is None) != (segment_hash is None):
+        raise ValueError("Direct evidence report-segment manifest contract is incomplete")
+    if segment_file is None:
+        return
+    if report_segments is None:
+        raise ValueError(
+            "Direct evidence sidecar requires its hash-bound report-segment sidecar"
+        )
+    if str(segment_file) != report_segments.name:
+        raise ValueError("Direct evidence manifest names a different report-segment sidecar")
+    if str(segment_hash) != sha256_file(report_segments):
+        raise ValueError("Direct evidence report-segment hash does not match")
+
+
 def validate_direct_evidence_sidecar(
     bundle: Path,
     sidecar: Path,
     context_path: Path,
     *,
     question_plan_overrides: Path | None,
+    report_segments: Path | None,
 ) -> list[dict[str, Any]]:
     """Accept only an immutable-input-bound V2 direct-source sidecar."""
     if sidecar.parent != bundle:
@@ -158,11 +184,20 @@ def validate_direct_evidence_sidecar(
         raise ValueError("Direct evidence sidecar was built with different plan overrides")
     if manifest.get("question_plan_overrides_sha256") != expected_override_hash:
         raise ValueError("Direct evidence plan-override hash does not match")
+    validate_direct_evidence_segment_contract(manifest, report_segments)
     if str(manifest.get("sidecar_sha256") or "") != sha256_file(sidecar):
         raise ValueError("Direct evidence sidecar hash does not match its manifest")
     rows = v3.load_jsonl(sidecar)
     if int(manifest.get("question_count") or -1) != len(rows):
         raise ValueError("Direct evidence sidecar question count does not match manifest")
+    hierarchy_policy = "exact_raw_v2_source_parent_and_row_token_sequence_v1"
+    if manifest.get("report_segments_file") is None and any(
+        str((candidate.get("source_discovery") or {}).get("policy") or "")
+        == hierarchy_policy
+        for row in rows
+        for candidate in row.get("candidates") or []
+    ):
+        raise ValueError("Hierarchy direct evidence requires a hash-bound report segment")
     return rows
 
 
@@ -213,8 +248,49 @@ def apply_direct_source_discovery(
             seen.add(uid)
             if str(candidate.get("candidate_source") or "") != "raw_v2_direct_source_discovery":
                 raise ValueError(f"Q{qid}: direct source candidate has an invalid source marker")
-            if str(source.get("policy") or "") != "exact_raw_v2_metric_token_sequence_v1":
+            policy = str(source.get("policy") or "")
+            if policy not in DIRECT_SOURCE_POLICIES:
                 raise ValueError(f"Q{qid}: direct source candidate has an invalid discovery policy")
+            metric_match = source.get("metric_match") or {}
+            if policy == "exact_raw_v2_metric_context_stripped_token_sequence_v1":
+                original_metric = str(metric_match.get("original_metric") or "").strip()
+                matched_metric = str(metric_match.get("matched_metric") or "").strip()
+                removed_context = metric_match.get("removed_context") or []
+                if (
+                    original_metric != str(discovered.get("effective_metric") or "").strip()
+                    or matched_metric != str(candidate.get("effective_metric") or "").strip()
+                    or not matched_metric
+                    or matched_metric == original_metric
+                    or not isinstance(removed_context, list)
+                    or not removed_context
+                    or not all(isinstance(value, str) and value.strip() for value in removed_context)
+                ):
+                    raise ValueError(
+                        f"Q{qid}: context-stripped metric discovery provenance is invalid"
+                    )
+            if policy == "exact_raw_v2_source_parent_and_row_token_sequence_v1":
+                metric_match = source.get("metric_match") or {}
+                context_evidence = source.get("context_evidence") or {}
+                if (
+                    str(metric_match.get("original_metric") or "").strip()
+                    != str(discovered.get("effective_metric") or "").strip()
+                    or str(metric_match.get("matched_metric") or "").strip()
+                    != str(candidate.get("effective_metric") or "").strip()
+                    or metric_match.get("removed_context") != []
+                    or not all(
+                        isinstance(context_evidence.get(key), str)
+                        and context_evidence.get(key).strip()
+                        for key in (
+                            "source_context_sha256",
+                            "parent_heading",
+                            "source_heading",
+                            "row_label",
+                        )
+                    )
+                ):
+                    raise ValueError(
+                        f"Q{qid}: parent-heading-and-row discovery provenance is invalid"
+                    )
             row_index = candidate.get("best_row_index")
             if not isinstance(row_index, int) or isinstance(row_index, bool):
                 raise ValueError(f"Q{qid}: direct source candidate lacks a raw row index")
@@ -535,6 +611,48 @@ def raw_metric_identity(
     identity_label = RAW_STRUCTURAL_ROW_CODE_RE.sub("", without_note_references)
     row_tokens, row_uses_acronym = identity_tokens(identity_label)
     used_financial_acronym = metric_uses_acronym or row_uses_acronym
+    source_discovery = candidate.get("source_discovery") or {}
+    if (
+        str(source_discovery.get("policy") or "")
+        == "exact_raw_v2_source_parent_and_row_token_sequence_v1"
+    ):
+        context_evidence = source_discovery.get("context_evidence") or {}
+        segment = table.get("report_segment") or {}
+        expected_parent = str(segment.get("source_parent_heading") or "").strip()
+        expected_heading = str(segment.get("source_heading") or "").strip()
+        expected_context_sha = str(segment.get("source_context_sha256") or "").strip()
+        parent_heading = str(context_evidence.get("parent_heading") or "").strip()
+        parent_tokens, parent_uses_acronym = identity_tokens(parent_heading)
+        expected_metric_tokens = parent_tokens + row_tokens
+        exact = bool(expected_metric_tokens) and metric_tokens == expected_metric_tokens
+        source_context_matches = (
+            parent_heading == expected_parent
+            and str(context_evidence.get("source_heading") or "").strip()
+            == expected_heading
+            and str(context_evidence.get("source_context_sha256") or "").strip()
+            == expected_context_sha
+            and str(context_evidence.get("row_label") or "").strip() == label.strip()
+        )
+        exact = exact and source_context_matches
+        return {
+            "exact": exact,
+            "metric": metric,
+            "raw_row_label": label,
+            "identity_row_label": identity_label,
+            "identity_context_parent_heading": parent_heading,
+            "ignored_note_references": ignored_note_references,
+            "ignored_structural_row_code": ignored_structural_row_code,
+            "expanded_financial_acronym": used_financial_acronym or parent_uses_acronym,
+            "metric_tokens": metric_tokens,
+            "parent_tokens": parent_tokens,
+            "row_tokens": row_tokens,
+            "source_context_matches": source_context_matches,
+            "reason": (
+                "exact_source_parent_heading_and_raw_row_token_sequence"
+                if exact
+                else "source_parent_heading_or_raw_row_does_not_match_current_bundle"
+            ),
+        }
     exact = bool(metric_tokens) and metric_tokens == row_tokens
     return {
         "exact": exact,
@@ -706,7 +824,7 @@ def autonomous_review_item(
                 }
             )
 
-    eligible = [
+    grounding_eligible = [
         assessment
         for assessment in assessments
         if assessment["source_ready"]
@@ -714,6 +832,21 @@ def autonomous_review_item(
         and assessment["row_bound"]
         and assessment["grounding"].get("guard_pass")
     ]
+    # For a direct lookup, a raw row whose metric token sequence differs from
+    # the planned metric cannot be a legitimate competing answer.  Leaving it
+    # in the critic pool made an exact source row lose its silver eligibility
+    # to e.g. ``lãi tiền gửi và cho vay`` for a question asking exactly ``lãi
+    # tiền gửi``.  Filter only after all raw/header/period gates have passed,
+    # and only when at least one exact identity exists.  Multiple exact rows
+    # (including conflicting values) deliberately remain together so the
+    # critic still fails closed on a real ambiguity.
+    identity_eligible = [
+        assessment
+        for assessment in grounding_eligible
+        if bool((assessment.get("raw_metric_identity") or {}).get("exact"))
+    ]
+    identity_filter_applied = family == "direct_lookup" and bool(identity_eligible)
+    eligible = identity_eligible if identity_filter_applied else grounding_eligible
     if not eligible:
         return (
             {
@@ -728,9 +861,14 @@ def autonomous_review_item(
                 "consensus_status": "needs_human",
                 "review_reason": "No candidate survived raw-source, canonical-header, exact-row and grounding gates.",
                 "machine_self_review": {
-                    "protocol": AUTONOMOUS_REVIEW_PROTOCOL,
-                    "training_eligible": False,
-                    "candidate_assessments": assessments,
+                "protocol": AUTONOMOUS_REVIEW_PROTOCOL,
+                "training_eligible": False,
+                "candidate_pool": {
+                    "grounding_eligible_count": len(grounding_eligible),
+                    "raw_metric_identity_eligible_count": len(identity_eligible),
+                    "raw_metric_identity_filter_applied": identity_filter_applied,
+                },
+                "candidate_assessments": assessments,
                 },
             },
             quarantine,
@@ -901,6 +1039,11 @@ def autonomous_review_item(
             "machine_self_review": {
                 "protocol": AUTONOMOUS_REVIEW_PROTOCOL,
                 "training_eligible": status == "machine_calibrated",
+                "candidate_pool": {
+                    "grounding_eligible_count": len(grounding_eligible),
+                    "raw_metric_identity_eligible_count": len(identity_eligible),
+                    "raw_metric_identity_filter_applied": identity_filter_applied,
+                },
                 "critic_accepts": critic_accepts,
                 "selection_policy": (
                     "ordinary_multi_view_consensus"
@@ -940,6 +1083,12 @@ def main() -> None:
             v3.load_jsonl(args.question_plan_overrides.resolve()),
         )
     items = apply_plan_overrides(source_items, overrides)
+    requested_segments = args.report_segments
+    default_segments = bundle / "report_segments_v1.jsonl"
+    segment_path = requested_segments or default_segments
+    if requested_segments is not None and not segment_path.is_file():
+        raise FileNotFoundError(segment_path)
+    resolved_segment_path = segment_path.resolve() if segment_path.is_file() else None
     direct_source_candidates = 0
     direct_source_ambiguous = 0
     if args.direct_evidence is not None:
@@ -952,22 +1101,17 @@ def main() -> None:
                 if args.question_plan_overrides is None
                 else args.question_plan_overrides.resolve()
             ),
+            report_segments=resolved_segment_path,
         )
         direct_source_candidates, direct_source_ambiguous = apply_direct_source_discovery(
             items, sidecar_rows
         )
     tables = by_uid(v3.load_jsonl(structure_path), "V2 structures")
     contexts = by_uid(v3.load_jsonl(context_path), "evidence contexts")
-    requested_segments = args.report_segments
-    default_segments = bundle / "report_segments_v1.jsonl"
-    segment_path = requested_segments or default_segments
     segment_count = 0
-    if requested_segments is not None and not segment_path.is_file():
-        raise FileNotFoundError(segment_path)
-    if segment_path.is_file():
-        segment_path = segment_path.resolve()
-        segment_manifest = validate_report_segment_sidecar(bundle, segment_path)
-        segments = by_uid(v3.load_jsonl(segment_path), "report segments")
+    if resolved_segment_path is not None:
+        segment_manifest = validate_report_segment_sidecar(bundle, resolved_segment_path)
+        segments = by_uid(v3.load_jsonl(resolved_segment_path), "report segments")
         if len(segments) != int(segment_manifest.get("segment_count") or -1):
             raise ValueError("Report-segment UID/count contract is invalid")
         unknown_segments = sorted(set(segments) - set(tables))

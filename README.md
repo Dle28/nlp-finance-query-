@@ -439,8 +439,11 @@ Sidecar cũng tách cell chỉ *trông* giống số khỏi cell parse được 
 OCR ghép nhiều nhóm số bị quarantine, không bị tách hay suy diễn.
 `autonomous` cho retrieval/semantic/evidence/metadata/challenger/critic views
 review chéo. Chỉ direct lookup qua toàn bộ source gate **và** có raw value-row
-metric trùng exact planned metric mới là `machine_calibrated` silver; phần còn
-lại vẫn là `machine_provisional` hoặc `needs_human` và bị loại khỏi train.
+metric trùng exact planned metric mới là `machine_calibrated` silver. Ngoại lệ
+duy nhất phải có audit source riêng: row match sau khi bỏ ticker/mốc thời gian/
+`Số dư` ở query, hoặc EvidenceSet gồm **parent heading nguồn + row exact +
+period cell exact** của cùng table. Phần còn lại vẫn là `machine_provisional`
+hoặc `needs_human` và bị loại khỏi train.
 
 `tables_evidence_context_v1.jsonl` và `v2` chỉ được giữ để audit lịch sử;
 không bị ghi đè. Các stage mới mặc định dùng V3 và từ chối manifest không có
@@ -515,6 +518,37 @@ chứng duy nhất.
 (hoặc nhận `--report-segments ...`). Chỉ `unit_labels` đã hash-bound mới có thể
 giúp đọc đơn vị; title/descriptor không tham gia bind row, period, điểm semantic
 hay quyết định `machine_calibrated`.
+
+## Direct EvidenceSet theo ngữ cảnh bảng
+
+`build_direct_evidence_sets.py` giữ exact raw row là đường chính. Khi metric
+trong query dính ticker/mốc cuối kỳ hoặc tiền tố `Số dư`, nó chỉ tạo biến thể
+context-free nếu row nguồn khớp exact token sau khi bỏ đúng các thành phần đó;
+`tổng`, `ngắn hạn`, `nguyên giá` và các modifier kế toán không bị bỏ.
+
+Với table note có cấu trúc `heading cha → heading con → row`, fallback chỉ hợp
+lệ khi parent heading và row đều xuất hiện nguyên chuỗi token trong câu hỏi,
+parent có accounting token, V2 row/cell bind được và hash raw context trùng
+segment. Ví dụ “Cho vay khách hàng → Theo ngành nghề → Thương mại”. Đây là
+EvidenceSet nhiều phần, không phải tóm tắt hay suy diễn số.
+
+Manifest của Direct EvidenceSet cũng khóa filename và SHA-256 của
+`report_segments_v1.jsonl`; V4 từ chối chạy nếu sidecar hierarchy được tạo từ
+một segment khác. Vì vậy tiêu đề dùng để giải thích cấu trúc không thể bị tráo
+giữa các bundle hoặc lần chuẩn hoá.
+
+Sau mỗi vòng, audit readiness thay vì train sớm:
+
+```bash
+python scripts/analyze_autonomous_reviews.py \
+  --machine-reviews ~/ViFinQA_review/evaluation_metadata_support_v1/machine_reviews_1012_hierarchy_v3.jsonl \
+  --baseline-machine-reviews ~/ViFinQA_review/evaluation_metadata_support_v1/machine_reviews_1012_metric_context_v2.jsonl \
+  --output ~/ViFinQA_review/evaluation_metadata_support_v1/autonomous_readiness_hierarchy_v3.json \
+  --min-machine-pairs 200
+```
+
+Audit từ chối mọi `machine_calibrated` thiếu UID, V2 validation, exact identity
+hoặc `cell_bound`, và báo rõ số pair còn thiếu cho gate training.
 
 Từ bundle export mới, với operand controlled đã có đủ `entity`, năm và
 `allowed_table_functions`, exporter còn đưa **raw statement table** tương ứng

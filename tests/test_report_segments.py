@@ -83,6 +83,18 @@ class ReportSegmentTests(unittest.TestCase):
             "6. Các khoản đầu tư tài chính (a) Chứng khoán kinh doanh",
         )
 
+    def test_numbered_child_heading_keeps_explicit_source_parent(self):
+        table = {
+            "internal_table_uid": "u5",
+            "context_before": (
+                "9 CHO VAY KHÁCH HÀNG (tiếp theo) <table><tr><td>x</td></tr></table> "
+                "9.6 Theo ngành nghề kinh doanh"
+            ),
+        }
+        segment = build_report_segment(table, {"canonical_headers": {"columns": []}})
+        self.assertEqual(segment["source_heading"], "9.6 Theo ngành nghề kinh doanh")
+        self.assertEqual(segment["source_parent_heading"], "9 CHO VAY KHÁCH HÀNG")
+
     def test_segment_manifest_rejects_wrong_context_or_training_flag(self):
         with tempfile.TemporaryDirectory() as temporary:
             bundle = Path(temporary)

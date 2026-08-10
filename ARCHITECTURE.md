@@ -156,9 +156,10 @@ Nếu không chứng minh đủ, bảng vẫn `needs_processing`.
 
 Một label máy chỉ vào tập `machine_calibrated`/machine-silver khi selected
 value row, cell và column header khớp raw V2, đồng thời significant token của
-metric khớp exact với raw row. Chỉ mã dòng cấu trúc, tham chiếu thuyết minh độc
-lập và viết tắt `TNDN` có audit transform hẹp; pipeline không bỏ các từ nghiệp
-vụ như `tổng`, `số dư`, `nguyên giá`. `machine_provisional` và `needs_human`
+metric khớp exact với raw row. Hai recovery contract source-bound được audit
+riêng: chỉ bỏ ticker/mốc kỳ/tiền tố query `Số dư`, hoặc ghép parent heading
+nguồn với row raw exact trong cùng table. Pipeline không bỏ các từ nghiệp vụ
+như `tổng`, `ngắn hạn`, `nguyên giá`. `machine_provisional` và `needs_human`
 vẫn là audit/quarantine và không thể vào training.
 
 ---
@@ -747,16 +748,28 @@ provenance `direct_metadata_support_v1` vẫn không xuất hiện trong compact
 Direct EvidenceSet phải tái kiểm tra V2 raw-row identity, canonical header và
 period-bound cell; support chỉ là recall, không phải evidence hay label.
 
+`exact_raw_v2_metric_context_stripped_token_sequence_v1` là contract hẹp cho
+direct lookup: primary metric vẫn được giữ; fallback chỉ xóa ticker đã resolve,
+mốc kỳ ở cuối hoặc tiền tố query `Số dư`, rồi raw row phải exact token. Tất cả
+modifier kế toán còn nguyên. `exact_raw_v2_source_parent_and_row_token_sequence_v1`
+phục hồi note hierarchy khi parent heading nguồn và row child đều là token
+sequence exact của câu hỏi; `source_context_sha256`, parent/child heading, row
+label và V2 cell phải khớp lại tại V4. Nếu có hai row/table exact cho giá trị
+khác nhau, critic giữ ambiguity và không promote.
+
 ## 16.2 Report segment normalization
 
 `report_segments_v1.jsonl` là sidecar điều hướng/hash-bound: một UID bảng có
 raw context digest, heading cùng trang sau khi cắt table/trang trước, function,
 section, period/unit labels và một descriptor ngắn `chức năng · phần · kỳ · đơn
-vị`. Heading bắt đầu tại tên báo cáo, descriptor tuyệt đối không chứa row, công
-thức hay số liệu. Sidecar không sửa OCR, không đổi grid, không suy diễn tiêu đề
-hay số liệu và có
+vị`. Với child heading đánh số, nó còn giữ parent heading nguồn rõ ràng cùng
+trang (không lấy table cell hay title OCR suy đoán). Heading bắt đầu tại tên báo
+cáo, descriptor tuyệt đối không chứa row, công thức hay số liệu. Sidecar không
+sửa OCR, không đổi grid, không suy diễn tiêu đề hay số liệu và có
 `evidence_eligible=false`, `training_eligible=false`. UI ưu tiên heading này
 để giảm nhiễu; mọi decision/evidence vẫn trỏ exact V2 row/cell.
+Manifest Direct EvidenceSet giữ filename/SHA-256 của segment đã dùng; V4 chỉ
+nhận hierarchy EvidenceSet khi hash này trùng chính segment đang attach.
 V4 chỉ có thể đọc `unit_labels` hash-bound để nhận diện đơn vị nguồn, không
 được dùng heading/descriptor để bind metric, period, rank hay promote nhãn.
 
