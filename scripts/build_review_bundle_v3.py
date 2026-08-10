@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from bs4 import BeautifulSoup
+from finance_query.binding import row_label
 from finance_query.config import ProjectPaths
-from finance_query.financial_metrics import infer_formula_spec
+from finance_query.financial_metrics import fold_text, infer_formula_spec
 from finance_query.pipeline import ViFinQARetrievalPipeline, load_config
 
 TOK = re.compile(r"[A-Za-zÀ-ỹ0-9%]+", re.UNICODE)
@@ -19,10 +20,12 @@ START = re.compile(r"đầu\s+năm|(?:^|\D)0?1\s*[/.-]\s*0?1(?:\D|$)", re.I)
 
 FORMULA_BUNDLE_SUPPORT_POLICY = "resolved_operand_entity_year_or_following_statement_function_v1"
 FORMULA_BUNDLE_SUPPORT_CANDIDATE_SOURCE = "formula_metadata_support_v1"
+DIRECT_BUNDLE_SUPPORT_POLICY = "resolved_direct_entity_year_exact_row_phrase_v1"
+DIRECT_BUNDLE_SUPPORT_CANDIDATE_SOURCE = "direct_metadata_support_v1"
 
 
 def args():
-    p=argparse.ArgumentParser(); p.add_argument("--questions",type=Path,default=Path("data/labels/annotation_questions_60.jsonl")); p.add_argument("--config",type=Path,default=Path("configs/annotation_baseline.yaml")); p.add_argument("--output-dir",type=Path,required=True); p.add_argument("--repo-root",type=Path,default=Path.cwd()); p.add_argument("--top-k",type=int,default=20); p.add_argument("--max-review-candidates",type=int,default=40); p.add_argument("--max-formula-support-tables",type=int,default=128,help="Maximum metadata-selected statement tables added per question for formula evidence; they are not review UI candidates."); p.add_argument("--neighbor-radius",type=int,default=1); p.add_argument("--context-recovery-threshold",type=float,default=.45); p.add_argument("--min-asset-count",type=int,default=100000); p.add_argument("--no-dense",action="store_true"); p.add_argument("--force",action="store_true"); p.add_argument("--allow-errors",action="store_true"); return p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument("--questions",type=Path,default=Path("data/labels/annotation_questions_60.jsonl")); p.add_argument("--config",type=Path,default=Path("configs/annotation_baseline.yaml")); p.add_argument("--output-dir",type=Path,required=True); p.add_argument("--repo-root",type=Path,default=Path.cwd()); p.add_argument("--top-k",type=int,default=20); p.add_argument("--max-review-candidates",type=int,default=40); p.add_argument("--max-formula-support-tables",type=int,default=128,help="Maximum metadata-selected statement tables added per question for formula evidence; they are not review UI candidates."); p.add_argument("--max-direct-support-tables",type=int,default=24,help="Maximum exact-row-phrase source tables added per direct lookup; they are not review UI candidates."); p.add_argument("--neighbor-radius",type=int,default=1); p.add_argument("--context-recovery-threshold",type=float,default=.45); p.add_argument("--min-asset-count",type=int,default=100000); p.add_argument("--no-dense",action="store_true"); p.add_argument("--force",action="store_true"); p.add_argument("--allow-errors",action="store_true"); return p.parse_args()
 
 def tokens(s): return {x.casefold() for x in TOK.findall(str(s)) if len(x)>=2 and x.casefold() not in STOP}
 def ov(s,t): return len(tokens(s)&t)/len(t) if t else 0.0
@@ -232,6 +235,71 @@ def add_formula_support_table(cache, support, *, question_id, formula_id):
         formula_support[key]=sorted(set(formula_support.get(key) or [])|set(values))
     return uid,not already_present
 
+
+def _direct_metric_tokens(value):
+    """Return source comparison tokens without using fuzzy semantic similarity."""
+    return [token for token in fold_text(str(value or "")).split() if not token.isdecimal()]
+
+
+def _direct_phrase_matches_metric(metric_tokens, row):
+    """Locate a bounded exact metric phrase in a source row label.
+
+    This is only a recall filter for a UI-invisible table inclusion.  The later
+    V2 direct-evidence builder still requires an exact raw row identity and a
+    canonical period-bound numeric cell before a machine-silver label exists.
+    """
+    if len(metric_tokens)<2: return False
+    label_tokens=_direct_metric_tokens(row_label([str(value) for value in row]))
+    return label_tokens==metric_tokens
+
+
+def _direct_support_asset_rows(store, plan):
+    if str(plan.get("family") or "")!="direct_lookup": return []
+    tickers=sorted({str(value) for value in plan.get("tickers") or [] if str(value)})
+    years=[]
+    for value in plan.get("years") or []:
+        try: years.append(int(value))
+        except (TypeError,ValueError): pass
+    if len(tickers)!=1 or not years: return []
+    conditions=["ticker = ?",f"report_year IN ({','.join('?' for _ in sorted(set(years)))})"]
+    parameters=[tickers[0],*sorted(set(years))]
+    expected_scope=str(plan.get("scope") or "")
+    if expected_scope:
+        conditions.append("scope = ?"); parameters.append(expected_scope)
+    sql=("SELECT * FROM assets WHERE "+" AND ".join(conditions)+" ORDER BY ticker, scope, report_year, document_id, local_ordinal, uid")
+    with store.connect() as connection:
+        return [dict(row) for row in connection.execute(sql,parameters).fetchall()]
+
+
+def direct_support_assets(plan, metric, assets, *, max_tables):
+    """Select source tables containing the literal planned direct metric phrase.
+
+    No score, generated summary, OCR repair or answer is inferred here.  The
+    raw grid is merely made available to the post-export V2 verifier, which
+    decides separately whether its row and period cell are trustworthy.
+    """
+    if max_tables<1: raise ValueError("max_direct_support_tables must be positive")
+    metric_tokens=_direct_metric_tokens(metric)
+    selected=[]
+    for asset in assets:
+        matched_rows=[index for index,row in enumerate(rows(asset)) if _direct_phrase_matches_metric(metric_tokens,row)]
+        if matched_rows:
+            selected.append({"asset":asset,"matching_row_indices":matched_rows})
+    selected.sort(key=lambda value:(str(value["asset"].get("scope") or ""),int(value["asset"].get("report_year") or 0),str(value["asset"].get("document_id") or ""),int(value["asset"].get("local_ordinal") or 0),str(value["asset"].get("uid") or "")))
+    return selected[:max_tables],len(selected)
+
+
+def add_direct_support_table(cache, support, *, question_id, metric):
+    """Record a direct-lookup raw source table without adding a UI candidate."""
+    asset=support["asset"]; uid=str(asset["uid"]); already_present=uid in cache
+    source=cache.setdefault(uid,table(asset))
+    inclusion=source.setdefault("bundle_inclusion",{})
+    direct_support=inclusion.setdefault("direct_metadata_support",{"policy":DIRECT_BUNDLE_SUPPORT_POLICY,"question_ids":[],"effective_metrics":[],"matching_row_indices":[]})
+    direct_support["question_ids"]=sorted(set(direct_support.get("question_ids") or [])|{int(question_id)})
+    direct_support["effective_metrics"]=sorted(set(direct_support.get("effective_metrics") or [])|{str(metric)})
+    direct_support["matching_row_indices"]=sorted(set(direct_support.get("matching_row_indices") or [])|set(support["matching_row_indices"]))
+    return uid,not already_present
+
 def health(root,minn,dense):
     ar=root/"artifacts"; ap=ar/"table_assets.jsonl"; db=ar/"lexical_index.sqlite3"; up=ar/"dense_uids.jsonl"; ip=ar/"dense.index"; na=count(ap); nu=count(up); nl=0
     if db.is_file():
@@ -254,9 +322,9 @@ def main():
         shutil.rmtree(out)
     out.mkdir(parents=True,exist_ok=True); h=health(root,a.min_asset_count,not a.no_dense); print(json.dumps(h,indent=2));
     if not h["valid"]:raise RuntimeError("Artifact integrity gate failed")
-    if a.max_formula_support_tables < 1:
-        raise ValueError("--max-formula-support-tables must be positive")
-    pipe=ViFinQARetrievalPipeline(ProjectPaths.from_repository(root),load_config(cp),use_dense=not a.no_dense); items=[]; cache={}; errs=[]; rec=0; formula_support_tables=0; formula_support_requested=0; formula_support_truncated_questions=0
+    if a.max_formula_support_tables < 1 or a.max_direct_support_tables < 1:
+        raise ValueError("formula/direct metadata support limits must be positive")
+    pipe=ViFinQARetrievalPipeline(ProjectPaths.from_repository(root),load_config(cp),use_dense=not a.no_dense); items=[]; cache={}; errs=[]; rec=0; formula_support_tables=0; formula_support_requested=0; formula_support_truncated_questions=0; direct_support_tables=0; direct_support_requested=0; direct_support_truncated_questions=0
     for pos,it in enumerate(loadj(qp),1):
         qid=int(it["id"]); q=str(it["question"]); fam=it.get("weak_family")
         try:
@@ -285,12 +353,22 @@ def main():
                         # source, but it is not a new immutable bundle table.
                         if was_added: support_added+=1
                     formula_support_tables+=support_added
-            items.append({"id":qid,"question":q,"weak_family":fam,"question_plan":plan,"effective_metric":metric,"retrieval_candidate_count":len(got),"candidate_count":len(cs),"recovered_adjacent_count":sum(c["candidate_source"]!="retrieved" for c in cs),"formula_metadata_support_table_count":support_added,"formula_metadata_support_available":support_available,"candidates":cs}); print(f"[{pos}] Q{qid}: {len(got)} -> {len(cs)} | formula support {support_added}/{support_available}")
+            direct_added=0; direct_available=0
+            direct_pool=_direct_support_asset_rows(pipe.store,plan)
+            if direct_pool:
+                direct_supports,direct_available=direct_support_assets(plan,metric,direct_pool,max_tables=a.max_direct_support_tables)
+                direct_support_requested+=direct_available
+                if direct_available>len(direct_supports): direct_support_truncated_questions+=1
+                for support in direct_supports:
+                    _,was_added=add_direct_support_table(cache,support,question_id=qid,metric=metric)
+                    if was_added: direct_added+=1
+                direct_support_tables+=direct_added
+            items.append({"id":qid,"question":q,"weak_family":fam,"question_plan":plan,"effective_metric":metric,"retrieval_candidate_count":len(got),"candidate_count":len(cs),"recovered_adjacent_count":sum(c["candidate_source"]!="retrieved" for c in cs),"formula_metadata_support_table_count":support_added,"formula_metadata_support_available":support_available,"direct_metadata_support_table_count":direct_added,"direct_metadata_support_available":direct_available,"candidates":cs}); print(f"[{pos}] Q{qid}: {len(got)} -> {len(cs)} | formula {support_added}/{support_available} | direct {direct_added}/{direct_available}")
         except Exception as e:
             errs.append({"id":qid,"question":q,"error":repr(e)}); print("ERROR",qid,e)
             if not a.allow_errors:break
     rp,tp,ep=out/"review_items.jsonl",out/"tables.jsonl",out/"errors.jsonl"; writej(rp,items); writej(tp,cache.values()); writej(ep,errs)
-    man={"schema_version":3,"created_at_utc":datetime.now(timezone.utc).isoformat(),"git_commit":commit,"config_path":str(cp),"config_sha256":sha(cp),"questions_path":str(qp),"questions_sha256":sha(qp),"question_count":len(loadj(qp)),"review_item_count":len(items),"unique_table_count":len(cache),"retrieval_top_k":a.top_k,"max_review_candidates":a.max_review_candidates,"neighbor_radius":a.neighbor_radius,"recovered_adjacent_candidates":rec,"formula_metadata_support":{"enabled":True,"policy":FORMULA_BUNDLE_SUPPORT_POLICY,"candidate_source":FORMULA_BUNDLE_SUPPORT_CANDIDATE_SOURCE,"max_tables_per_question":a.max_formula_support_tables,"new_unique_table_count":formula_support_tables,"matched_table_count_before_per_question_cap":formula_support_requested,"truncated_question_count":formula_support_truncated_questions,"ui_candidate_effect":"not_added_to_review_candidates","answer_eligible":False,"training_eligible":False},"use_dense":not a.no_dense,"artifact_health":h,"error_count":len(errs)}; mp=out/"manifest.json"; mp.write_text(json.dumps(man,ensure_ascii=False,indent=2),encoding="utf-8"); (out/"SHA256SUMS").write_text("".join(f"{sha(out/n)}  {n}\n" for n in ["manifest.json","review_items.jsonl","tables.jsonl","errors.jsonl"]),encoding="utf-8")
+    man={"schema_version":3,"created_at_utc":datetime.now(timezone.utc).isoformat(),"git_commit":commit,"config_path":str(cp),"config_sha256":sha(cp),"questions_path":str(qp),"questions_sha256":sha(qp),"question_count":len(loadj(qp)),"review_item_count":len(items),"unique_table_count":len(cache),"retrieval_top_k":a.top_k,"max_review_candidates":a.max_review_candidates,"neighbor_radius":a.neighbor_radius,"recovered_adjacent_candidates":rec,"formula_metadata_support":{"enabled":True,"policy":FORMULA_BUNDLE_SUPPORT_POLICY,"candidate_source":FORMULA_BUNDLE_SUPPORT_CANDIDATE_SOURCE,"max_tables_per_question":a.max_formula_support_tables,"new_unique_table_count":formula_support_tables,"matched_table_count_before_per_question_cap":formula_support_requested,"truncated_question_count":formula_support_truncated_questions,"ui_candidate_effect":"not_added_to_review_candidates","answer_eligible":False,"training_eligible":False},"direct_metadata_support":{"enabled":True,"policy":DIRECT_BUNDLE_SUPPORT_POLICY,"candidate_source":DIRECT_BUNDLE_SUPPORT_CANDIDATE_SOURCE,"max_tables_per_question":a.max_direct_support_tables,"new_unique_table_count":direct_support_tables,"matched_table_count_before_per_question_cap":direct_support_requested,"truncated_question_count":direct_support_truncated_questions,"ui_candidate_effect":"not_added_to_review_candidates","answer_eligible":False,"training_eligible":False},"use_dense":not a.no_dense,"artifact_health":h,"error_count":len(errs)}; mp=out/"manifest.json"; mp.write_text(json.dumps(man,ensure_ascii=False,indent=2),encoding="utf-8"); (out/"SHA256SUMS").write_text("".join(f"{sha(out/n)}  {n}\n" for n in ["manifest.json","review_items.jsonl","tables.jsonl","errors.jsonl"]),encoding="utf-8")
     ar=out.parent/f"{out.name}.tar.gz"; ar.unlink(missing_ok=True)
     with tarfile.open(ar,"w:gz") as t:
         for n in ["manifest.json","review_items.jsonl","tables.jsonl","errors.jsonl","SHA256SUMS"]:t.add(out/n,arcname=n)

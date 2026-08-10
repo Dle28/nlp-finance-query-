@@ -100,6 +100,7 @@ def base_candidate(
     scope: str,
     row_index: int,
     row: list[Any],
+    bundle_inclusion: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create an exact-row candidate without inheriting a stale Top-K preview.
 
@@ -149,6 +150,11 @@ def base_candidate(
             "policy": "exact_raw_v2_metric_token_sequence_v1",
             "row_index": row_index,
             "source_row": [str(value) for value in row],
+            **(
+                {"bundle_table_origin": "direct_metadata_support_v1"}
+                if (bundle_inclusion or {}).get("direct_metadata_support")
+                else {}
+            ),
         },
     }
 
@@ -240,6 +246,7 @@ def main() -> None:
                             scope=str(table.get("scope") or ""),
                             row_index=row_index,
                             row=row,
+                            bundle_inclusion=table.get("bundle_inclusion"),
                         )
                         provisional = {
                             **candidate,

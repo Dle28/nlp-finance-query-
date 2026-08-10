@@ -251,6 +251,7 @@ subprocess.run(
         '--top-k', '50',
         '--max-review-candidates', '40',
         '--max-formula-support-tables', '128',
+        '--max-direct-support-tables', '24',
         *bundle_dense_args,
     ],
     cwd=REPO_DIR,
@@ -270,6 +271,7 @@ receipt = {
     'review_item_count': bundle_manifest['review_item_count'],
     'unique_table_count': bundle_manifest['unique_table_count'],
     'formula_metadata_support': bundle_manifest['formula_metadata_support'],
+    'direct_metadata_support': bundle_manifest['direct_metadata_support'],
     'artifact_health': bundle_manifest['artifact_health'],
     'use_dense': bundle_manifest['use_dense'],
 }

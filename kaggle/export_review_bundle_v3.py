@@ -35,6 +35,12 @@ def parse_args():
         default=128,
         help="Metadata-selected formula statement tables per question; not shown as review candidates.",
     )
+    p.add_argument(
+        "--max-direct-support-tables",
+        type=int,
+        default=24,
+        help="Exact-row-phrase direct source tables per question; not shown as review candidates.",
+    )
     p.add_argument("--neighbor-radius", type=int, default=1)
     p.add_argument("--force", action="store_true")
     p.add_argument("--no-dense", action="store_true")
@@ -68,6 +74,7 @@ def main():
         "--top-k", str(args.top_k),
         "--max-review-candidates", str(args.max_review_candidates),
         "--max-formula-support-tables", str(args.max_formula_support_tables),
+        "--max-direct-support-tables", str(args.max_direct_support_tables),
         "--neighbor-radius", str(args.neighbor_radius),
     ]
     if args.force:
@@ -98,6 +105,7 @@ def main():
         "archive_sha256": sha256(final_archive),
         "top_k": args.top_k,
         "max_formula_support_tables": args.max_formula_support_tables,
+        "max_direct_support_tables": args.max_direct_support_tables,
         "next_local_steps": [
             "Download vifinqa_review_bundle_v3.tar.gz and its .sha256 file.",
             "Verify SHA256 locally.",

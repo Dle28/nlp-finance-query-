@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import tempfile
 import unittest
@@ -201,6 +202,55 @@ class ReviewBundleV3ProjectionTests(unittest.TestCase):
         marker = cache["support-u1"]["bundle_inclusion"]["formula_metadata_support"]
         self.assertEqual(marker["question_ids"], [10])
         self.assertEqual(marker["operand_ids"], ["assets_2022"])
+
+    def test_direct_support_requires_literal_metric_phrase_not_fuzzy_note_text(self):
+        plan = {"family": "direct_lookup", "tickers": ["ABC"], "years": [2022]}
+
+        def asset(uid, rows):
+            return {
+                "uid": uid,
+                "ticker": "ABC",
+                "scope": "consolidated",
+                "report_year": 2022,
+                "document_id": "ABC_2022",
+                "local_ordinal": 1,
+                "rows_json": json.dumps(rows),
+            }
+
+        selected, available = mod.direct_support_assets(
+            plan,
+            "Chi phí phạt",
+            [
+                asset("exact", [["Chi phí phạt", "100"]]),
+                asset("nearby", [["Chi phí phạt vi phạm hợp đồng", "100"]]),
+                asset("note", [["Thuyết minh về chi phí phạt", "100"]]),
+            ],
+            max_tables=8,
+        )
+        self.assertEqual(available, 1)
+        self.assertEqual([value["asset"]["uid"] for value in selected], ["exact"])
+
+    def test_direct_support_marks_table_as_ui_invisible_provenance(self):
+        asset = {
+            "uid": "direct-u1",
+            "document_id": "ABC_2022",
+            "ticker": "ABC",
+            "scope": "consolidated",
+            "report_year": 2022,
+            "headers_json": "[]",
+            "rows_json": "[]",
+        }
+        cache = {}
+        _, was_added = mod.add_direct_support_table(
+            cache,
+            {"asset": asset, "matching_row_indices": [4]},
+            question_id=11,
+            metric="Chi phí phạt",
+        )
+        self.assertTrue(was_added)
+        marker = cache["direct-u1"]["bundle_inclusion"]["direct_metadata_support"]
+        self.assertEqual(marker["question_ids"], [11])
+        self.assertEqual(marker["matching_row_indices"], [4])
 
 
 if __name__ == "__main__":

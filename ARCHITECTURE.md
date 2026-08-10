@@ -741,6 +741,12 @@ thay đổi rank. Formula discovery mới nhìn thấy các UID này để bind 
 row/cell; thiếu allow-list thì exporter fail closed, không kéo các note OCR
 không giới hạn. Inclusion này không mang answer hay training eligibility.
 
+Với `direct_lookup`, metadata-support chỉ hoạt động khi plan resolve duy nhất
+một ticker và năm, và label raw chứa exact metric token sequence. Bảng có
+provenance `direct_metadata_support_v1` vẫn không xuất hiện trong compact UI.
+Direct EvidenceSet phải tái kiểm tra V2 raw-row identity, canonical header và
+period-bound cell; support chỉ là recall, không phải evidence hay label.
+
 Câu lọc/xếp hạng nhiều giai đoạn được route thành
 `multi_stage_selection_unresolved`, thay vì lấy công thức từ keyword xuất hiện
 đầu tiên. Q369 là controlled canary đầu tiên có stage planner theo entity; mọi

@@ -483,6 +483,13 @@ question plan phải được resolve, report year phải là năm operand hoặ
 cáo kế tiếp. Sau đó operand vẫn phải qua exact raw-row/cell binding; discovery
 không tạo answer hay label nào.
 
+Direct lookup có một nhánh recall tương tự nhưng chặt hơn: khi plan chỉ có một
+entity, năm rõ ràng và một nhãn metric literal khớp đúng một phrase của raw
+row, exporter thêm bảng nguồn với `direct_metadata_support_v1`. Nó cũng không
+vào UI candidate. Sau repair V2, `build_direct_evidence_sets.py` phải xác nhận
+lại raw metric identity, source header và đúng period cell; phrase support chỉ
+tăng recall, tuyệt đối không tự tạo machine-silver.
+
 Từ bundle export mới, với operand controlled đã có đủ `entity`, năm và
 `allowed_table_functions`, exporter còn đưa **raw statement table** tương ứng
 vào `tables.jsonl` qua metadata SQLite có kiểm soát. Các bảng này có
