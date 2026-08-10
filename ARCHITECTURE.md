@@ -15,6 +15,10 @@ và không promote nhãn. Xem [`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md).
 OCR/layout rủi ro nhưng không tự sửa content, làm evidence hay thay rank. Xem
 [`docs/OCR_QUALITY_PROFILE.md`](docs/OCR_QUALITY_PROFILE.md).
 
+`Semantic Catalog V1` là metadata view song song từ V2/V3/Report Segment cho
+vai trò statement/note/schedule và layout; exact evidence vẫn đi trực tiếp từ
+V3 về raw V2. Xem [`docs/SEMANTIC_CATALOG.md`](docs/SEMANTIC_CATALOG.md).
+
 ## 1. Mục tiêu kiến trúc
 
 Hệ thống được thiết kế theo nguyên tắc:

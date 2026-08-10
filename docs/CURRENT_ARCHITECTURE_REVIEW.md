@@ -311,8 +311,14 @@ P1 đã hoàn tất nhánh diagnostic đầu tiên: OCR Quality Profile V1 đọ
 triage `normal`/`review_required`/`quarantine` theo parser warning, canonical
 header coverage và layout number non-nested. Nó không sửa OCR và chưa tác động
 retrieval/evidence/training. Snapshot 29.509 bảng là 24.479/4.854/176. Chi tiết
-tại [`OCR_QUALITY_PROFILE.md`](OCR_QUALITY_PROFILE.md); Semantic Catalog vẫn là
-bước P1 còn lại.
+tại [`OCR_QUALITY_PROFILE.md`](OCR_QUALITY_PROFILE.md).
+
+Semantic Catalog V1 hiện đã hoàn tất phần metadata P1: nó hash-bind V2, V3 và
+Report Segment để phân lớp `primary_financial_statement`, `financial_note`,
+`supporting_schedule`, `governance_or_source_table` hoặc `unclassified`, đồng
+thời giữ statement family/note path/layout. Nó chưa thay retrieval/evidence;
+2.678 bảng mơ hồ được giữ `unclassified` thay vì suy diễn. Contract và snapshot
+tại [`SEMANTIC_CATALOG.md`](SEMANTIC_CATALOG.md).
 
 ## 6. Kiến trúc đích nên đi theo
 

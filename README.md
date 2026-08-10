@@ -83,6 +83,9 @@ QueryProgram shadow-only cho câu hỏi nhiều bước và boundary không tự
 đổi nhãn nằm tại [`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md).
 OCR Quality Profile V1 đo cell/layout có rủi ro từ V2/V3 mà không sửa OCR hay
 đổi evidence/rank nằm tại [`docs/OCR_QUALITY_PROFILE.md`](docs/OCR_QUALITY_PROFILE.md).
+Semantic Catalog V1 nhóm vai trò bảng bằng metadata V2/V3/source heading, chỉ
+cho navigation/evaluation chứ không phải evidence, nằm tại
+[`docs/SEMANTIC_CATALOG.md`](docs/SEMANTIC_CATALOG.md).
 Sửa grid review cục bộ và UI an toàn được mô tả tại
 [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md); bước này không
 rebuild Kaggle, lexical index hay dense index.
