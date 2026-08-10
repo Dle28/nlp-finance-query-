@@ -23,6 +23,15 @@ Mục tiêu trước mắt là tạo retrieval/evidence labels đáng tin cậy.
 candidate ở rank 1, một score dense cao, hoặc một tóm tắt đọc hay **không** là
 bằng chứng và không được tự tạo answer hay `machine_calibrated`.
 
+Nguyên tắc cô đọng của kiến trúc là:
+
+```text
+ML finds.
+Rules verify.
+Provenance decides.
+Executor calculates.
+```
+
 ## 2. Nguyên tắc bất biến
 
 | Nguyên tắc | Ý nghĩa vận hành |
@@ -96,7 +105,8 @@ tìm metric, nhưng original question/plan luôn được giữ để audit. Ove
 **Giới hạn hiện tại:** IR đủ cho direct lookup và một số template công thức,
 nhưng chưa là một DSL hoàn chỉnh cho filter → median → rank → lookup đa stage.
 Những câu ngoài allow-list được định danh `multi_stage_selection_unresolved`,
-đây là hành vi đúng và an toàn.
+đây là hành vi đúng và an toàn. Đây là bottleneck thực sự của các câu nhiều
+entity/kỳ, quan trọng hơn việc tăng độ phức tạp của retriever.
 
 ### Module 3 — Retrieval
 
@@ -193,6 +203,26 @@ Candidate reranker hiện chỉ shadow-rank trong immutable Top-K. Dense fine-tu
 chỉ được mở khi đủ số machine-silver grounded theo threshold; model mới được
 đào tạo song song, không ghi đè FAISS/dense index đang dùng.
 
+### Biên giới của các model ML
+
+Hệ nên giữ bốn component ML độc lập, với vai trò bị giới hạn:
+
+```text
+Question → Planner/Router → Dense E5 → candidate Top-K → Candidate reranker
+                                                          ↓
+                                                deterministic evidence binder
+                                                          ↓
+                                            Logistic confidence calibrator
+```
+
+- Multilingual E5 tiếp tục là dense baseline.
+- Cross-encoder/reranker chỉ ước lượng `P(relevant | question, candidate)` để
+  sắp candidate Top-K; không bao giờ tuyên bố bảng là evidence.
+- Logistic regression phù hợp low-data, dễ kiểm tra feature và calibration.
+- Confidence cao không override exact binding fail. Fine-tune E5 chỉ dùng
+  positive đã grounded và hard-negative có supervision hợp lệ; top-1 retrieval
+  không được tự coi là positive.
+
 ### Module 8 — Execution và submission
 
 **Code:** `execution.py`, `submission.py`, `build_execution_ledger.py`.
@@ -258,7 +288,7 @@ từng artifact family.
 | --- | --- | --- | --- |
 | P0 | Version/file name tích lũy (`v3`, `v31`, `v4`, `ticker_v4`, …) nằm trong nhiều script. | Dễ chọn sai artifact hoặc sai hash dependency. | Tạo `ArtifactRegistry` + typed manifest + dependency DAG; stage nhận logical artifact, không hard-code filename. |
 | P0 | JSON dict tự do xuyên module; contract phân tán trong validator. | Lỗi schema phát hiện muộn, khó refactor. | Định nghĩa model typed cho TableAsset, V2, V3, EvidenceBinding, ReviewDecision và manifest; validate ở mỗi boundary. |
-| P1 | Planner đa stage hiện theo template riêng. | Coverage thấp cho câu filter/rank/ratio phối hợp. | Tạo constrained `QueryProgram` IR: source operands → filter → aggregate → rank → lookup; executor chỉ bật từng operator sau test. |
+| P0.5 | Planner đa stage hiện theo template riêng. | Coverage thấp cho câu filter/rank/ratio phối hợp. | Tạo constrained `QueryProgram` IR: source operands → filter → aggregate → rank → lookup; executor chỉ bật từng operator sau test. |
 | P1 | Table function/section có broad/generic classification. | Note schedule có thể bị hiểu như primary statement hoặc ngược lại. | Tách `document_role`, `statement_family`, `note_hierarchy`, `table_layout`; audit precision theo lớp thay vì một label. |
 | P1 | Chuẩn hóa hiện xử lý layout/context, không đánh giá chất lượng OCR nội dung. | Không thể tự “làm sạch số” một cách đáng tin. | Thêm `OCRQualityProfile`: malformed cell, multi-number, header confidence, row alignment; dùng để quarantine/retrieval weight, không tự sửa số. |
 | P2 | Source completion quét raw report theo nhu cầu. | Chậm khi scale hoặc audit nhiều formula. | Build raw-source catalog read-only theo `(ticker, year, scope, function, normalized row label)` và vẫn revalidate raw hash ở lần dùng. |
@@ -271,10 +301,10 @@ immutable raw layer
   └─ TableAsset
       └─ structural layer (V2)
           └─ evidence-context layer (V3)
-              └─ typed semantic catalog (table role + note hierarchy + OCR quality)
-                  ├─ retrieval index view
-                  ├─ evidence compiler view
-                  └─ reviewer UI view
+              ├─ SemanticCatalog (derived metadata only)
+              ├─ RetrievalView
+              ├─ EvidenceView → raw provenance
+              └─ UIView
 
 QuestionPlan / QueryProgram
   └─ candidate retrieval
@@ -285,19 +315,32 @@ QuestionPlan / QueryProgram
 ```
 
 Điểm then chốt là **một nguồn canonical cho structure/context**, nhưng nhiều
-view theo nhiệm vụ. Không nên đưa text segment đã làm đẹp trở lại `search_text`
-hay dùng làm evidence; cũng không nên để UI tự suy luận semantic khác với
-Evidence compiler.
+view theo nhiệm vụ. `SemanticCatalog` là metadata suy dẫn song song với
+EvidenceView, không phải layer truth đứng giữa V3 và evidence: document role,
+statement family hay note hierarchy có thể classification sai. Evidence binder
+luôn phải đi trực tiếp từ V3 về raw provenance. Không đưa text segment đã làm
+đẹp trở lại `search_text` hay dùng làm evidence; UI cũng không tự suy luận
+semantic khác Evidence compiler.
+
+Ở mức vận hành, tám module chi tiết có thể được thu gọn thành sáu khối:
+
+```text
+Question → QueryProgram Planner
+Raw report → TableAsset → Retrieval (FTS + E5) → Top-K
+Raw report → V2 Structure → V3 Context → Grounding (exact row/column/cell)
+Grounding → Review / Calibration → Training | Execution (Decimal AST)
+```
 
 ## 7. Roadmap khuyến nghị
 
 1. **P0 — registry và typed contracts:** thống nhất logical names, dependency
    manifests, provenance enum và validator chung. Đây là bước giảm rủi ro vận
    hành lớn nhất, không cần GPU/rebuild dense.
-2. **P1 — table semantics + OCR quality:** xây catalog structural trước,
+2. **P0.5 — QueryProgram:** xây IR có giới hạn cho filter → aggregate → rank →
+   lookup; bắt đầu một family có fixtures raw exact và shadow executor. Không
+   tổng quát hoá bằng prompt hay đưa LLM-generated pandas/SQL vào pipeline.
+3. **P1 — table semantics + OCR quality:** xây catalog structural trước,
    đo precision/coverage trên canary; không tự sửa content OCR.
-3. **P1 — QueryProgram cho multi-stage:** bắt đầu một family, có fixtures raw
-   exact và executor shadow; không generalize bằng prompt.
 4. **P2 — evaluator/dashboard:** đo retrieval, grounding, formula completeness
    và provenance riêng; quyết định training từ metric, không từ confidence đơn.
 5. **P3 — training:** chỉ sau khi có đủ label grounded và holdout; train model
@@ -305,7 +348,10 @@ Evidence compiler.
 
 ## 8. Quyết định reviewer
 
-Tôi **không khuyến nghị** rebuild dense index hoặc huấn luyện thêm ở thời điểm
-này chỉ để bù lỗi OCR/context. Ưu tiên đúng là làm source structure, table
-semantics, artifact contracts và evaluation rõ hơn. Khi evidence coverage và
-provenance tốt lên, retriever/reranker mới có supervision không nhiễu để học.
+Tôi **không khuyến nghị** GraphRAG, multi-agent LLM debate, LLM-generated
+SQL/Pandas, end-to-end QA model, fine-tune large LM, OCR correction bằng LLM
+hoặc rebuild FAISS liên tục ở thời điểm này. Những thứ đó làm hệ phức tạp hơn
+nhưng không xử lý bottleneck contract/IR/grounding. Ưu tiên đúng là registry,
+QueryProgram, source structure, semantic metadata và evaluation. Khi evidence
+coverage/provenance tốt lên, retriever/reranker mới có supervision không nhiễu
+để học.

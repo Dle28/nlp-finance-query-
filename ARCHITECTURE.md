@@ -4,6 +4,8 @@
 > artifact contract, technical debt và roadmap, nằm tại
 > [`docs/CURRENT_ARCHITECTURE_REVIEW.md`](docs/CURRENT_ARCHITECTURE_REVIEW.md).
 > Tài liệu này giữ các contract triển khai chi tiết và lịch sử vận hành.
+>
+> **ML finds. Rules verify. Provenance decides. Executor calculates.**
 
 ## 1. Mục tiêu kiến trúc
 
