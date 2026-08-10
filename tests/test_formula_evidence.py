@@ -103,6 +103,29 @@ class FormulaEvidenceTests(unittest.TestCase):
         binding = bind_operand_cell(operand, {"report_year": 2022}, table, context, 1)
         self.assertEqual(binding["status"], "ambiguous_period_column")
 
+    def test_balance_sheet_unique_closing_balance_uses_matching_document_year(self):
+        operand = {"operand_id": "cash", "years": [2022]}
+        table = {
+            "rows": [["Chỉ tiêu", "Mã số", "Số cuối năm", "Số đầu năm"], ["Tiền", "110", "100", "80"]],
+            "cell_provenance": [[{}, {}, {}, {}], [{}, {}, {}, {}]],
+        }
+        context = {
+            "table_function": {"kind": "balance_sheet"},
+            "canonical_headers": {"columns": [
+                {"column_index": 0, "source_label": "Chỉ tiêu"},
+                {"column_index": 1, "source_label": "Mã số"},
+                {"column_index": 2, "source_label": "Số cuối năm VND"},
+                {"column_index": 3, "source_label": "Số đầu năm VND"},
+            ]},
+            "row_profiles": [{"row_index": 1, "role": "data", "numeric_columns": [1, 2, 3]}],
+        }
+        binding = bind_operand_cell(operand, {"report_year": 2022}, table, context, 1)
+        self.assertEqual(binding["status"], "cell_bound")
+        self.assertEqual(binding["column_index"], 2)
+        self.assertEqual(
+            binding["binding_reason"], "balance_sheet_closing_balance_matches_report_year"
+        )
+
     def test_balance_sheet_metric_rejects_subtotal_suffix_but_keeps_code_formula(self):
         operand = {
             "operand_id": "current_assets",
@@ -116,6 +139,7 @@ class FormulaEvidenceTests(unittest.TestCase):
             "rows": [
                 ["Chỉ tiêu", "Mã số", "31/12/2022 VND"],
                 ["Tài sản ngắn hạn(100 = 110 + 130 + 140)", "100", "1000"],
+                ["I. Tiền và các khoản tương đương tiền", "110", "200"],
                 ["Tài sản ngắn hạn khác", "150", "50"],
             ],
             "cell_provenance": [[{}, {}, {}], [{}, {}, {}], [{}, {}, {}]],
@@ -131,8 +155,8 @@ class FormulaEvidenceTests(unittest.TestCase):
                 ]
             },
             "row_profiles": [
-                {"row_index": 1, "role": "data", "numeric_columns": [1, 2]},
-                {"row_index": 2, "role": "data", "numeric_columns": [1, 2]},
+                {"row_index": index, "role": "data", "numeric_columns": [1, 2]}
+                for index in (1, 2, 3)
             ],
         }
         matches = operand_evidence_matches(
@@ -143,6 +167,44 @@ class FormulaEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0]["row_index"], 1)
+
+    def test_balance_sheet_metric_accepts_only_structural_roman_prefix(self):
+        operand = {
+            "operand_id": "cash",
+            "metric_hints": ["tiền và các khoản tương đương tiền"],
+            "years": [2022],
+            "allowed_table_functions": ["balance_sheet"],
+        }
+        table = {
+            "internal_table_uid": "u1",
+            "ticker": "ABC",
+            "rows": [
+                ["Chỉ tiêu", "Mã số", "31/12/2022 VND"],
+                ["I. Tiền và các khoản tương đương tiền", "110", "200"],
+                ["I. Tiền và các khoản tương đương tiền khác", "111", "50"],
+            ],
+            "cell_provenance": [[{}, {}, {}] for _ in range(3)],
+        }
+        context = {
+            "quality": {"status": "review_ready"},
+            "table_function": {"kind": "balance_sheet"},
+            "canonical_headers": {"columns": [
+                {"column_index": 0, "source_label": "Chỉ tiêu"},
+                {"column_index": 1, "source_label": "Mã số"},
+                {"column_index": 2, "source_label": "31/12/2022 VND"},
+            ]},
+            "row_profiles": [
+                {"row_index": index, "role": "data", "numeric_columns": [1, 2]}
+                for index in (1, 2)
+            ],
+        }
+        matches = operand_evidence_matches(
+            operand,
+            {"internal_table_uid": "u1", "ticker": "ABC", "scope": "separate", "report_year": 2022, "rank": 1},
+            table,
+            context,
+        )
+        self.assertEqual([match["row_index"] for match in matches], [1])
 
     def test_income_statement_net_margin_uses_total_not_parent_or_nci_components(self):
         operand = {

@@ -23,6 +23,11 @@ from finance_query.formula_evidence import (  # noqa: E402
     formula_evidence_set,
     source_discovery_candidates,
 )
+from finance_query.report_entities import (  # noqa: E402
+    REPORT_ENTITY_RESOLUTION_POLICY,
+    resolve_question_entity,
+    validate_report_entity_alias_sidecar,
+)
 from finance_query.source_completion import (  # noqa: E402
     source_completion_manifest_path,
     validate_source_completion_sidecar,
@@ -39,6 +44,16 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Canonical context sidecar; defaults to tables_evidence_context_v3.jsonl in the bundle.",
+    )
+    parser.add_argument(
+        "--report-entity-aliases",
+        type=Path,
+        default=None,
+        help=(
+            "Optional source-title-only entity-alias sidecar. It can fill a missing "
+            "formula-plan ticker only when one exact source entity maps to one ticker; "
+            "it never supplies a scope, row, cell, answer, or label."
+        ),
     )
     parser.add_argument(
         "--source-completion-tables",
@@ -123,6 +138,23 @@ def main() -> None:
         for uid, structured_table in structured_tables.items()
     }
     contexts = {str(row["internal_table_uid"]): row for row in load_jsonl(contexts_path)}
+    requested_entity_aliases = args.report_entity_aliases
+    default_entity_aliases = bundle / "report_entity_aliases_v1.jsonl"
+    entity_aliases_path = (
+        (requested_entity_aliases or default_entity_aliases).resolve()
+        if requested_entity_aliases is not None or default_entity_aliases.is_file()
+        else None
+    )
+    entity_aliases: list[dict[str, Any]] = []
+    entity_alias_manifest: dict[str, Any] | None = None
+    if entity_aliases_path is not None:
+        if entity_aliases_path.parent != bundle:
+            raise ValueError("Report-entity aliases must reside directly in the review bundle")
+        entity_alias_manifest = validate_report_entity_alias_sidecar(bundle, entity_aliases_path)
+        entity_aliases = load_jsonl(entity_aliases_path)
+    entity_resolution_enabled = bool(
+        entity_alias_manifest is not None and args.discover_source_operands
+    )
     source_completion_manifest: dict[str, Any] | None = None
     if args.source_completion_tables is not None:
         completion_tables_path = args.source_completion_tables.resolve()
@@ -146,21 +178,38 @@ def main() -> None:
         contexts.update(completion_contexts)
     evidence = []
     source_discovery_candidate_count = 0
+    source_entity_resolution_count = 0
     for item in items:
         formula = infer_formula_spec(str(item.get("question") or ""))
         if formula is None:
             continue
         candidate_item = item
+        plan = item.get("question_plan") or {}
+        entity_resolution = None
+        if not (plan.get("tickers") or []) and entity_resolution_enabled:
+            entity_resolution = resolve_question_entity(item.get("question"), entity_aliases)
+            if entity_resolution is not None:
+                source_entity_resolution_count += 1
+                candidate_item = {
+                    **item,
+                    "question_plan": {**plan, "tickers": [entity_resolution["ticker"]]},
+                    "_formula_source_entity_resolution": entity_resolution,
+                }
         if args.discover_source_operands:
-            discovered = source_discovery_candidates(item, formula, tables)
+            discovered = source_discovery_candidates(candidate_item, formula, tables)
             source_discovery_candidate_count += len(discovered)
             candidate_item = {
-                **item,
-                "candidates": [*(item.get("candidates") or []), *discovered],
+                # Keep a source-title-resolved ticker when one was safely
+                # attached above.  Re-expanding from ``item`` here would
+                # silently discard that metadata and make the exact-row gate
+                # reject every discovered candidate as entity-unresolved.
+                **candidate_item,
+                "candidates": [*(candidate_item.get("candidates") or []), *discovered],
                 "_formula_source_discovery": {
                     "enabled": True,
                     "policy": FORMULA_SOURCE_DISCOVERY_POLICY,
                     "candidate_count": len(discovered),
+                    "entity_resolution": entity_resolution,
                 },
             }
         evidence.append(
@@ -175,7 +224,11 @@ def main() -> None:
     output = args.output.resolve()
     write_jsonl(output, evidence)
     manifest = {
-        "schema_version": 4 if source_completion_manifest is not None else 3 if args.discover_source_operands else 2,
+        "schema_version": (
+            5
+            if entity_resolution_enabled
+            else 4 if source_completion_manifest is not None else 3 if args.discover_source_operands else 2
+        ),
         "bundle_review_items_sha256": sha256_file(bundle / "review_items.jsonl"),
         "bundle_tables_sha256": sha256_file(bundle / "tables.jsonl"),
         "structured_tables_sha256": sha256_file(structured),
@@ -189,6 +242,23 @@ def main() -> None:
             "candidate_count": source_discovery_candidate_count,
             "source_metadata": "immutable_tables_jsonl_uid_join",
         },
+        "source_entity_resolution": (
+            {
+                "enabled": True,
+                "policy": REPORT_ENTITY_RESOLUTION_POLICY,
+                "aliases_file": entity_aliases_path.name,
+                "aliases_sha256": sha256_file(entity_aliases_path),
+                "alias_manifest_sha256": sha256_file(
+                    entity_aliases_path.with_suffix(".manifest.json")
+                ),
+                "resolution_count": source_entity_resolution_count,
+                "scope_inference": False,
+                "evidence_eligible": False,
+                "training_eligible": False,
+            }
+            if entity_resolution_enabled
+            else {"enabled": False}
+        ),
         "source_completion": (
             {
                 "enabled": True,
@@ -218,6 +288,7 @@ def main() -> None:
                 "manifest": str(manifest_path),
                 **manifest["completeness_counts"],
                 "source_discovery_candidates": source_discovery_candidate_count,
+                "source_entity_resolutions": source_entity_resolution_count,
             },
             ensure_ascii=False,
         )

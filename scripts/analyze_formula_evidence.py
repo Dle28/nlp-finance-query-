@@ -25,6 +25,10 @@ if str(ROOT / "src") not in sys.path:
 
 from finance_query.execution import parse_decimal  # noqa: E402
 from finance_query.formula_evidence import FORMULA_SOURCE_DISCOVERY_POLICY  # noqa: E402
+from finance_query.report_entities import (  # noqa: E402
+    REPORT_ENTITY_RESOLUTION_POLICY,
+    validate_report_entity_alias_sidecar,
+)
 from finance_query.source_completion import (  # noqa: E402
     SOURCE_COMPLETION_PROTOCOL,
     source_completion_manifest_path,
@@ -76,8 +80,8 @@ def validate_manifest(bundle: Path, sidecar: Path) -> dict[str, Any]:
         raise FileNotFoundError(f"Formula evidence manifest missing: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     version = int(manifest.get("schema_version") or 0)
-    if version not in {2, 3, 4}:
-        raise ValueError("Formula evidence audit requires schema_version=2, 3, or 4")
+    if version not in {2, 3, 4, 5}:
+        raise ValueError("Formula evidence audit requires schema_version=2, 3, 4, or 5")
     expected = {
         "bundle_review_items_sha256": bundle / "review_items.jsonl",
         "structured_tables_sha256": bundle / "tables_structured_v2.jsonl",
@@ -93,7 +97,11 @@ def validate_manifest(bundle: Path, sidecar: Path) -> dict[str, Any]:
         if not bool(discovery.get("enabled")) or str(discovery.get("policy") or "") != FORMULA_SOURCE_DISCOVERY_POLICY:
             raise ValueError("Formula source-discovery manifest lacks the required policy")
     if version >= 4:
-        source_completion_paths(bundle, manifest)
+        completion = manifest.get("source_completion") or {}
+        if bool(completion.get("enabled")):
+            source_completion_paths(bundle, manifest)
+    if version >= 5:
+        source_entity_alias_paths(bundle, manifest)
     if str(manifest.get("sidecar_sha256") or "") != sha256_file(sidecar):
         raise ValueError("Formula evidence sidecar hash does not match its manifest")
     if str(manifest.get("numeric_binding_policy") or "") != "one_reliable_raw_v2_number_per_operand":
@@ -130,6 +138,27 @@ def source_completion_paths(bundle: Path, manifest: dict[str, Any]) -> tuple[Pat
         raise ValueError("Formula source-completion manifest hash mismatch")
     validate_source_completion_sidecar(bundle, tables_path, contexts_path)
     return tables_path, contexts_path
+
+
+def source_entity_alias_paths(bundle: Path, manifest: dict[str, Any]) -> Path:
+    """Validate optional V5 source-title entity resolver provenance."""
+    resolution = manifest.get("source_entity_resolution") or {}
+    if not bool(resolution.get("enabled")):
+        raise ValueError("Formula evidence V5 manifest must enable source entity resolution")
+    if str(resolution.get("policy") or "") != REPORT_ENTITY_RESOLUTION_POLICY:
+        raise ValueError("Formula source entity resolution policy is invalid")
+    if bool(resolution.get("scope_inference")):
+        raise ValueError("Formula source entity resolver must not infer reporting scope")
+    if bool(resolution.get("evidence_eligible")) or bool(resolution.get("training_eligible")):
+        raise ValueError("Formula source entity resolver cannot be evidence/training eligible")
+    aliases_path = _bundle_local_path(bundle, resolution.get("aliases_file"), "aliases file")
+    if str(resolution.get("aliases_sha256") or "") != sha256_file(aliases_path):
+        raise ValueError("Formula source entity aliases hash mismatch")
+    alias_manifest_path = aliases_path.with_suffix(".manifest.json")
+    if str(resolution.get("alias_manifest_sha256") or "") != sha256_file(alias_manifest_path):
+        raise ValueError("Formula source entity aliases manifest hash mismatch")
+    validate_report_entity_alias_sidecar(bundle, aliases_path)
+    return aliases_path
 
 
 def operand_matches(rows: Iterable[dict[str, Any]]) -> Iterable[tuple[int, str, dict[str, Any]]]:
@@ -299,9 +328,10 @@ def main() -> None:
     bundle, sidecar = args.bundle_dir.resolve(), args.formula_evidence.resolve()
     manifest = validate_manifest(bundle, sidecar)
     rows = load_jsonl(sidecar)
+    completion = manifest.get("source_completion") or {}
     completion_tables, completion_context = (
         source_completion_paths(bundle, manifest)
-        if int(manifest.get("schema_version") or 0) >= 4
+        if bool(completion.get("enabled"))
         else (None, None)
     )
     checked = validate_operand_matches(

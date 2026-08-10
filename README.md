@@ -524,6 +524,37 @@ chứng duy nhất.
 giúp đọc đơn vị; title/descriptor không tham gia bind row, period, điểm semantic
 hay quyết định `machine_calibrated`.
 
+### Alias thực thể từ title zone nguồn
+
+`report_entity_aliases_v1.jsonl` là một sidecar độc lập để xử lý câu công thức
+có nhắc tên doanh nghiệp nhưng question plan chưa có ticker. Nó chỉ nhận tên
+thực thể xuất hiện **ở đầu trang nguồn**, trước marker `Báo cáo`/`Thuyết minh`/
+`Mẫu số`; tên xuất hiện trong thân bảng (khách hàng, nhà cung cấp, bên liên
+quan) bị bỏ. Legal-form như `CTCP` và `Công ty Cổ phần` được chuẩn hoá về cùng
+cách viết, nhưng tên riêng phải khớp nguyên chuỗi token và tất cả alias khớp
+phải dẫn tới đúng một ticker. Scope không bao giờ được suy ra.
+
+```bash
+python scripts/build_report_entity_aliases.py \
+  --bundle-dir ~/ViFinQA_review/run_full_metadata_support_v1 \
+  --output ~/ViFinQA_review/run_full_metadata_support_v1/report_entity_aliases_v1.jsonl
+
+python scripts/build_formula_evidence_sets.py \
+  --bundle-dir ~/ViFinQA_review/run_full_metadata_support_v1 \
+  --evidence-context ~/ViFinQA_review/run_full_metadata_support_v1/tables_evidence_context_v3.jsonl \
+  --report-entity-aliases ~/ViFinQA_review/run_full_metadata_support_v1/report_entity_aliases_v1.jsonl \
+  --discover-source-operands \
+  --output ~/ViFinQA_review/run_full_metadata_support_v1/formula_evidence_sets_context_v3_entity_titles_v1.jsonl
+```
+
+Formula EvidenceSet V5 khóa SHA của sidecar alias và manifest của nó. Alias
+chỉ mở candidate discovery; mỗi operand vẫn cần raw V2 row exact, canonical
+header và một cell nguồn parse được. Với bảng cân đối có header `Số cuối năm`,
+period chỉ được bind khi document metadata có đúng năm operand và có đúng một
+cột numeric nguồn mang header đó. Alias/segment không phải evidence, không
+tạo answer, không đổi `machine_provisional` thành `machine_calibrated` và
+không được dùng để train.
+
 ## Direct EvidenceSet theo ngữ cảnh bảng
 
 `build_direct_evidence_sets.py` giữ exact raw row là đường chính. Khi metric

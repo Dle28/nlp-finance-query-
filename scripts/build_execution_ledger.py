@@ -34,6 +34,10 @@ from finance_query.evidence_context import (  # noqa: E402
     validate_evidence_context_sidecar,
 )
 from finance_query.schemas import DirectBinding  # noqa: E402
+from finance_query.report_entities import (  # noqa: E402
+    REPORT_ENTITY_RESOLUTION_POLICY,
+    validate_report_entity_alias_sidecar,
+)
 from finance_query.table_structure import validate_structure_sidecar  # noqa: E402
 
 
@@ -97,15 +101,21 @@ def validate_formula_evidence_sidecar(
     sidecar: Path,
     context_path: Path,
 ) -> dict[str, Any]:
-    """Accept only the numeric-safe, source-discovery Formula EvidenceSet V3."""
+    """Accept only numeric-safe source-discovery Formula EvidenceSets.
+
+    V5 additionally records a source-title entity resolver.  That resolver is
+    revalidated as navigation metadata and cannot supply numerical evidence or
+    a reporting scope.
+    """
     if sidecar.parent != bundle:
         raise ValueError("Formula evidence sidecar must reside in the review bundle")
     manifest_path = sidecar.with_suffix(".manifest.json")
     if not sidecar.is_file() or not manifest_path.is_file():
         raise FileNotFoundError("Formula evidence sidecar or manifest is missing")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if int(manifest.get("schema_version") or 0) != 3:
-        raise ValueError("Formula execution requires Formula EvidenceSet schema_version=3")
+    version = int(manifest.get("schema_version") or 0)
+    if version not in {3, 5}:
+        raise ValueError("Formula execution requires Formula EvidenceSet schema_version=3 or 5")
     expected = {
         "bundle_review_items_sha256": bundle / "review_items.jsonl",
         "bundle_tables_sha256": bundle / "tables.jsonl",
@@ -122,6 +132,26 @@ def validate_formula_evidence_sidecar(
     discovery = manifest.get("source_discovery") or {}
     if not bool(discovery.get("enabled")):
         raise ValueError("Formula execution requires source-discovery provenance")
+    if version == 5:
+        resolution = manifest.get("source_entity_resolution") or {}
+        if not bool(resolution.get("enabled")):
+            raise ValueError("Formula V5 execution requires source entity resolver provenance")
+        if str(resolution.get("policy") or "") != REPORT_ENTITY_RESOLUTION_POLICY:
+            raise ValueError("Formula V5 source entity resolver policy is invalid")
+        if bool(resolution.get("scope_inference")):
+            raise ValueError("Formula V5 source entity resolver must not infer scope")
+        if bool(resolution.get("evidence_eligible")) or bool(resolution.get("training_eligible")):
+            raise ValueError("Formula V5 source entity resolver cannot be evidence/training eligible")
+        aliases_name = str(resolution.get("aliases_file") or "")
+        if not aliases_name or Path(aliases_name).name != aliases_name:
+            raise ValueError("Formula V5 source entity aliases must be bundle-local")
+        aliases_path = bundle / aliases_name
+        if str(resolution.get("aliases_sha256") or "") != sha256_file(aliases_path):
+            raise ValueError("Formula V5 source entity aliases hash mismatch")
+        aliases_manifest = aliases_path.with_suffix(".manifest.json")
+        if str(resolution.get("alias_manifest_sha256") or "") != sha256_file(aliases_manifest):
+            raise ValueError("Formula V5 source entity alias manifest hash mismatch")
+        validate_report_entity_alias_sidecar(bundle, aliases_path)
     if str(manifest.get("sidecar_sha256") or "") != sha256_file(sidecar):
         raise ValueError("Formula evidence sidecar hash does not match its manifest")
     return manifest
@@ -529,9 +559,15 @@ def _operating_cash_flow_argmax_period_execution(
         int(operand["years"][0]) for operand in operands if operand["operand_id"] == winner
     )
     operation_ast = {"op": "argmax_year", "args": [str(operand["operand_id"]) for operand in operands]}
+    review_status = str((review or {}).get("consensus_status") or "not_used")
     return {
         "id": int(item["id"]),
-        "provenance_status": "machine_calibrated",
+        # Exact operands make this grounded execution, not an autonomous
+        # review label.  Preserve the distinction unless V4 independently
+        # calibrated the same question.
+        "provenance_status": (
+            "machine_calibrated" if review_status == "machine_calibrated" else "machine_provisional"
+        ),
         "execution_status": "grounded",
         "grounding_status": "exact_rows_validated",
         "execution_mode": "exact_formula_period_argmax",
@@ -548,11 +584,12 @@ def _operating_cash_flow_argmax_period_execution(
             for operand_id, binding in bindings.items()
         ],
         "formula_provenance": {
-            "protocol": "formula_evidence_v3_exact_operating_cash_flow_argmax_period",
+            "protocol": "formula_evidence_exact_operating_cash_flow_argmax_period_v1",
             "formula_id": formula["formula_id"],
             "formula_confidence": confidence,
+            "formula_evidence_schema_version": int(manifest.get("schema_version") or 0),
             "scope": next(iter(scopes)),
-            "review_consensus_status": str((review or {}).get("consensus_status") or "not_used"),
+            "review_consensus_status": review_status,
             "review_status_promoted": False,
             "formula_evidence_sha256": manifest["sidecar_sha256"],
             "evidence_context_file": manifest["evidence_context_file"],
@@ -633,9 +670,12 @@ def exact_formula_execution_row(
         return None
     if not computed.is_finite():
         return None
+    review_status = str((review or {}).get("consensus_status") or "not_used")
     return {
         "id": int(item["id"]),
-        "provenance_status": "machine_calibrated",
+        "provenance_status": (
+            "machine_calibrated" if review_status == "machine_calibrated" else "machine_provisional"
+        ),
         "execution_status": "grounded",
         "grounding_status": "exact_rows_validated",
         "execution_mode": "exact_formula",
@@ -651,10 +691,11 @@ def exact_formula_execution_row(
             for operand_id, binding in bindings.items()
         ],
         "formula_provenance": {
-            "protocol": "formula_evidence_v3_exact_percentage_change",
+            "protocol": "formula_evidence_exact_percentage_change_v1",
             "formula_id": formula["formula_id"],
             "formula_confidence": confidence,
-            "review_consensus_status": str((review or {}).get("consensus_status") or "not_used"),
+            "formula_evidence_schema_version": int(manifest.get("schema_version") or 0),
+            "review_consensus_status": review_status,
             "review_status_promoted": False,
             "formula_evidence_sha256": manifest["sidecar_sha256"],
             "evidence_context_file": manifest["evidence_context_file"],

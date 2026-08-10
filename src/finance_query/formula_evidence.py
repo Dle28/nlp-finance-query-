@@ -28,6 +28,9 @@ EQUIVALENT_COMPARATIVE_WITNESS_FORMULAS = {
     "cfo_positive_multiyear_max_net_margin",
 }
 EXECUTION_BACKED_COMPOSED_FORMULAS = {"operating_cash_flow_argmax_period"}
+BALANCE_SHEET_STRUCTURAL_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:[IVXLCDM]+|\d+(?:\.\d+)*)\s*[.)]\s*)+", re.IGNORECASE
+)
 
 
 def _is_balance_sheet_opening_header(label: str, year: int) -> bool:
@@ -71,7 +74,14 @@ def _balance_sheet_row_metric_is_exact(
         row_label([str(value) for value in row]),
     )
     structural = re.match(r"^(.*?)(?:\(.*?\b\d{3}\s*=.*)?$", label)
-    normalized_label = fold_text(structural.group(1) if structural else label)
+    # Roman/numeric section markers (``I.``, ``1.``) are presentation-only
+    # source structure, not part of the account name.  Strip only a marker at
+    # the very start; a suffix such as ``khác`` remains and still fails the
+    # exact-account gate.
+    label_without_formula = structural.group(1) if structural else label
+    normalized_label = fold_text(
+        BALANCE_SHEET_STRUCTURAL_PREFIX_RE.sub("", label_without_formula)
+    )
     return bool(normalized_label) and any(
         fold_text(str(hint)) == normalized_label
         for hint in operand.get("metric_hints") or []
@@ -352,6 +362,31 @@ def bind_operand_cell(
                     "numeric_columns": numeric_columns,
                     "reason": "multiple current-period raw columns",
                 }
+            elif str((context.get("table_function") or {}).get("kind") or "") == "balance_sheet":
+                # Balance sheets commonly use source headers ``Số cuối năm`` /
+                # ``Số đầu năm`` rather than printing the date in every table.
+                # The closing balance is attributable to the document report
+                # year only when that metadata already equals the requested
+                # operand year and exactly one raw canonical numeric column
+                # says ``Số cuối năm``.  We never apply this rule to an
+                # income/cash-flow statement, an adjacent comparative report,
+                # or a duplicate closing column.
+                closing_balance = {
+                    index
+                    for index in columns
+                    if "so cuoi nam" in fold_text(
+                        str(_column_by_index(context, index).get("source_label") or "")
+                    )
+                }
+                if len(closing_balance) == 1:
+                    columns = closing_balance
+                    reason = "balance_sheet_closing_balance_matches_report_year"
+                else:
+                    return {
+                        "status": "unbound_period_column",
+                        "numeric_columns": numeric_columns,
+                        "reason": "operand year has no unique raw canonical closing-balance column",
+                    }
             else:
                 return {
                     "status": "unbound_period_column",

@@ -774,6 +774,22 @@ nhận hierarchy EvidenceSet khi hash này trùng chính segment đang attach.
 V4 chỉ có thể đọc `unit_labels` hash-bound để nhận diện đơn vị nguồn, không
 được dùng heading/descriptor để bind metric, period, rank hay promote nhãn.
 
+`report_entity_aliases_v1.jsonl` là lớp chuẩn hoá riêng cho thực thể báo cáo,
+không phải extension của evidence. Extractor chỉ đọc đầu **trang nguồn hiện
+tại** và chỉ trước marker report; nó yêu cầu masthead bắt đầu bằng legal
+organisation marker. Một tên công ty nằm trong table body (đối tác, bên liên
+quan) không thể thành alias. Alias legal-form được canonicalise hẹp (`CTCP` ↔
+`Công ty Cổ phần`), sau đó câu hỏi phải chứa nguyên sequence tên riêng và mọi
+match phải dẫn tới đúng một ticker. Resolver không suy ra `scope`.
+
+Formula EvidenceSet V5 hash-bind sidecar/manifest alias này. Resolution chỉ
+thêm ticker vào **in-memory discovery plan** cho Formula EvidenceSet; raw
+question plan, retrieval rank, raw V2 grid và review label không bị sửa. Một
+operand chỉ được bind sau exact row/cell gate. Riêng balance sheet header
+`Số cuối năm` có thể bind với năm operand khi và chỉ khi report metadata có
+cùng năm và đúng một raw canonical numeric column mang header đó; `Số đầu năm`,
+comparative report hoặc nhiều cột closing đều fail-closed.
+
 Câu lọc/xếp hạng nhiều giai đoạn được route thành
 `multi_stage_selection_unresolved`, thay vì lấy công thức từ keyword xuất hiện
 đầu tiên. Q369 là controlled canary đầu tiên có stage planner theo entity; mọi
@@ -1039,12 +1055,15 @@ margin. Vì vậy score semantic không thể thay thế exact row/cell, period/
 binding hay critic; nó chỉ có thể trở thành signal hạ mức sau một audit độc
 lập.
 
-Formula EvidenceSet V3 dùng cùng parser fail-closed với execution ledger: một
+Formula EvidenceSet V3/V5 dùng cùng parser fail-closed với execution ledger: một
 cell có nhiều nhóm số OCR ghép không phải numeric operand. `complete` đòi hỏi
 mỗi operand là đúng một raw V2 number có thể parse, ngoài các gate entity,
 scope, period và definition hiện có. Với nhiều entity, một scope không rỗng
 phải chung cho mọi entity và mỗi operand phải có một binding duy nhất trong
 scope đó; collector không ghép các scope riêng hoặc tự chọn giữa các binding.
+Khi V5 xuất ra execution evidence từ một resolver thực thể, record chỉ là
+`machine_provisional` trừ khi autonomous review độc lập đã là
+`machine_calibrated`; `grounded` mô tả raw binding, không phải promotion nhãn.
 
 Khi primary statement có trong raw report nhưng không nằm trong immutable
 bundle, `raw_source_completion_v1` tạo một supplemental sidecar tách biệt sau
