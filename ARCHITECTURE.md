@@ -1,5 +1,10 @@
 # ViFinQA Architecture
 
+> Bản restatement theo góc nhìn architecture reviewer, gồm ranh giới module,
+> artifact contract, technical debt và roadmap, nằm tại
+> [`docs/CURRENT_ARCHITECTURE_REVIEW.md`](docs/CURRENT_ARCHITECTURE_REVIEW.md).
+> Tài liệu này giữ các contract triển khai chi tiết và lịch sử vận hành.
+
 ## 1. Mục tiêu kiến trúc
 
 Hệ thống được thiết kế theo nguyên tắc:
