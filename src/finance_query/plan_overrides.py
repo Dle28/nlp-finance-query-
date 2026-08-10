@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+from copy import deepcopy
 from typing import Any, Iterable, Mapping
 
 from .questions import metric_hint, reported_value_lookup_reason
 
 
 PLAN_OVERRIDE_SCHEMA_VERSION = 1
+SOURCE_TICKER_RE = re.compile(r"[A-Z][A-Z0-9]{1,5}")
 
 
 def canonical_sha256(value: Any) -> str:
@@ -67,6 +70,74 @@ def reported_direct_override(item: Mapping[str, Any]) -> dict[str, Any] | None:
         "question_sha256": canonical_sha256(question),
         "original_question_plan_sha256": canonical_sha256(original),
         "reason_code": reason,
+        "effective_question_plan": effective,
+    }
+
+
+def _exact_source_ticker_tokens(question: str, known_tickers: Iterable[object]) -> list[str]:
+    """Return unambiguous uppercase ticker tokens observed literally in a query.
+
+    The ticker vocabulary comes from the immutable bundle's table metadata.
+    We do not infer a symbol from a fuzzy company-name match: an override is
+    permitted only when exactly one known ticker occurs as its own original
+    uppercase token in the question.
+    """
+    observed: list[str] = []
+    for value in known_tickers:
+        ticker = str(value).strip()
+        if not SOURCE_TICKER_RE.fullmatch(ticker):
+            continue
+        if re.search(rf"(?<![A-Za-z0-9]){re.escape(ticker)}(?![A-Za-z0-9])", question):
+            observed.append(ticker)
+    return sorted(set(observed))
+
+
+def source_ticker_direct_override(
+    item: Mapping[str, Any], known_tickers: Iterable[object]
+) -> dict[str, Any] | None:
+    """Add a source-observed ticker to an otherwise single-row lookup plan.
+
+    This can compose with the existing disclosed-row replan, but it never
+    replaces a resolved ticker, never accepts zero/multiple symbols and leaves
+    the original bundle plan hash as the anchor.  It only narrows the source
+    candidate universe; raw V2 row/header/cell gates are unchanged.
+    """
+    original = item.get("question_plan") or {}
+    reported = reported_direct_override(item)
+    effective = deepcopy(
+        reported["effective_question_plan"] if reported is not None else original
+    )
+    if str(effective.get("family") or "") != "direct_lookup":
+        return reported
+    if [str(value) for value in effective.get("tickers") or [] if str(value)]:
+        return reported
+    operands = effective.get("operands") or []
+    if (
+        len(operands) != 1
+        or str((operands[0] or {}).get("operand_id") or "") != "x0"
+        or (effective.get("operation_ast") or {}).get("op") != "lookup"
+    ):
+        return reported
+    matches = _exact_source_ticker_tokens(str(item.get("question") or ""), known_tickers)
+    if len(matches) != 1:
+        return reported
+
+    ticker = matches[0]
+    effective["tickers"] = [ticker]
+    effective["operands"][0]["ticker"] = ticker
+    warnings = [str(value) for value in effective.get("warnings") or [] if str(value)]
+    warnings.append(
+        "Plan override: resolved exactly one uppercase ticker token from immutable source metadata."
+    )
+    effective["warnings"] = list(dict.fromkeys(warnings))
+    reasons = [] if reported is None else [str(reported["reason_code"])]
+    reasons.append("exact_query_ticker_token_in_bundle_metadata_v1")
+    return {
+        "schema_version": PLAN_OVERRIDE_SCHEMA_VERSION,
+        "id": int(item["id"]),
+        "question_sha256": canonical_sha256(str(item.get("question") or "")),
+        "original_question_plan_sha256": canonical_sha256(original),
+        "reason_code": "+".join(reasons),
         "effective_question_plan": effective,
     }
 

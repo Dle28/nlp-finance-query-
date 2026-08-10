@@ -3,6 +3,7 @@ import unittest
 from finance_query.plan_overrides import (
     apply_plan_overrides,
     reported_direct_override,
+    source_ticker_direct_override,
     validate_plan_overrides,
 )
 
@@ -41,3 +42,28 @@ class PlanOverrideTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "question hash"):
             validate_plan_overrides([changed], [override])
 
+    def test_source_ticker_override_requires_one_exact_metadata_token(self):
+        item = {
+            "id": 7,
+            "question": "Quỹ khen thưởng, phúc lợi của HT1 cuối năm 2019 là bao nhiêu?",
+            "question_plan": {
+                "family": "direct_lookup",
+                "years": [2019],
+                "tickers": [],
+                "scope": None,
+                "operation_ast": {"op": "lookup", "args": ["x0"]},
+                "operands": [{"operand_id": "x0", "metric": "Quỹ khen thưởng"}],
+            },
+        }
+        override = source_ticker_direct_override(item, ["HT1", "PC1"])
+        self.assertIsNotNone(override)
+        assert override is not None
+        self.assertEqual(override["effective_question_plan"]["tickers"], ["HT1"])
+        self.assertEqual(override["effective_question_plan"]["operands"][0]["ticker"], "HT1")
+        self.assertIn("exact_query_ticker_token", override["reason_code"])
+        self.assertIsNone(
+            source_ticker_direct_override(
+                {**item, "question": "HT1 và PC1 có giá trị bao nhiêu?"},
+                ["HT1", "PC1"],
+            )
+        )

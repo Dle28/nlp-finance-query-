@@ -17,7 +17,7 @@ if str(ROOT / "src") not in sys.path:
 
 from finance_query.plan_overrides import (  # noqa: E402
     PLAN_OVERRIDE_SCHEMA_VERSION,
-    reported_direct_override,
+    source_ticker_direct_override,
     validate_plan_overrides,
 )
 
@@ -58,13 +58,30 @@ def main() -> None:
     bundle = args.bundle_dir.resolve()
     items_path = bundle / "review_items.jsonl"
     items = load_jsonl(items_path)
-    overrides = [override for item in items if (override := reported_direct_override(item))]
+    tables_path = bundle / "tables.jsonl"
+    known_tickers = {
+        str(row.get("ticker") or "").strip()
+        for row in load_jsonl(tables_path)
+        if str(row.get("ticker") or "").strip()
+    }
+    overrides = [
+        override
+        for item in items
+        if (override := source_ticker_direct_override(item, known_tickers))
+    ]
     validate_plan_overrides(items, overrides)
     output = args.output.resolve()
     write_jsonl(output, overrides)
     manifest = {
         "schema_version": PLAN_OVERRIDE_SCHEMA_VERSION,
         "bundle_review_items_sha256": sha256_file(items_path),
+        "bundle_tables_sha256": sha256_file(tables_path),
+        "known_source_ticker_count": len(known_tickers),
+        "ticker_resolution_override_count": sum(
+            "exact_query_ticker_token_in_bundle_metadata_v1"
+            in str(override.get("reason_code") or "")
+            for override in overrides
+        ),
         "override_count": len(overrides),
         "sidecar_sha256": sha256_file(output),
     }

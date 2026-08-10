@@ -64,6 +64,35 @@ class DirectEvidenceMetricVariantTests(unittest.TestCase):
         self.assertEqual(len(variants), 1)
         self.assertEqual(variants[0]["matched_metric"], "Tiền VJC cuối năm")
 
+    def test_variant_removes_full_trailing_endpoint_before_generic_year_phrase(self):
+        variants = mod.context_free_metric_variants(
+            {
+                "effective_metric": "Lợi nhuận sau thuế cuối năm 2020",
+                "question_plan": {"years": [2020]},
+            }
+        )
+        self.assertEqual(variants[1]["matched_metric"], "Lợi nhuận sau thuế")
+        self.assertEqual(variants[1]["removed_context"], ["cuối năm 2020"])
+
+    def test_variant_does_not_remove_year_word_from_a_duration_metric(self):
+        variants = mod.context_free_metric_variants(
+            {
+                "effective_metric": "Nợ gốc thuê tài chính kỳ hạn dưới 1 năm",
+                "question_plan": {"years": [2015]},
+            }
+        )
+        self.assertEqual(len(variants), 1)
+
+    def test_variant_removes_leading_endpoint_only_with_a_resolved_year(self):
+        variants = mod.context_free_metric_variants(
+            {
+                "effective_metric": "Số dư đầu năm tiền gửi khách hàng",
+                "question_plan": {"years": [2022]},
+            }
+        )
+        self.assertEqual(variants[1]["matched_metric"], "tiền gửi khách hàng")
+        self.assertEqual(variants[1]["removed_context"], ["Số dư", "đầu năm"])
+
     def test_context_axis_requires_explicit_parent_and_exact_child_row_in_question(self):
         table = {
             "report_segment": {

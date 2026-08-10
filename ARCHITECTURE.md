@@ -750,8 +750,9 @@ period-bound cell; support chỉ là recall, không phải evidence hay label.
 
 `exact_raw_v2_metric_context_stripped_token_sequence_v1` là contract hẹp cho
 direct lookup: primary metric vẫn được giữ; fallback chỉ xóa ticker đã resolve,
-mốc kỳ ở cuối hoặc tiền tố query `Số dư`, rồi raw row phải exact token. Tất cả
-modifier kế toán còn nguyên. `exact_raw_v2_source_parent_and_row_token_sequence_v1`
+mốc kỳ đầy đủ ở cuối hoặc tiền tố query `Số dư`, rồi raw row phải exact token.
+Một token `năm` của metric thời hạn không được xóa. Tất cả modifier kế toán còn
+nguyên. `exact_raw_v2_source_parent_and_row_token_sequence_v1`
 phục hồi note hierarchy khi parent heading nguồn và row child đều là token
 sequence exact của câu hỏi; `source_context_sha256`, parent/child heading, row
 label và V2 cell phải khớp lại tại V4. Nếu có hai row/table exact cho giá trị

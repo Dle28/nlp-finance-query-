@@ -40,19 +40,27 @@ SCHEMA_VERSION = 1
 END_ROW_MARKERS = ("cuối năm", "cuối kỳ")
 START_ROW_MARKERS = ("đầu năm", "đầu kỳ")
 TRAILING_PERIOD_PATTERNS = (
-    re.compile(r"\s+(?:trong\s+)?năm\s+(?:19|20)\d{2}\s*$", re.IGNORECASE),
     re.compile(
         r"\s+(?:vào|tại|đến)?\s*(?:cuối|đầu)\s+(?:năm|kỳ)(?:\s+(?:19|20)\d{2})?\s*$",
         re.IGNORECASE,
     ),
     re.compile(
-        r"\s+(?:đến|tại|vào)\s+ngày\s+\d{1,2}(?:\s*[/.-]|\s+tháng\s+)\d{1,2}(?:\s*[/.-]|\s+năm\s+)(?:19|20)?\d{2}\s*$",
+        r"\s+(?:đến|tại|vào)\s+ngày\s+\d{1,2}(?:\s*[/.-]|\s+tháng\s+)\d{1,2}(?:\s*[/.-]|\s+năm)(?:\s+(?:19|20)\d{2})?\s*$",
         re.IGNORECASE,
     ),
-    re.compile(r"\s+(?:ngày\s+)?31\s+tháng\s+12\s+năm\s*$", re.IGNORECASE),
+    re.compile(
+        r"\s+(?:ngày\s+)?31\s+tháng\s+12\s+năm(?:\s+(?:19|20)\d{2})?\s*$",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\s+(?:trong\s+)?năm\s+(?:19|20)\d{2}\s*$", re.IGNORECASE),
 )
 TRAILING_PARENT_ENTITY_RE = re.compile(r"\s+(?:tại\s+)?công\s+ty\s+mẹ\s*$", re.IGNORECASE)
 LEADING_BALANCE_DESCRIPTOR_RE = re.compile(r"^số\s+dư\s+", re.IGNORECASE)
+LEADING_PERIOD_DESCRIPTOR_RE = re.compile(
+    r"^(?:(?:vào|tại|đến)\s+)?(?:đầu|cuối)\s+(?:năm|kỳ)(?:\s+(?:19|20)\d{2})?\s*,?\s*",
+    re.IGNORECASE,
+)
+LEADING_PUNCTUATION_RE = re.compile(r"^[,;:]\s*")
 FINANCIAL_PARENT_TOKENS = {
     "tài", "sản", "nợ", "vốn", "doanh", "thu", "chi", "phí", "vay",
     "tiền", "lợi", "nhuận", "hàng", "tồn", "kho", "đầu", "tư", "phải", "trả",
@@ -139,13 +147,14 @@ def context_free_metric_variants(item: dict[str, Any]) -> list[dict[str, Any]]:
     ]
     stripped = original
     removed: list[str] = []
+    plan = item.get("question_plan") or {}
+    plan_has_year = any(isinstance(value, int) for value in plan.get("years") or [])
     for pattern in TRAILING_PERIOD_PATTERNS:
         match = pattern.search(stripped)
         if match is not None:
             removed.append(compact_space(match.group(0)))
             stripped = stripped[: match.start()]
             break
-    plan = item.get("question_plan") or {}
     for ticker in sorted(
         {str(value).strip() for value in plan.get("tickers") or [] if str(value).strip()},
         key=len,
@@ -160,10 +169,20 @@ def context_free_metric_variants(item: dict[str, Any]) -> list[dict[str, Any]]:
     if entity_match is not None:
         removed.append(compact_space(entity_match.group(0)))
         stripped = stripped[: entity_match.start()]
+    stripped = LEADING_PUNCTUATION_RE.sub("", stripped)
+    endpoint_match = LEADING_PERIOD_DESCRIPTOR_RE.search(stripped)
+    if endpoint_match is not None and plan_has_year:
+        removed.append(compact_space(endpoint_match.group(0)))
+        stripped = stripped[endpoint_match.end() :]
     balance_match = LEADING_BALANCE_DESCRIPTOR_RE.search(stripped)
     if balance_match is not None:
         removed.append(compact_space(balance_match.group(0)))
         stripped = stripped[balance_match.end() :]
+    stripped = LEADING_PUNCTUATION_RE.sub("", stripped)
+    endpoint_match = LEADING_PERIOD_DESCRIPTOR_RE.search(stripped)
+    if endpoint_match is not None and plan_has_year:
+        removed.append(compact_space(endpoint_match.group(0)))
+        stripped = stripped[endpoint_match.end() :]
     stripped = compact_space(stripped)
     stripped_tokens = metric_tokens(stripped)
     # A one-token fallback after context removal (for example merely ``tiền``)
@@ -171,7 +190,7 @@ def context_free_metric_variants(item: dict[str, Any]) -> list[dict[str, Any]]:
     # the original metric, which is represented above.
     if (
         stripped_tokens
-        and stripped_tokens != original_tokens
+        and stripped.casefold() != original.casefold()
         and len(stripped_tokens) >= 2
     ):
         variants.append(

@@ -469,6 +469,11 @@ replan. Override mang hash câu hỏi + plan gốc và được ghi lại trong 
 nó không thay đổi raw table, không giả mạo `human_verified` và vẫn phải qua
 exact-row/exact-column gate.
 
+Khi plan direct thiếu ticker, cùng script chỉ có thể thêm ticker nếu câu hỏi
+chứa **đúng một** mã viết hoa, tách token, nằm trong metadata của chính bundle.
+Không dùng fuzzy company-name match; không có hoặc có nhiều mã thì plan giữ
+nguyên. Rule này chỉ thu hẹp tập bảng cần xét, không tự tạo evidence/label.
+
 Với câu ratio/temporal có controlled formula, có thể tạo `EvidenceSet` exact
 row riêng để biết operand nào đã đủ hoặc còn thiếu; lệnh này không tính answer
 và không thay đổi label:
@@ -525,6 +530,9 @@ hay quyết định `machine_calibrated`.
 trong query dính ticker/mốc cuối kỳ hoặc tiền tố `Số dư`, nó chỉ tạo biến thể
 context-free nếu row nguồn khớp exact token sau khi bỏ đúng các thành phần đó;
 `tổng`, `ngắn hạn`, `nguyên giá` và các modifier kế toán không bị bỏ.
+Mốc thời gian phải là cụm đầy đủ (`cuối năm 2023`, `31 tháng 12 năm`, ...);
+từ `năm` trong một metric thời hạn như `kỳ hạn dưới 1 năm` không bao giờ bị
+coi là context để xoá.
 
 Với table note có cấu trúc `heading cha → heading con → row`, fallback chỉ hợp
 lệ khi parent heading và row đều xuất hiện nguyên chuỗi token trong câu hỏi,
