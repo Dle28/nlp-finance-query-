@@ -79,6 +79,8 @@ cho người review kiến trúc nằm tại
 ArtifactRegistry workspace-level dùng logical artifact name thay cho routing
 theo filename version nằm tại
 [`docs/ARTIFACT_REGISTRY.md`](docs/ARTIFACT_REGISTRY.md).
+QueryProgram shadow-only cho câu hỏi nhiều bước và boundary không tự trả lời/
+đổi nhãn nằm tại [`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md).
 Sửa grid review cục bộ và UI an toàn được mô tả tại
 [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md); bước này không
 rebuild Kaggle, lexical index hay dense index.

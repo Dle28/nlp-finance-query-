@@ -301,6 +301,12 @@ migration additive: manifest nguồn của từng sidecar vẫn là contract ch�
 đến khi consumer được chuyển từng bước sang logical resolution. Chi tiết tại
 [`ARTIFACT_REGISTRY.md`](ARTIFACT_REGISTRY.md).
 
+P0.5 đã có implementation shadow đầu tiên: `QueryProgram` chỉ compile template
+Quick Ratio → ΔGPM → Interest Coverage và chỉ evaluate operand map đã grounded
+do caller đưa vào. Trên bundle hiện tại, Q369 compile được nhưng bị
+`shadow_blocked` vì Formula EvidenceSet chưa complete/coherent; không answer,
+không label promotion. Contract và lệnh chạy tại [`QUERY_PROGRAM.md`](QUERY_PROGRAM.md).
+
 ## 6. Kiến trúc đích nên đi theo
 
 ```text

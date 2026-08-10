@@ -7,6 +7,10 @@
 >
 > **ML finds. Rules verify. Provenance decides. Executor calculates.**
 
+`QueryProgram` hiện mới ở shadow-only: nó chỉ compile/evaluate fixture operand
+đã grounded cho template allow-listed, không truy xuất OCR, không trả answer
+và không promote nhãn. Xem [`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md).
+
 ## 1. Mục tiêu kiến trúc
 
 Hệ thống được thiết kế theo nguyên tắc:

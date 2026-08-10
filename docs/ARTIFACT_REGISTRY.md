@@ -12,6 +12,7 @@ evidence_context
 report_segment
 direct_evidence
 formula_evidence
+query_program_shadow
 review_decision
 ```
 
@@ -84,3 +85,8 @@ V1 là additive để không phá manifest cũ. Consumer được migrate theo t
 Trong thời gian migration, consumer phải validate cả registry và manifest
 chuyên biệt. Registry không được dùng để promote `machine_calibrated`, bind
 evidence hoặc thay provenance.
+
+`query_program_shadow` phụ thuộc trực tiếp vào `formula_evidence`. Artifact
+này chỉ chứa program/diagnostic shadow; vẫn phải xác thực Formula manifest và
+không thể trở thành answer, execution record hay label promotion chỉ nhờ có
+registry entry.
