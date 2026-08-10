@@ -20,10 +20,16 @@ from finance_query.evidence_context import validate_evidence_context_sidecar  # 
 from finance_query.financial_metrics import infer_formula_spec  # noqa: E402
 from finance_query.formula_evidence import (  # noqa: E402
     FORMULA_SOURCE_DISCOVERY_POLICY,
+    attach_resolved_single_entity,
     formula_evidence_set,
     source_discovery_candidates,
 )
+from finance_query.plan_overrides import (  # noqa: E402
+    EXACT_QUERY_TICKER_TOKEN_POLICY,
+    exact_source_ticker_tokens,
+)
 from finance_query.report_entities import (  # noqa: E402
+    FORMULA_ENTITY_RESOLUTION_POLICY,
     REPORT_ENTITY_RESOLUTION_POLICY,
     resolve_question_entity,
     validate_report_entity_alias_sidecar,
@@ -125,6 +131,11 @@ def main() -> None:
     source_tables = {
         str(row["internal_table_uid"]): row for row in load_jsonl(bundle / "tables.jsonl")
     }
+    known_source_tickers = {
+        str(table.get("ticker") or "").strip()
+        for table in source_tables.values()
+        if str(table.get("ticker") or "").strip()
+    }
     structured_tables = {
         str(row["internal_table_uid"]): row for row in load_jsonl(structured)
     }
@@ -152,9 +163,7 @@ def main() -> None:
             raise ValueError("Report-entity aliases must reside directly in the review bundle")
         entity_alias_manifest = validate_report_entity_alias_sidecar(bundle, entity_aliases_path)
         entity_aliases = load_jsonl(entity_aliases_path)
-    entity_resolution_enabled = bool(
-        entity_alias_manifest is not None and args.discover_source_operands
-    )
+    entity_resolution_enabled = bool(args.discover_source_operands)
     source_completion_manifest: dict[str, Any] | None = None
     if args.source_completion_tables is not None:
         completion_tables_path = args.source_completion_tables.resolve()
@@ -178,7 +187,8 @@ def main() -> None:
         contexts.update(completion_contexts)
     evidence = []
     source_discovery_candidate_count = 0
-    source_entity_resolution_count = 0
+    source_title_resolution_count = 0
+    source_ticker_resolution_count = 0
     for item in items:
         formula = infer_formula_spec(str(item.get("question") or ""))
         if formula is None:
@@ -187,14 +197,34 @@ def main() -> None:
         plan = item.get("question_plan") or {}
         entity_resolution = None
         if not (plan.get("tickers") or []) and entity_resolution_enabled:
-            entity_resolution = resolve_question_entity(item.get("question"), entity_aliases)
+            entity_resolution = (
+                resolve_question_entity(item.get("question"), entity_aliases)
+                if entity_aliases
+                else None
+            )
             if entity_resolution is not None:
-                source_entity_resolution_count += 1
+                source_title_resolution_count += 1
+            else:
+                ticker_tokens = exact_source_ticker_tokens(
+                    str(item.get("question") or ""), known_source_tickers
+                )
+                if len(ticker_tokens) == 1:
+                    ticker = ticker_tokens[0]
+                    entity_resolution = {
+                        "policy": EXACT_QUERY_TICKER_TOKEN_POLICY,
+                        "ticker": ticker,
+                        "matched_source_ticker_tokens": [ticker],
+                        "known_source_ticker_count": len(known_source_tickers),
+                        "scope_inferred": False,
+                    }
+                    source_ticker_resolution_count += 1
+            if entity_resolution is not None:
                 candidate_item = {
                     **item,
                     "question_plan": {**plan, "tickers": [entity_resolution["ticker"]]},
                     "_formula_source_entity_resolution": entity_resolution,
                 }
+                formula = attach_resolved_single_entity(formula, entity_resolution)
         if args.discover_source_operands:
             discovered = source_discovery_candidates(candidate_item, formula, tables)
             source_discovery_candidate_count += len(discovered)
@@ -223,10 +253,14 @@ def main() -> None:
         )
     output = args.output.resolve()
     write_jsonl(output, evidence)
+    source_resolution_configured = bool(
+        args.discover_source_operands
+        and (entity_alias_manifest is not None or source_ticker_resolution_count)
+    )
     manifest = {
         "schema_version": (
-            5
-            if entity_resolution_enabled
+            6
+            if source_resolution_configured
             else 4 if source_completion_manifest is not None else 3 if args.discover_source_operands else 2
         ),
         "bundle_review_items_sha256": sha256_file(bundle / "review_items.jsonl"),
@@ -245,18 +279,33 @@ def main() -> None:
         "source_entity_resolution": (
             {
                 "enabled": True,
-                "policy": REPORT_ENTITY_RESOLUTION_POLICY,
-                "aliases_file": entity_aliases_path.name,
-                "aliases_sha256": sha256_file(entity_aliases_path),
-                "alias_manifest_sha256": sha256_file(
-                    entity_aliases_path.with_suffix(".manifest.json")
-                ),
-                "resolution_count": source_entity_resolution_count,
+                "policy": FORMULA_ENTITY_RESOLUTION_POLICY,
+                "resolution_count": source_title_resolution_count + source_ticker_resolution_count,
                 "scope_inference": False,
                 "evidence_eligible": False,
                 "training_eligible": False,
+                "title_aliases": (
+                    {
+                        "enabled": True,
+                        "policy": REPORT_ENTITY_RESOLUTION_POLICY,
+                        "aliases_file": entity_aliases_path.name,
+                        "aliases_sha256": sha256_file(entity_aliases_path),
+                        "alias_manifest_sha256": sha256_file(
+                            entity_aliases_path.with_suffix(".manifest.json")
+                        ),
+                        "resolution_count": source_title_resolution_count,
+                    }
+                    if entity_alias_manifest is not None
+                    else {"enabled": False}
+                ),
+                "exact_ticker_tokens": {
+                    "enabled": True,
+                    "policy": EXACT_QUERY_TICKER_TOKEN_POLICY,
+                    "known_source_ticker_count": len(known_source_tickers),
+                    "resolution_count": source_ticker_resolution_count,
+                },
             }
-            if entity_resolution_enabled
+            if source_resolution_configured
             else {"enabled": False}
         ),
         "source_completion": (
@@ -288,7 +337,8 @@ def main() -> None:
                 "manifest": str(manifest_path),
                 **manifest["completeness_counts"],
                 "source_discovery_candidates": source_discovery_candidate_count,
-                "source_entity_resolutions": source_entity_resolution_count,
+                "source_title_entity_resolutions": source_title_resolution_count,
+                "source_exact_ticker_resolutions": source_ticker_resolution_count,
             },
             ensure_ascii=False,
         )

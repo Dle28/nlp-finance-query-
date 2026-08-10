@@ -6,12 +6,26 @@ from finance_query.source_completion import (
     operand_requires_scope_gap_probe,
     revalidate_raw_source_candidate,
     raw_source_candidates,
+    source_audit_blockers,
     source_completion_manifest_path,
     source_report_index,
 )
 
 
 class SourceCompletionTests(unittest.TestCase):
+    def test_source_audit_blockers_identify_missing_contract_not_data_absence(self):
+        self.assertEqual(
+            source_audit_blockers(
+                {
+                    "entity": "PC1",
+                    "years": [2020],
+                    "metric_hints": ["chi phí sản xuất kinh doanh dở dang"],
+                    "allowed_table_functions": [],
+                }
+            ),
+            ["allowed_table_functions_missing"],
+        )
+
     def test_scope_gap_probe_is_limited_to_explicit_staged_multi_entity_programs(self):
         evidence = {
             "formula": {

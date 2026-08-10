@@ -51,6 +51,8 @@ TOKEN_RE = re.compile(r"[\w%]+", re.UNICODE)
 NUMERIC_RE = re.compile(r"^[\s()\-+\d.,%/]+$")
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 PAGE_MARKER_RE = re.compile(r"=====\s*PAGE\s*\d+\s*=====", re.IGNORECASE)
+SOURCE_GRID_V2_LABEL = "Bảng nguồn đã tái dựng (V2)"
+EVIDENCE_CONTEXT_V3_LABEL = "Ngữ cảnh evidence chuẩn hóa (V3)"
 
 STOPWORDS = {
     "cua", "của", "la", "là", "bao", "nhieu", "nhiêu", "nam", "năm",
@@ -71,7 +73,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help=(
-            "Optional V2 table-structure sidecar. Defaults to "
+            "Optional Source Grid V2 sidecar (Bảng nguồn đã tái dựng). Defaults to "
             "<bundle-dir>/tables_structured_v2.jsonl when present."
         ),
     )
@@ -753,14 +755,14 @@ def aligned_table_html(
         structure_note = (
             "<div style='padding:7px 10px;margin:4px 0 8px;background:#eef8f0;"
             "border-left:4px solid #2f855a;font-size:12px'>"
-            "<b>Grid V2 từ raw HTML.</b> Ô trống được giữ nguyên vị trí; merged cells được mở rộng."
+            f"<b>{SOURCE_GRID_V2_LABEL} từ raw HTML.</b> Ô trống được giữ nguyên vị trí; merged cells được mở rộng."
             "</div>"
         )
     else:
         structure_note = (
             "<div style='padding:7px 10px;margin:4px 0 8px;background:#fff4e5;"
             "border-left:4px solid #c77d20;font-size:12px'>"
-            "<b>Legacy grid.</b> Chưa có sidecar V2; không dùng bảng này để xác nhận vị trí số liệu."
+            f"<b>Legacy grid.</b> Chưa có {SOURCE_GRID_V2_LABEL}; không dùng bảng này để xác nhận vị trí số liệu."
             "</div>"
         )
     if "header_not_detected" in flags:
@@ -1121,7 +1123,7 @@ class BundleReviewer:
         quality = table.get("structure_quality") or {}
         structure_status = str(quality.get("status") or "legacy_bundle_rows")
         structure_label = (
-            "Grid V2 từ raw HTML"
+            f"{SOURCE_GRID_V2_LABEL} từ raw HTML"
             if structure_status == "reconstructed_from_raw_html"
             else "Legacy grid — chưa xác minh căn cột"
         )
@@ -1185,7 +1187,7 @@ class BundleReviewer:
             f"<div style='padding:6px 8px;background:{assessment_color[0]};border-left:4px solid {assessment_color[1]};'>"
             f"<b>{html.escape(assessment['label'])}:</b> {html.escape(assessment['reason'])}</div>"
             f"{operand_text}"
-            f"<div style='margin-top:7px;color:#667085'>{html.escape(structure_label)} · {meta}</div>"
+            f"<div style='margin-top:7px;color:#667085'>{html.escape(structure_label)} · {EVIDENCE_CONTEXT_V3_LABEL}: header/kỳ/đơn vị · {meta}</div>"
             f"{trace_detail}"
             "</div>"
         )
@@ -1402,14 +1404,14 @@ class BundleReviewer:
         else:
             self.accept_assistant.description = "Accept Codex →"
         refresh_note = (
-            " · <b style='color:#a15c00'>label cũ cần xác minh lại trên grid V2</b>"
+            f" · <b style='color:#a15c00'>label cũ cần xác minh lại trên {SOURCE_GRID_V2_LABEL}</b>"
             if annotation_needs_structure_refresh(existing)
             else ""
         )
         self.status.value = (
             f"<span style='color:#666'>Saved status: "
             f"{html.escape(str(existing.get('annotation_status', 'not reviewed')))} · "
-            f"Grid V2: {self.structure_count}/{len(self.tables)}{refresh_note}</span>"
+            f"{SOURCE_GRID_V2_LABEL}: {self.structure_count}/{len(self.tables)}{refresh_note}</span>"
         )
 
     def _persist(
@@ -1551,9 +1553,9 @@ def main() -> None:
     display(reviewer.root)
     print("Local static review only — no dense model/index is loaded.")
     if reviewer.structure_path:
-        print("Using V2 raw-HTML table structure:", reviewer.structure_path)
+        print(f"Using {SOURCE_GRID_V2_LABEL}:", reviewer.structure_path)
     else:
-        print("No V2 table structure found — values remain unsafe for column-level review.")
+        print(f"No {SOURCE_GRID_V2_LABEL} found — values remain unsafe for column-level review.")
     print("Human labels persist atomically to:", args.output)
 
 

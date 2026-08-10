@@ -19,6 +19,7 @@ from .questions import metric_hint, reported_value_lookup_reason
 
 PLAN_OVERRIDE_SCHEMA_VERSION = 1
 SOURCE_TICKER_RE = re.compile(r"[A-Z][A-Z0-9]{1,5}")
+EXACT_QUERY_TICKER_TOKEN_POLICY = "exact_query_ticker_token_in_bundle_metadata_v1"
 
 
 def canonical_sha256(value: Any) -> str:
@@ -74,7 +75,7 @@ def reported_direct_override(item: Mapping[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _exact_source_ticker_tokens(question: str, known_tickers: Iterable[object]) -> list[str]:
+def exact_source_ticker_tokens(question: str, known_tickers: Iterable[object]) -> list[str]:
     """Return unambiguous uppercase ticker tokens observed literally in a query.
 
     The ticker vocabulary comes from the immutable bundle's table metadata.
@@ -118,7 +119,7 @@ def source_ticker_direct_override(
         or (effective.get("operation_ast") or {}).get("op") != "lookup"
     ):
         return reported
-    matches = _exact_source_ticker_tokens(str(item.get("question") or ""), known_tickers)
+    matches = exact_source_ticker_tokens(str(item.get("question") or ""), known_tickers)
     if len(matches) != 1:
         return reported
 
@@ -131,7 +132,7 @@ def source_ticker_direct_override(
     )
     effective["warnings"] = list(dict.fromkeys(warnings))
     reasons = [] if reported is None else [str(reported["reason_code"])]
-    reasons.append("exact_query_ticker_token_in_bundle_metadata_v1")
+    reasons.append(EXACT_QUERY_TICKER_TOKEN_POLICY)
     return {
         "schema_version": PLAN_OVERRIDE_SCHEMA_VERSION,
         "id": int(item["id"]),

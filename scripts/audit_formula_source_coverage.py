@@ -26,6 +26,7 @@ from finance_query.source_completion import (  # noqa: E402
     operand_is_missing,
     operand_requires_scope_gap_probe,
     raw_source_candidates,
+    source_audit_blockers,
     source_report_index,
 )
 
@@ -131,6 +132,7 @@ def main() -> None:
                     "operand": operand,
                     "audit_trigger": "missing_operand" if is_missing else "scope_gap_probe",
                     "audit_finding": finding,
+                    "audit_blockers": source_audit_blockers(operand),
                     "raw_source_candidates": candidates,
                     "audit_only": True,
                     "promotion_allowed": False,

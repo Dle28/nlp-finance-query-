@@ -78,6 +78,26 @@ def _row_matches_metric(row: Iterable[Any], metric_hints: Iterable[str]) -> bool
     return any(fold_text(hint) in folded_row for hint in metric_hints if fold_text(hint))
 
 
+def source_audit_blockers(operand: Mapping[str, Any]) -> list[str]:
+    """Explain why a missing operand cannot yet enter raw-source audit.
+
+    This is diagnostic metadata only.  It does not relax the source-completion
+    gate: a missing entity, year, literal metric, or structural table-function
+    allow-list still prevents raw scanning from becoming evidence.
+    """
+    blockers: list[str] = []
+    if not str(operand.get("entity") or "").strip():
+        blockers.append("entity_not_resolved")
+    years = [year for year in operand.get("years") or [] if str(year).isdigit()]
+    if len(years) != 1:
+        blockers.append("exactly_one_operand_year_required")
+    if not any(str(value).strip() for value in operand.get("metric_hints") or []):
+        blockers.append("literal_metric_hint_missing")
+    if not any(str(value).strip() for value in operand.get("allowed_table_functions") or []):
+        blockers.append("allowed_table_functions_missing")
+    return blockers
+
+
 def raw_source_candidates(
     operand: Mapping[str, Any],
     *,
@@ -92,13 +112,14 @@ def raw_source_candidates(
     operand allow-list and whose *row* contains an exact metric hint are
     returned.  No fuzzy recovery or label rewriting is performed.
     """
+    blockers = source_audit_blockers(operand)
     entity = str(operand.get("entity") or "").strip()
     years = [int(year) for year in operand.get("years") or [] if str(year).isdigit()]
     metric_hints = [str(value) for value in operand.get("metric_hints") or [] if str(value).strip()]
     allowed_functions = {
         str(value) for value in operand.get("allowed_table_functions") or [] if str(value)
     }
-    if not entity or len(years) != 1 or not metric_hints or not allowed_functions:
+    if blockers:
         return "operand_not_source_auditable", []
 
     paths = list(reports_by_ticker_year.get((entity.casefold(), years[0]), []))

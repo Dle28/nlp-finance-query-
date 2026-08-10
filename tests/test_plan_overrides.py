@@ -1,7 +1,9 @@
 import unittest
 
 from finance_query.plan_overrides import (
+    EXACT_QUERY_TICKER_TOKEN_POLICY,
     apply_plan_overrides,
+    exact_source_ticker_tokens,
     reported_direct_override,
     source_ticker_direct_override,
     validate_plan_overrides,
@@ -9,6 +11,20 @@ from finance_query.plan_overrides import (
 
 
 class PlanOverrideTests(unittest.TestCase):
+    def test_exact_source_ticker_tokens_require_unique_original_uppercase_token(self):
+        self.assertEqual(
+            exact_source_ticker_tokens("Tỷ lệ của PC1 năm 2020", ["PC1", "HT1"]),
+            ["PC1"],
+        )
+        self.assertEqual(
+            exact_source_ticker_tokens("pc1 năm 2020", ["PC1"]),
+            [],
+        )
+        self.assertEqual(
+            exact_source_ticker_tokens("PC1 và HT1", ["PC1", "HT1"]),
+            ["HT1", "PC1"],
+        )
+
     def test_disclosed_row_override_is_hash_bound_and_effective(self):
         item = {
             "id": 92,
@@ -60,7 +76,7 @@ class PlanOverrideTests(unittest.TestCase):
         assert override is not None
         self.assertEqual(override["effective_question_plan"]["tickers"], ["HT1"])
         self.assertEqual(override["effective_question_plan"]["operands"][0]["ticker"], "HT1")
-        self.assertIn("exact_query_ticker_token", override["reason_code"])
+        self.assertIn(EXACT_QUERY_TICKER_TOKEN_POLICY, override["reason_code"])
         self.assertIsNone(
             source_ticker_direct_override(
                 {**item, "question": "HT1 và PC1 có giá trị bao nhiêu?"},

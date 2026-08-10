@@ -27,6 +27,9 @@ from .table_structure import normalize_space, sha256_file
 REPORT_ENTITY_VERSION = 1
 REPORT_ENTITY_POLICY = "source_page_initial_entity_before_report_marker_v1"
 REPORT_ENTITY_RESOLUTION_POLICY = "unique_source_title_entity_alias_question_match_v1"
+FORMULA_ENTITY_RESOLUTION_POLICY = (
+    "source_title_alias_then_exact_query_ticker_bundle_metadata_v1"
+)
 MAX_SOURCE_TITLE_CHARS = 240
 
 # An issuer title must begin with an explicit organisation marker.  This keeps

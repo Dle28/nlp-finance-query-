@@ -28,9 +28,42 @@ EQUIVALENT_COMPARATIVE_WITNESS_FORMULAS = {
     "cfo_positive_multiyear_max_net_margin",
 }
 EXECUTION_BACKED_COMPOSED_FORMULAS = {"operating_cash_flow_argmax_period"}
+SOURCE_RESOLVABLE_SINGLE_ENTITY_FORMULAS = {"percentage_change"}
+FORMULA_OPERAND_ENTITY_RESOLUTION_POLICY = "resolved_single_ticker_attached_to_formula_operands_v1"
 BALANCE_SHEET_STRUCTURAL_PREFIX_RE = re.compile(
     r"^\s*(?:(?:[IVXLCDM]+|\d+(?:\.\d+)*)\s*[.)]\s*)+", re.IGNORECASE
 )
+
+
+def attach_resolved_single_entity(
+    formula: Mapping[str, Any], resolution: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """Attach one already-proven ticker to controlled formula operands.
+
+    Source completion needs the entity on each operand to locate the matching
+    raw report.  We only attach it for the single-entity percentage-change
+    template after a title-zone or exact-ticker resolver has already produced
+    one ticker.  The source formula, metric hints, years and scope remain
+    unchanged; no company name is guessed from the metric itself.
+    """
+    output = dict(formula)
+    ticker = str((resolution or {}).get("ticker") or "")
+    operands = list(formula.get("operands") or [])
+    if (
+        not ticker
+        or str(formula.get("formula_id") or "") not in SOURCE_RESOLVABLE_SINGLE_ENTITY_FORMULAS
+        or not operands
+        or any(str(operand.get("entity") or "") for operand in operands)
+    ):
+        return output
+    output["operands"] = [{**operand, "entity": ticker} for operand in operands]
+    output["operand_entity_resolution"] = {
+        "policy": FORMULA_OPERAND_ENTITY_RESOLUTION_POLICY,
+        "ticker": ticker,
+        "source_resolution_policy": str((resolution or {}).get("policy") or ""),
+        "scope_inferred": False,
+    }
+    return output
 
 
 def _is_balance_sheet_opening_header(label: str, year: int) -> bool:

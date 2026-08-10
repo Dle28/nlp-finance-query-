@@ -126,7 +126,7 @@ GPU
 raw 146k-table indexing
 ```
 
-## 3.3 Local Table Structure V2
+## 3.3 Bảng nguồn đã tái dựng (V2)
 
 Bundle V3 là immutable snapshot retrieval. Để sửa lỗi presentation do parser
 cũ bỏ ô trống hoặc không xử lý `rowspan`/`colspan`, local tạo sidecar
@@ -145,9 +145,10 @@ compact review UI / section gate / formula EvidenceSet
 Sidecar không thay raw source, không thay annotation provenance và không rebuild
 Kaggle/FTS/FAISS. Chi tiết contract: [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md).
 
-### 3.4 Canonical evidence context V3 và machine-silver boundary
+### 3.4 Ngữ cảnh evidence chuẩn hóa (V3) và machine-silver boundary
 
-V2 grid là bằng chứng lossless. Context V3 là sidecar suy dẫn từ grid đó, không
+**Bảng nguồn đã tái dựng (V2)** là evidence lossless. **Ngữ cảnh evidence chuẩn
+hóa (V3)** là sidecar suy dẫn từ grid đó, không
 phải một lớp OCR correction: nó dựng header cha–con từ span provenance và chỉ
 hồi phục header dạng `td` khi bảng không có HTML header, tối đa ba hàng đứng
 trước data đều còn provenance hợp lệ, mỗi cột số có text nguồn và có cue
@@ -782,10 +783,12 @@ quan) không thể thành alias. Alias legal-form được canonicalise hẹp (`
 `Công ty Cổ phần`), sau đó câu hỏi phải chứa nguyên sequence tên riêng và mọi
 match phải dẫn tới đúng một ticker. Resolver không suy ra `scope`.
 
-Formula EvidenceSet V5 hash-bind sidecar/manifest alias này. Resolution chỉ
-thêm ticker vào **in-memory discovery plan** cho Formula EvidenceSet; raw
-question plan, retrieval rank, raw V2 grid và review label không bị sửa. Một
-operand chỉ được bind sau exact row/cell gate. Riêng balance sheet header
+Formula EvidenceSet V6 hash-bind sidecar/manifest alias này. Resolution chỉ
+thêm ticker vào **in-memory discovery plan** cho Formula EvidenceSet; ngoài
+title alias, V6 chỉ nhận ticker viết hoa xuất hiện nguyên token trong question
+và dẫn đúng một ticker trong metadata nguồn bundle. Raw question plan,
+retrieval rank, raw V2 grid và review label không bị sửa. Một operand chỉ được
+bind sau exact row/cell gate. Riêng balance sheet header
 `Số cuối năm` có thể bind với năm operand khi và chỉ khi report metadata có
 cùng năm và đúng một raw canonical numeric column mang header đó; `Số đầu năm`,
 comparative report hoặc nhiều cột closing đều fail-closed.
@@ -1055,13 +1058,13 @@ margin. Vì vậy score semantic không thể thay thế exact row/cell, period/
 binding hay critic; nó chỉ có thể trở thành signal hạ mức sau một audit độc
 lập.
 
-Formula EvidenceSet V3/V5 dùng cùng parser fail-closed với execution ledger: một
+Formula EvidenceSet V3/V6 dùng cùng parser fail-closed với execution ledger: một
 cell có nhiều nhóm số OCR ghép không phải numeric operand. `complete` đòi hỏi
 mỗi operand là đúng một raw V2 number có thể parse, ngoài các gate entity,
 scope, period và definition hiện có. Với nhiều entity, một scope không rỗng
 phải chung cho mọi entity và mỗi operand phải có một binding duy nhất trong
 scope đó; collector không ghép các scope riêng hoặc tự chọn giữa các binding.
-Khi V5 xuất ra execution evidence từ một resolver thực thể, record chỉ là
+Khi V6 xuất ra execution evidence từ một resolver thực thể, record chỉ là
 `machine_provisional` trừ khi autonomous review độc lập đã là
 `machine_calibrated`; `grounded` mô tả raw binding, không phải promotion nhãn.
 

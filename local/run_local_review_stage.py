@@ -219,8 +219,8 @@ def main() -> None:
         if evidence_context.is_file():
             command.append("--force")
         run(command, root)
-        print("\nCanonical context sidecar:", evidence_context)
-        print("It preserves raw V2 rows and only derives header/period/provenance context.")
+        print("\nNgữ cảnh evidence chuẩn hóa (V3):", evidence_context)
+        print("V3 giữ nguyên Bảng nguồn đã tái dựng (V2), chỉ suy dẫn header/kỳ/provenance.")
         return
 
     if args.mode == "formula-evidence":

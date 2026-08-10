@@ -234,7 +234,8 @@ sha256sum -c vifinqa_review_bundle_v3.tar.gz.sha256
 
 ### 6.1 Khôi phục cấu trúc bảng cho local review
 
-Trước khi xác minh số liệu bằng widget, dựng sidecar V2 từ raw HTML local:
+Trước khi xác minh số liệu bằng widget, dựng **Bảng nguồn đã tái dựng (V2)**
+từ raw HTML local:
 
 ```bash
 python local/run_local_review_stage.py repair-tables \
@@ -246,6 +247,16 @@ Lệnh tạo `tables_structured_v2.jsonl` và manifest ngay trong bundle local.
 Archive V3, Kaggle corpus và dense/lexical index không bị sửa. Widget tự nhận
 sidecar này; `--repair-force` chỉ thay sidecar cũ nếu đã có, không rebuild
 index. Xem chi tiết tại [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md).
+
+Tên hiển thị trong UI để tránh nhầm version:
+
+| File kỹ thuật | Tên đọc trong UI | Dùng để làm gì |
+| --- | --- | --- |
+| `tables_structured_v2.jsonl` | **Bảng nguồn đã tái dựng (V2)** | grid raw HTML, ô trống/span và provenance cell |
+| `tables_evidence_context_v3.jsonl` | **Ngữ cảnh evidence chuẩn hóa (V3)** | header cha–con, kỳ, đơn vị, chức năng bảng |
+
+V2 là bằng chứng gốc đã tái dựng; V3 chỉ là metadata suy dẫn từ V2. Không
+phiên bản nào tự sửa số OCR hoặc thay evidence cell.
 
 ---
 
@@ -547,13 +558,15 @@ python scripts/build_formula_evidence_sets.py \
   --output ~/ViFinQA_review/run_full_metadata_support_v1/formula_evidence_sets_context_v3_entity_titles_v1.jsonl
 ```
 
-Formula EvidenceSet V5 khóa SHA của sidecar alias và manifest của nó. Alias
-chỉ mở candidate discovery; mỗi operand vẫn cần raw V2 row exact, canonical
+Formula EvidenceSet V6 khóa SHA của sidecar alias và manifest của nó. Alias
+chỉ mở candidate discovery; với câu hỏi có ticker viết hoa rõ ràng (ví dụ
+`PC1`), V6 chỉ có thể bổ sung ticker khi token đó xuất hiện đúng một lần trong
+metadata nguồn của bundle. Mỗi operand vẫn cần raw V2 row exact, canonical
 header và một cell nguồn parse được. Với bảng cân đối có header `Số cuối năm`,
 period chỉ được bind khi document metadata có đúng năm operand và có đúng một
-cột numeric nguồn mang header đó. Alias/segment không phải evidence, không
-tạo answer, không đổi `machine_provisional` thành `machine_calibrated` và
-không được dùng để train.
+cột numeric nguồn mang header đó. Alias/ticker/segment không phải evidence,
+không tạo answer, không suy ra scope, không đổi `machine_provisional` thành
+`machine_calibrated` và không được dùng để train.
 
 ## Direct EvidenceSet theo ngữ cảnh bảng
 

@@ -130,7 +130,7 @@ class ReviewBundleWidgetFormatTests(unittest.TestCase):
             header_row_indices=[0],
             structure_quality={"status": "reconstructed_from_raw_html"},
         )
-        self.assertIn("Grid V2 từ raw HTML", rendered)
+        self.assertIn("Bảng nguồn đã tái dựng (V2) từ raw HTML", rendered)
         self.assertIn(">Mã số</th>", rendered)
         self.assertNotIn(">c0</th>", rendered)
 

@@ -2,6 +2,8 @@ import unittest
 
 from finance_query.evidence_context import build_evidence_context
 from finance_query.formula_evidence import (
+    FORMULA_OPERAND_ENTITY_RESOLUTION_POLICY,
+    attach_resolved_single_entity,
     FORMULA_BUNDLE_SUPPORT_CANDIDATE_SOURCE,
     FORMULA_SOURCE_DISCOVERY_CANDIDATE_SOURCE,
     bind_operand_cell,
@@ -44,6 +46,30 @@ def _entity_table(uid: str, ticker: str) -> dict:
 
 
 class FormulaEvidenceTests(unittest.TestCase):
+    def test_resolved_ticker_can_attach_only_to_controlled_single_entity_formula(self):
+        formula = {
+            "formula_id": "percentage_change",
+            "operands": [
+                {"operand_id": "x_old", "years": [2019]},
+                {"operand_id": "x_new", "years": [2020]},
+            ],
+        }
+        attached = attach_resolved_single_entity(
+            formula,
+            {"ticker": "PC1", "policy": "exact_query_ticker_token_in_bundle_metadata_v1"},
+        )
+        self.assertEqual([operand["entity"] for operand in attached["operands"]], ["PC1", "PC1"])
+        self.assertEqual(
+            attached["operand_entity_resolution"]["policy"],
+            FORMULA_OPERAND_ENTITY_RESOLUTION_POLICY,
+        )
+        self.assertNotIn("entity", formula["operands"][0])
+        unsupported = attach_resolved_single_entity(
+            {"formula_id": "quick_ratio", "operands": [{"operand_id": "cash"}]},
+            {"ticker": "PC1"},
+        )
+        self.assertNotIn("entity", unsupported["operands"][0])
+
 
     def test_balance_sheet_year_chooses_closing_header_not_opening_balance(self):
         operand = {

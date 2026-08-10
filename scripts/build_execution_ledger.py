@@ -29,12 +29,14 @@ from finance_query.binding import row_label  # noqa: E402
 from finance_query.corpus import infer_unit  # noqa: E402
 from finance_query.execution import convert_unit, execute_ast, parse_decimal  # noqa: E402
 from finance_query.financial_metrics import fold_text  # noqa: E402
+from finance_query.plan_overrides import EXACT_QUERY_TICKER_TOKEN_POLICY  # noqa: E402
 from finance_query.evidence_context import (  # noqa: E402
     AUTONOMOUS_REVIEW_PROTOCOL,
     validate_evidence_context_sidecar,
 )
 from finance_query.schemas import DirectBinding  # noqa: E402
 from finance_query.report_entities import (  # noqa: E402
+    FORMULA_ENTITY_RESOLUTION_POLICY,
     REPORT_ENTITY_RESOLUTION_POLICY,
     validate_report_entity_alias_sidecar,
 )
@@ -103,7 +105,7 @@ def validate_formula_evidence_sidecar(
 ) -> dict[str, Any]:
     """Accept only numeric-safe source-discovery Formula EvidenceSets.
 
-    V5 additionally records a source-title entity resolver.  That resolver is
+    V5/V6 additionally record source entity resolution. The resolver is
     revalidated as navigation metadata and cannot supply numerical evidence or
     a reporting scope.
     """
@@ -114,8 +116,8 @@ def validate_formula_evidence_sidecar(
         raise FileNotFoundError("Formula evidence sidecar or manifest is missing")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     version = int(manifest.get("schema_version") or 0)
-    if version not in {3, 5}:
-        raise ValueError("Formula execution requires Formula EvidenceSet schema_version=3 or 5")
+    if version not in {3, 5, 6}:
+        raise ValueError("Formula execution requires Formula EvidenceSet schema_version=3, 5, or 6")
     expected = {
         "bundle_review_items_sha256": bundle / "review_items.jsonl",
         "bundle_tables_sha256": bundle / "tables.jsonl",
@@ -152,6 +154,44 @@ def validate_formula_evidence_sidecar(
         if str(resolution.get("alias_manifest_sha256") or "") != sha256_file(aliases_manifest):
             raise ValueError("Formula V5 source entity alias manifest hash mismatch")
         validate_report_entity_alias_sidecar(bundle, aliases_path)
+    if version == 6:
+        resolution = manifest.get("source_entity_resolution") or {}
+        if not bool(resolution.get("enabled")):
+            raise ValueError("Formula V6 execution requires source entity resolver provenance")
+        if str(resolution.get("policy") or "") != FORMULA_ENTITY_RESOLUTION_POLICY:
+            raise ValueError("Formula V6 source entity resolver policy is invalid")
+        if bool(resolution.get("scope_inference")):
+            raise ValueError("Formula V6 source entity resolver must not infer scope")
+        if bool(resolution.get("evidence_eligible")) or bool(resolution.get("training_eligible")):
+            raise ValueError("Formula V6 source entity resolver cannot be evidence/training eligible")
+        title_aliases = resolution.get("title_aliases") or {}
+        aliases_path: Path | None = None
+        if bool(title_aliases.get("enabled")):
+            if str(title_aliases.get("policy") or "") != REPORT_ENTITY_RESOLUTION_POLICY:
+                raise ValueError("Formula V6 source title alias policy is invalid")
+            aliases_name = str(title_aliases.get("aliases_file") or "")
+            if not aliases_name or Path(aliases_name).name != aliases_name:
+                raise ValueError("Formula V6 source title aliases must be bundle-local")
+            aliases_path = bundle / aliases_name
+            if str(title_aliases.get("aliases_sha256") or "") != sha256_file(aliases_path):
+                raise ValueError("Formula V6 source title aliases hash mismatch")
+            aliases_manifest = aliases_path.with_suffix(".manifest.json")
+            if str(title_aliases.get("alias_manifest_sha256") or "") != sha256_file(aliases_manifest):
+                raise ValueError("Formula V6 source title alias manifest hash mismatch")
+            validate_report_entity_alias_sidecar(bundle, aliases_path)
+        ticker_tokens = resolution.get("exact_ticker_tokens") or {}
+        if not bool(ticker_tokens.get("enabled")):
+            raise ValueError("Formula V6 must declare exact-ticker resolution policy")
+        if str(ticker_tokens.get("policy") or "") != EXACT_QUERY_TICKER_TOKEN_POLICY:
+            raise ValueError("Formula V6 exact-ticker resolution policy is invalid")
+        try:
+            ticker_resolution_count = int(ticker_tokens.get("resolution_count") or 0)
+        except (TypeError, ValueError) as error:
+            raise ValueError("Formula V6 exact-ticker resolution count is invalid") from error
+        if ticker_resolution_count < 0:
+            raise ValueError("Formula V6 exact-ticker resolution count cannot be negative")
+        if aliases_path is None and ticker_resolution_count < 1:
+            raise ValueError("Formula V6 needs title aliases or an exact ticker resolution")
     if str(manifest.get("sidecar_sha256") or "") != sha256_file(sidecar):
         raise ValueError("Formula evidence sidecar hash does not match its manifest")
     return manifest
