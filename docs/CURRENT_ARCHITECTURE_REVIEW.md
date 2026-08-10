@@ -294,6 +294,13 @@ từng artifact family.
 | P2 | Source completion quét raw report theo nhu cầu. | Chậm khi scale hoặc audit nhiều formula. | Build raw-source catalog read-only theo `(ticker, year, scope, function, normalized row label)` và vẫn revalidate raw hash ở lần dùng. |
 | P2 | Evaluation chủ yếu pipeline/gate level. | Khó đo bộ phận nào gây sai nhiều nhất. | Dashboard theo family × statement function × evidence state × provenance; giữ canary regression set. |
 
+ArtifactRegistry V1 đã có bootstrap/validator ở cấp workspace. Nó register
+`raw_table`, `structured_table`, `evidence_context`, `direct_evidence`,
+`formula_evidence`… bằng logical name, schema, SHA và dependency SHA. Đây là
+migration additive: manifest nguồn của từng sidecar vẫn là contract chính cho
+đến khi consumer được chuyển từng bước sang logical resolution. Chi tiết tại
+[`ARTIFACT_REGISTRY.md`](ARTIFACT_REGISTRY.md).
+
 ## 6. Kiến trúc đích nên đi theo
 
 ```text
