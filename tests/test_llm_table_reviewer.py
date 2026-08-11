@@ -9,7 +9,7 @@ from finance_query.llm_table_reviewer import (
 
 def packet() -> dict:
     value = {
-        "schema_version": 1,
+        "schema_version": 2,
         "protocol": LLM_TABLE_REVIEW_PROTOCOL,
         "question_id": 1,
         "required_bindings": [
@@ -25,7 +25,12 @@ def packet() -> dict:
                 "row_index": 2,
                 "raw_row_label": "Tài sản ngắn hạn",
                 "available_value_cells": [
-                    {"column_index": 3, "canonical_header": "31/12/2022 VND", "raw_value": "100"}
+                    {
+                        "cell_id": "HPG|current_assets|asset-table|2|column:3",
+                        "column_index": 3,
+                        "canonical_header": "31/12/2022 VND",
+                        "raw_value": "100",
+                    }
                 ],
             },
             {
@@ -36,7 +41,12 @@ def packet() -> dict:
                 "row_index": 14,
                 "raw_row_label": "Hàng tồn kho",
                 "available_value_cells": [
-                    {"column_index": 3, "canonical_header": "31/12/2022 VND", "raw_value": "20"}
+                    {
+                        "cell_id": "HPG|inventory|asset-table|14|column:3",
+                        "column_index": 3,
+                        "canonical_header": "31/12/2022 VND",
+                        "raw_value": "20",
+                    }
                 ],
             },
         ],
@@ -49,18 +59,16 @@ def packet() -> dict:
 
 
 class LlmTableReviewerTests(unittest.TestCase):
-    def test_selection_keys_materialize_literal_cells_machine_provisionally(self):
+    def test_cell_ids_materialize_literal_cells_machine_provisionally(self):
         decision = {
             "verdict": "supported",
             "final_answer": None,
             "selected_bindings": [
                 {
-                    "candidate_id": "HPG|current_assets|asset-table|2",
-                    "column_index": 3,
+                    "cell_id": "HPG|current_assets|asset-table|2|column:3",
                 },
                 {
-                    "candidate_id": "HPG|inventory|asset-table|14",
-                    "column_index": 3,
+                    "cell_id": "HPG|inventory|asset-table|14|column:3",
                 },
             ],
         }
@@ -82,14 +90,16 @@ class LlmTableReviewerTests(unittest.TestCase):
             "final_answer": None,
             "selected_bindings": [
                 {
+                    "cell_id": "HPG|current_assets|asset-table|2|column:3",
                     "candidate_id": "HPG|current_assets|asset-table|2",
-                    "column_index": 3,
+                    "column_index": 999,
                     "canonical_header": "31/12/2022 VND",
                     "raw_value": "999999",
                 },
                 {
+                    "cell_id": "HPG|inventory|asset-table|14|column:3",
                     "candidate_id": "HPG|inventory|asset-table|14",
-                    "column_index": 3,
+                    "column_index": 999,
                     "canonical_header": "31/12/2022 VND",
                     "raw_value": "999999",
                 },
@@ -99,16 +109,16 @@ class LlmTableReviewerTests(unittest.TestCase):
         self.assertEqual(result["annotation_status"], "machine_provisional")
         self.assertEqual(result["selected_bindings"][1]["raw_value"], "20")
 
-    def test_missing_or_non_numeric_column_is_blocked(self):
+    def test_missing_or_unknown_cell_id_is_blocked(self):
         decision = {
             "verdict": "supported",
             "final_answer": None,
             "selected_bindings": [
-                {"candidate_id": "HPG|current_assets|asset-table|2", "column_index": "not-a-column"}
+                {"cell_id": "not-a-packet-cell"}
             ],
         }
         result = verify_llm_decision(packet(), decision)
-        self.assertEqual(result["reason_codes"], ["llm_invalid_value_cell"])
+        self.assertEqual(result["reason_codes"], ["llm_cell_escape"])
 
     def test_abstention_preserves_feedback_without_promoting_provenance(self):
         decision = {
@@ -138,10 +148,7 @@ class LlmTableReviewerTests(unittest.TestCase):
             "final_answer": None,
             "selected_bindings": [
                 {
-                    "candidate_id": candidate["candidate_id"],
-                    "column_index": 3,
-                    "canonical_header": "31/12/2023 VND",
-                    "raw_value": candidate["available_value_cells"][0]["raw_value"],
+                    "cell_id": candidate["available_value_cells"][0]["cell_id"],
                 }
                 for candidate in source_packet["candidates"]
             ],
@@ -168,10 +175,7 @@ class LlmTableReviewerTests(unittest.TestCase):
             "final_answer": None,
             "selected_bindings": [
                 {
-                    "candidate_id": candidate["candidate_id"],
-                    "column_index": 3,
-                    "canonical_header": "31/12/2022 VND",
-                    "raw_value": candidate["available_value_cells"][0]["raw_value"],
+                    "cell_id": candidate["available_value_cells"][0]["cell_id"],
                 }
                 for candidate in source_packet["candidates"]
             ],
@@ -241,7 +245,19 @@ class LlmTableReviewerTests(unittest.TestCase):
             contexts_by_uid=contexts,
         )
         cells = review_packet["candidates"][0]["available_value_cells"]
-        self.assertEqual(cells, [{"column_index": 2, "canonical_header": "31/12/2022 VND", "raw_value": "80", "period_labels": ["31/12/2022"], "unit_labels": ["VND"]}])
+        self.assertEqual(
+            cells,
+            [
+                {
+                    "cell_id": "HPG|current_assets|table-1|1|column:2",
+                    "column_index": 2,
+                    "canonical_header": "31/12/2022 VND",
+                    "raw_value": "80",
+                    "period_labels": ["31/12/2022"],
+                    "unit_labels": ["VND"],
+                }
+            ],
+        )
         self.assertEqual(review_packet["missing_source_cell_bindings"], [])
 
     def test_packet_accepts_documented_non_calendar_fiscal_year_end(self):
@@ -503,10 +519,7 @@ class LlmTableReviewerTests(unittest.TestCase):
             "final_answer": None,
             "selected_bindings": [
                 {
-                    "candidate_id": candidate["candidate_id"],
-                    "column_index": 3,
-                    "canonical_header": "31/12/2022 VND",
-                    "raw_value": candidate["available_value_cells"][0]["raw_value"],
+                    "cell_id": candidate["available_value_cells"][0]["cell_id"],
                 }
                 for candidate in source_packet["candidates"]
             ],

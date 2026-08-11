@@ -17,8 +17,8 @@ from typing import Any, Iterable, Mapping
 from .execution import parse_decimal
 
 
-LLM_TABLE_REVIEW_PROTOCOL = "qwen_evidence_bounded_table_review_v1"
-LLM_TABLE_REVIEW_SCHEMA_VERSION = 1
+LLM_TABLE_REVIEW_PROTOCOL = "qwen_evidence_bounded_table_review_v2"
+LLM_TABLE_REVIEW_SCHEMA_VERSION = 2
 YEAR_BOUNDARY_TEMPLATE = r"(?<!\d){year}(?!\d)"
 TARGET_PERIOD_END_RE = re.compile(
     r"(?<!\d)(?:31\s*[/.-]\s*12|31\s+(?:tháng|thang)\s+12)(?!\d)", re.IGNORECASE
@@ -227,6 +227,13 @@ def build_review_packet(
                     if candidate_id in seen:
                         continue
                     seen.add(candidate_id)
+                    cells = [
+                        {
+                            **cell,
+                            "cell_id": f"{candidate_id}|column:{int(cell['column_index'])}",
+                        }
+                        for cell in cells
+                    ]
                     candidates.append(
                         {
                             "candidate_id": candidate_id,
@@ -373,8 +380,8 @@ def build_review_packet(
         "document_contract": document_contract,
         "candidates": candidates,
         "source_contract": {
-            "may_choose_only_listed_candidate_id": True,
-            "model_returns_selection_keys_only": True,
+            "may_choose_only_listed_cell_id": True,
+            "model_returns_cell_id_only": True,
             "resolver_materializes_literal_source_fields": True,
             "may_not_compute_or_return_a_final_answer": True,
             "may_not_infer_a_missing_operand": True,
@@ -387,16 +394,16 @@ def build_review_packet(
 def review_prompt(packet: Mapping[str, Any]) -> str:
     """Instruct Qwen to act as a cited-binding reviewer, not a QA model."""
     return """Bạn là reviewer evidence cho bảng tài chính. Không trả lời câu hỏi cuối cùng và không làm phép tính.
-Chỉ chọn cell nguồn cho từng required binding từ candidate_id đã liệt kê. Không được suy luận số, tự tạo bảng,
-hay chọn candidate ngoài packet. Hệ thống sẽ tự lấy header và raw_value nguyên văn từ packet: tuyệt đối không
-chép lại, diễn giải, hoặc trả về header/raw_value. Nếu một binding không có bằng chứng chắc chắn, hãy chọn
-verdict=no_candidate hoặc abstain và mô tả feedback ngắn.
+Chỉ chọn đúng một cell_id đã liệt kê trong available_value_cells cho từng required binding. Không được suy luận số,
+tự tạo bảng, hay tự ghép candidate_id với column_index. Hệ thống sẽ tự lấy candidate, tọa độ, header và raw_value
+nguyên văn từ packet: tuyệt đối không chép lại, diễn giải, hoặc trả về các trường đó. Nếu một binding không có
+bằng chứng chắc chắn, hãy chọn verdict=no_candidate hoặc abstain và mô tả feedback ngắn.
 
 Trả về DUY NHẤT một JSON object theo schema:
 {
   \"verdict\": \"supported\" | \"no_candidate\" | \"abstain\",
   \"selected_bindings\": [
-    {\"candidate_id\": \"...\", \"column_index\": 0}
+    {\"cell_id\": \"...\"}
   ],
   \"feedback\": {\"reason_code\": \"...\", \"detail\": \"...\"},
   \"final_answer\": null
@@ -409,21 +416,24 @@ PACKET:\n""" + _canonical_json(packet)
 def self_critique_prompt(packet: Mapping[str, Any], decision: Mapping[str, Any]) -> str:
     """A second role pass catches unsupported claims; it is not an independent critic."""
     return """Bạn là self-critique fail-closed cho một review evidence. So sánh DECISION với PACKET.
-Reject nếu decision có final_answer khác null, thiếu binding, candidate_id ngoài packet, column_index không có trong
-candidate, hoặc có bất kỳ suy luận không được trích dẫn. header/raw_value không thuộc output của model; chúng luôn
-được resolver lấy nguyên văn từ PACKET. Không được sửa decision.
+Reject nếu decision có final_answer khác null, thiếu binding, cell_id ngoài available_value_cells, tự trả về
+candidate_id/column_index/header/raw_value, hoặc có bất kỳ suy luận không được trích dẫn. Các trường nguồn luôn được
+resolver lấy nguyên văn từ PACKET. Không được sửa decision.
 Trả về duy nhất JSON: {\"verdict\": \"approve\" | \"reject\", \"violations\": [\"...\"]}.
 PACKET:\n""" + _canonical_json(packet) + "\nDECISION:\n" + _canonical_json(decision)
 
 
-def _candidate_by_id(packet: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
-    candidates = {
-        str(candidate.get("candidate_id") or ""): candidate
-        for candidate in packet.get("candidates") or []
-    }
-    if "" in candidates or len(candidates) != len(packet.get("candidates") or []):
-        raise ValueError("Packet contains duplicate or empty candidate IDs")
-    return candidates
+def _cell_by_id(
+    packet: Mapping[str, Any],
+) -> dict[str, tuple[Mapping[str, Any], Mapping[str, Any]]]:
+    cells: dict[str, tuple[Mapping[str, Any], Mapping[str, Any]]] = {}
+    for candidate in packet.get("candidates") or []:
+        for cell in candidate.get("available_value_cells") or []:
+            cell_id = str(cell.get("cell_id") or "")
+            if not cell_id or cell_id in cells:
+                raise ValueError("Packet contains duplicate or empty cell IDs")
+            cells[cell_id] = (candidate, cell)
+    return cells
 
 
 def verify_llm_decision(
@@ -464,46 +474,36 @@ def verify_llm_decision(
             "human_verified": False,
             "submission_eligible": False,
         }
-    candidates = _candidate_by_id(packet)
+    cells = _cell_by_id(packet)
     required = {
         (str(binding.get("company") or ""), str(binding.get("variable_id") or ""))
         for binding in packet.get("required_bindings") or []
     }
     selected: list[dict[str, Any]] = []
+    selected_candidates: list[Mapping[str, Any]] = []
     seen_required: set[tuple[str, str]] = set()
     for binding in decision.get("selected_bindings") or []:
         if not isinstance(binding, Mapping):
             return _blocked(packet, "llm_invalid_binding_schema")
-        candidate = candidates.get(str(binding.get("candidate_id") or ""))
-        if candidate is None:
-            return _blocked(packet, "llm_candidate_escape")
+        resolved = cells.get(str(binding.get("cell_id") or ""))
+        if resolved is None:
+            return _blocked(packet, "llm_cell_escape")
+        candidate, expected_cell = resolved
         key = (str(candidate["company"]), str(candidate["variable_id"]))
         if key not in required or key in seen_required:
             return _blocked(packet, "llm_duplicate_or_unrequired_binding")
-        try:
-            selected_column_index = int(binding.get("column_index"))
-        except (TypeError, ValueError):
-            return _blocked(packet, "llm_invalid_value_cell")
-        expected_cell = next(
-            (
-                cell
-                for cell in candidate.get("available_value_cells") or []
-                if int(cell.get("column_index", -1)) == selected_column_index
-            ),
-            None,
-        )
-        if expected_cell is None:
-            return _blocked(packet, "llm_invalid_value_cell")
         if not _cell_matches_target_year(
             expected_cell,
             packet.get("stage", {}).get("year"),
             candidate.get("reporting_period_end"),
         ):
             return _blocked(packet, "llm_non_target_period_cell")
-        # The model returns a location, not a copied value/header. Any legacy
+        # The model returns one opaque source-cell ID, not a copied location,
+        # value or header. Any legacy
         # extra fields are ignored: calculation and audit consume only the
         # literal source cell materialized below.
         seen_required.add(key)
+        selected_candidates.append(candidate)
         selected.append(
             {
                 "company": key[0],
@@ -523,8 +523,8 @@ def verify_llm_decision(
             return _blocked(packet, "llm_report_scope_not_resolved")
         expected_scope = viable_scopes[0]
         selected_scopes = {
-            str(candidates[str(binding["candidate_id"])].get("report_scope") or "unknown")
-            for binding in decision.get("selected_bindings") or []
+            str(candidate.get("report_scope") or "unknown")
+            for candidate in selected_candidates
         }
         if selected_scopes != {expected_scope}:
             return _blocked(packet, "llm_inconsistent_report_scope")
@@ -538,9 +538,9 @@ def verify_llm_decision(
             str(document_contract.get("status") or "") != "resolved"
             or not selected_document_ids
             or any(
-                str(candidates[str(binding["candidate_id"])].get("document_id") or "")
-                != selected_document_ids.get(str(candidates[str(binding["candidate_id"])].get("company") or ""))
-                for binding in decision.get("selected_bindings") or []
+                str(candidate.get("document_id") or "")
+                != selected_document_ids.get(str(candidate.get("company") or ""))
+                for candidate in selected_candidates
             )
         ):
             return _blocked(packet, "llm_inconsistent_source_document")
