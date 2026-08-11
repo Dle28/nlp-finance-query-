@@ -1,0 +1,5 @@
+# Optional dependencies for local/Kaggle Qwen2.5-14B 4-bit inference.
+# Keep them separate from requirements.txt: CPU-only review tooling does not
+# need CUDA quantization packages.
+accelerate>=1.0
+bitsandbytes>=0.45
