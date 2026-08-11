@@ -13,8 +13,8 @@ Ledger schema (one JSON object per line)::
     "id": 1,
     "provenance_status": "machine_calibrated",
     "execution_status": "grounded",
-    "grounding_status": "exact_rows_validated",
-    "execution_mode": "direct_lookup" | "exact_formula",
+    "grounding_status": "exact_rows_validated" | "staged_exact_cells_replayed",
+    "execution_mode": "direct_lookup" | "exact_formula" | "exact_staged_contract",
     "operation_ast": {"op": "lookup", "args": ["x0"]},
     "normalize_operands_to_vnd": true,
     "operand_bindings": [
@@ -30,7 +30,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
 import os
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -41,6 +43,7 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from finance_query.schemas import DirectBinding
+from finance_query.staged_submission import write_staged_execution_record  # noqa: E402
 from finance_query.submission import (  # noqa: E402
     SubmissionValidationError,
     validate_submission_directory,
@@ -54,12 +57,27 @@ from finance_query.table_structure import validate_structure_sidecar  # noqa: E4
 ALLOWED_PROVENANCE = {"human_verified", "machine_calibrated"}
 REQUIRED_EXECUTION_STATUS = "grounded"
 REQUIRED_GROUNDING_STATUS = "exact_rows_validated"
+STAGED_GROUNDING_STATUS = "staged_exact_cells_replayed"
+PRODUCTION_ELIGIBILITY_PROTOCOL = "production_execution_lineage_v1"
+PRODUCTION_AUDIT_PROTOCOL = "production_independent_audit_v1"
+REQUIRED_LINEAGE_KEYS = {
+    "review_items_sha256",
+    "raw_tables_sha256",
+    "structured_tables_sha256",
+    "evidence_context_sha256",
+    "typed_operand_plans_sha256",
+    "independent_audit_sha256",
+}
+SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bundle-dir", type=Path, required=True)
     parser.add_argument("--execution-ledger", type=Path, required=True)
+    parser.add_argument("--typed-plans", type=Path, required=True)
+    parser.add_argument("--independent-audit", type=Path, required=True)
+    parser.add_argument("--evidence-context", type=Path, default=None)
     parser.add_argument(
         "--questions",
         type=Path,
@@ -94,6 +112,89 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
                 raise ValueError(f"JSONL row must be an object: {path}:{line_number}")
             rows.append(row)
     return rows
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def expected_lineage(
+    bundle: Path, typed_plans: Path, independent_audit: Path, evidence_context: Path
+) -> dict[str, str]:
+    return {
+        "review_items_sha256": sha256_file(bundle / "review_items.jsonl"),
+        "raw_tables_sha256": sha256_file(bundle / "tables.jsonl"),
+        "structured_tables_sha256": sha256_file(bundle / "tables_structured_v2.jsonl"),
+        "evidence_context_sha256": sha256_file(evidence_context),
+        "typed_operand_plans_sha256": sha256_file(typed_plans),
+        "independent_audit_sha256": sha256_file(independent_audit),
+    }
+
+
+def validate_typed_plan_artifact(path: Path, review_items_hash: str) -> None:
+    manifest_path = path.with_suffix(".manifest.json")
+    if not manifest_path.is_file():
+        raise FileNotFoundError("Typed operand plan manifest is missing")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if (
+        manifest.get("protocol") != "typed_operand_decomposition_fail_closed_v1"
+        or manifest.get("review_items_sha256") != review_items_hash
+        or manifest.get("sidecar_sha256") != sha256_file(path)
+        or manifest.get("answer_eligible") is not False
+        or manifest.get("submission_eligible") is not False
+    ):
+        raise ValueError("Typed operand plan artifact/lineage is invalid")
+
+
+def validate_production_audit(path: Path, question_ids: set[int]) -> None:
+    manifest_path = path.with_suffix(".manifest.json")
+    if not manifest_path.is_file():
+        raise FileNotFoundError("Production independent-audit manifest is missing")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    rows = index_rows(
+        [
+            {**row, "id": row.get("id", row.get("question_id"))}
+            for row in load_jsonl(path)
+        ],
+        name="production independent audit",
+    )
+    if set(rows) != question_ids:
+        raise ValueError("Production independent audit must cover every public question")
+    if any(
+        row.get("production_eligible") is not True
+        or row.get("independent_audit_status") != "passed"
+        for row in rows.values()
+    ):
+        raise ValueError("Production independent audit contains an unapproved question")
+    if (
+        manifest.get("protocol") != PRODUCTION_AUDIT_PROTOCOL
+        or manifest.get("audit_status") != "passed"
+        or manifest.get("production_eligibility_approved") is not True
+        or int(manifest.get("question_count") or -1) != len(question_ids)
+        or manifest.get("sidecar_sha256") != sha256_file(path)
+    ):
+        raise ValueError("Production independent-audit manifest is invalid")
+
+
+def validate_ledger_manifest(
+    ledger: Path, lineage: dict[str, str]
+) -> dict[str, Any]:
+    manifest_path = ledger.with_suffix(".manifest.json")
+    if not manifest_path.is_file():
+        raise FileNotFoundError("Production execution ledger manifest is missing")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if (
+        manifest.get("protocol") != PRODUCTION_ELIGIBILITY_PROTOCOL
+        or manifest.get("production_eligible") is not True
+        or manifest.get("sidecar_sha256") != sha256_file(ledger)
+        or manifest.get("lineage") != lineage
+    ):
+        raise ValueError("Production execution ledger manifest/lineage is invalid")
+    return manifest
 
 
 def index_rows(rows: Iterable[dict[str, Any]], *, name: str) -> dict[int, dict[str, Any]]:
@@ -132,7 +233,9 @@ def load_v2_tables(bundle_dir: Path) -> dict[str, dict[str, Any]]:
     return output
 
 
-def validate_ledger_row(row: dict[str, Any]) -> None:
+def validate_ledger_row(
+    row: dict[str, Any], *, expected_artifact_lineage: dict[str, str] | None = None
+) -> None:
     qid = int(row["id"])
     provenance = str(row.get("provenance_status") or row.get("annotation_status") or "")
     if provenance not in ALLOWED_PROVENANCE:
@@ -141,15 +244,35 @@ def validate_ledger_row(row: dict[str, Any]) -> None:
         )
     if str(row.get("execution_status") or "") != REQUIRED_EXECUTION_STATUS:
         raise ValueError(f"Q{qid}: execution_status must be {REQUIRED_EXECUTION_STATUS!r}")
-    if str(row.get("grounding_status") or "") != REQUIRED_GROUNDING_STATUS:
-        raise ValueError(f"Q{qid}: grounding_status must be {REQUIRED_GROUNDING_STATUS!r}")
+    execution_mode = str(row.get("execution_mode") or "")
+    required_grounding = (
+        STAGED_GROUNDING_STATUS
+        if execution_mode == "exact_staged_contract"
+        else REQUIRED_GROUNDING_STATUS
+    )
+    if str(row.get("grounding_status") or "") != required_grounding:
+        raise ValueError(f"Q{qid}: grounding_status must be {required_grounding!r}")
     if str(row.get("formula_definition_status") or "confirmed") == "ambiguous":
         raise ValueError(f"Q{qid}: ambiguous formula cannot enter a submission")
-    # A controlled executor can produce a shadow evaluation which is grounded
-    # but deliberately outside the contest-submission contract. Older records
-    # omit this field; when it is present, only a literal True is admissible.
-    if "submission_eligible" in row and row["submission_eligible"] is not True:
-        raise ValueError(f"Q{qid}: ledger record is explicitly not submission-eligible")
+    if row.get("submission_eligible") is not True:
+        raise ValueError(f"Q{qid}: submission_eligible must be literal true")
+    eligibility = row.get("production_eligibility") or {}
+    lineage = row.get("artifact_lineage") or {}
+    if (
+        eligibility.get("protocol") != PRODUCTION_ELIGIBILITY_PROTOCOL
+        or eligibility.get("status") != "approved"
+        or eligibility.get("independent_audit_status") != "passed"
+    ):
+        raise ValueError(f"Q{qid}: production eligibility/audit is incomplete")
+    if set(lineage) != REQUIRED_LINEAGE_KEYS or any(
+        not isinstance(value, str) or not SHA256_RE.fullmatch(value)
+        for value in lineage.values()
+    ):
+        raise ValueError(f"Q{qid}: artifact_lineage must contain every required SHA-256")
+    if eligibility.get("independent_audit_sha256") != lineage["independent_audit_sha256"]:
+        raise ValueError(f"Q{qid}: independent audit hash differs from artifact lineage")
+    if expected_artifact_lineage is not None and lineage != expected_artifact_lineage:
+        raise ValueError(f"Q{qid}: artifact lineage differs from compiler inputs")
 
 
 def operand_pairs(
@@ -185,10 +308,11 @@ def operand_pairs(
 
 
 def compile_record(
-    question: dict[str, Any], ledger_row: dict[str, Any], output_dir: Path, tables: dict[str, dict[str, Any]]
+    question: dict[str, Any], ledger_row: dict[str, Any], output_dir: Path,
+    tables: dict[str, dict[str, Any]], *, artifact_lineage: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     qid = int(question["id"])
-    validate_ledger_row(ledger_row)
+    validate_ledger_row(ledger_row, expected_artifact_lineage=artifact_lineage)
     bindings = operand_pairs(ledger_row, tables)
     mode = str(ledger_row.get("execution_mode") or "")
     operation = ledger_row.get("operation_ast")
@@ -215,6 +339,16 @@ def compile_record(
             operation_ast=operation,
             package_root=output_dir,
             normalize_operands_to_vnd=bool(ledger_row["normalize_operands_to_vnd"]),
+        )
+    if mode == "exact_staged_contract":
+        return write_staged_execution_record(
+            question_id=qid,
+            question=str(question["question"]),
+            route_family=str(ledger_row.get("route_family") or ""),
+            operand_bindings=bindings,
+            expected_result_value=str(ledger_row.get("result_value") or ""),
+            expected_result_unit=str(ledger_row.get("result_unit") or ""),
+            package_root=output_dir,
         )
     raise ValueError(f"Q{qid}: unsupported execution_mode {mode!r}")
 
@@ -248,6 +382,18 @@ def main() -> None:
     questions = load_jsonl(args.questions.resolve())
     question_ids = index_rows(questions, name="questions")
     ledger = index_rows(load_jsonl(args.execution_ledger.resolve()), name="execution ledger")
+    context_path = (args.evidence_context or bundle / "tables_evidence_context_v3.jsonl").resolve()
+    lineage = expected_lineage(
+        bundle,
+        args.typed_plans.resolve(),
+        args.independent_audit.resolve(),
+        context_path,
+    )
+    validate_typed_plan_artifact(
+        args.typed_plans.resolve(), lineage["review_items_sha256"]
+    )
+    validate_production_audit(args.independent_audit.resolve(), set(question_ids))
+    validate_ledger_manifest(args.execution_ledger.resolve(), lineage)
     missing = sorted(set(question_ids) - set(ledger))
     unexpected = sorted(set(ledger) - set(question_ids))
     if missing or unexpected:
@@ -256,7 +402,16 @@ def main() -> None:
         )
     tables = load_v2_tables(bundle)
     output_dir.mkdir(parents=True, exist_ok=False)
-    records = [compile_record(question, ledger[int(question["id"])], output_dir, tables) for question in questions]
+    records = [
+        compile_record(
+            question,
+            ledger[int(question["id"])],
+            output_dir,
+            tables,
+            artifact_lineage=lineage,
+        )
+        for question in questions
+    ]
     write_json(output_dir / "submission.json", records)
     directory_result = validate_submission_directory(output_dir, questions)
     write_archive(output_dir, archive)

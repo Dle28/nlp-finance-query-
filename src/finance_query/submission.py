@@ -88,7 +88,7 @@ def _write_binding_table(
     selected_bindings = list(bindings or [binding])
     if binding not in selected_bindings:
         selected_bindings.append(binding)
-    column_overrides: dict[tuple[int, int], str] = {}
+    selected_column_overrides: dict[tuple[int, int], str] = {}
     for selected in selected_bindings:
         if selected.row_index < 0 or selected.row_index >= len(rows):
             raise SubmissionValidationError(f"Q{question_id}: binding row is outside source table")
@@ -105,7 +105,7 @@ def _write_binding_table(
                 f"Q{question_id}: binding parsed value differs from immutable source cell"
             )
         coordinates = (selected.row_index, selected.column_index)
-        previous = column_overrides.setdefault(coordinates, selected.column_text)
+        previous = selected_column_overrides.setdefault(coordinates, selected.column_text)
         if previous != selected.column_text:
             raise SubmissionValidationError(
                 f"Q{question_id}: same source cell has incompatible binding column labels"
@@ -117,10 +117,38 @@ def _write_binding_table(
     output_csv = package_root / relative_csv
     output_csv.parent.mkdir(parents=True, exist_ok=True)
 
+    # One immutable source table can support several questions.  Preserve the
+    # canonical labels already written for cells selected by earlier records;
+    # otherwise a later record would overwrite the shared CSV and silently
+    # invalidate an earlier pandas query.  The explicit source-column index is
+    # also part of the exported evidence identity, so duplicate values in one
+    # row cannot alias each other.
+    column_overrides: dict[tuple[int, int], str] = {}
+    if output_csv.is_file():
+        with output_csv.open(encoding="utf-8", newline="") as existing_file:
+            for existing in csv.DictReader(existing_file):
+                try:
+                    coordinates = (
+                        int(existing["source_row_index"]),
+                        int(existing["source_column_index"]),
+                    )
+                except (KeyError, TypeError, ValueError):
+                    column_overrides = {}
+                    break
+                column_overrides[coordinates] = str(existing.get("column_label") or "")
+    column_overrides.update(selected_column_overrides)
+
     with output_csv.open("w", encoding="utf-8", newline="") as file:
         writer = csv.DictWriter(
             file,
-            fieldnames=["source_row_index", "row_label", "column_label", "raw_value", "numeric_value"],
+            fieldnames=[
+                "source_row_index",
+                "source_column_index",
+                "row_label",
+                "column_label",
+                "raw_value",
+                "numeric_value",
+            ],
         )
         writer.writeheader()
         for row_index, row in enumerate(rows):
@@ -136,6 +164,7 @@ def _write_binding_table(
                 writer.writerow(
                     {
                         "source_row_index": row_index,
+                        "source_column_index": column_index,
                         "row_label": label,
                         "column_label": column_label,
                         "raw_value": raw_value,
@@ -151,6 +180,7 @@ def _binding_value_query(variable: str, binding: DirectBinding) -> str:
     column_value = json.dumps(binding.column_text, ensure_ascii=False)
     return (
         f"{variable}.loc[({variable}['source_row_index'] == {binding.row_index}) "
+        f"& ({variable}['source_column_index'] == {binding.column_index}) "
         f"& ({variable}['row_label'] == {row_value}) "
         f"& ({variable}['column_label'] == {column_value}), 'numeric_value'].iloc[0]"
     )
@@ -434,7 +464,19 @@ def _execute_query(
     *,
     record_id: int,
 ) -> float:
-    allowed = {"float": float, "int": int, "abs": abs, "round": round, "min": min, "max": max}
+    allowed = {
+        "float": float,
+        "int": int,
+        "abs": abs,
+        "round": round,
+        "min": min,
+        "max": max,
+        # Staged execution uses this only to derive the median of the explicit
+        # finite source-cell population.  Keeping it in the restricted global
+        # set permits a re-runnable median screen without granting arbitrary
+        # Python builtins to a submission expression.
+        "sorted": sorted,
+    }
     try:
         value = eval(query, {"__builtins__": {}}, {**allowed, **frames})  # noqa: S307 - restricted expression
     except Exception as error:  # execution evidence is intentionally surfaced with its question ID
@@ -509,7 +551,9 @@ def validate_submission_directory(
         query = record.get("pandas_query")
         names = _query_names(query, record_id=record_id)
         missing_variables = set(frames) - names
-        unknown_variables = (names - set(frames)) - {"float", "int", "abs", "round", "min", "max"}
+        unknown_variables = (names - set(frames)) - {
+            "float", "int", "abs", "round", "min", "max", "sorted"
+        }
         if missing_variables:
             raise SubmissionValidationError(f"Q{record_id}: query omits evidence variable(s): {sorted(missing_variables)}")
         if unknown_variables:
