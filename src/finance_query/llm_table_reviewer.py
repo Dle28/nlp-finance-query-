@@ -374,7 +374,8 @@ def build_review_packet(
         "candidates": candidates,
         "source_contract": {
             "may_choose_only_listed_candidate_id": True,
-            "must_copy_raw_value_and_canonical_header_exactly": True,
+            "model_returns_selection_keys_only": True,
+            "resolver_materializes_literal_source_fields": True,
             "may_not_compute_or_return_a_final_answer": True,
             "may_not_infer_a_missing_operand": True,
         },
@@ -387,14 +388,15 @@ def review_prompt(packet: Mapping[str, Any]) -> str:
     """Instruct Qwen to act as a cited-binding reviewer, not a QA model."""
     return """Bạn là reviewer evidence cho bảng tài chính. Không trả lời câu hỏi cuối cùng và không làm phép tính.
 Chỉ chọn cell nguồn cho từng required binding từ candidate_id đã liệt kê. Không được suy luận số, tự tạo bảng,
-đổi header, đổi raw_value, hay chọn candidate ngoài packet. Nếu một binding không có bằng chứng chắc chắn, hãy chọn
+hay chọn candidate ngoài packet. Hệ thống sẽ tự lấy header và raw_value nguyên văn từ packet: tuyệt đối không
+chép lại, diễn giải, hoặc trả về header/raw_value. Nếu một binding không có bằng chứng chắc chắn, hãy chọn
 verdict=no_candidate hoặc abstain và mô tả feedback ngắn.
 
 Trả về DUY NHẤT một JSON object theo schema:
 {
   \"verdict\": \"supported\" | \"no_candidate\" | \"abstain\",
   \"selected_bindings\": [
-    {\"candidate_id\": \"...\", \"column_index\": 0, \"canonical_header\": \"...\", \"raw_value\": \"...\"}
+    {\"candidate_id\": \"...\", \"column_index\": 0}
   ],
   \"feedback\": {\"reason_code\": \"...\", \"detail\": \"...\"},
   \"final_answer\": null
@@ -407,8 +409,9 @@ PACKET:\n""" + _canonical_json(packet)
 def self_critique_prompt(packet: Mapping[str, Any], decision: Mapping[str, Any]) -> str:
     """A second role pass catches unsupported claims; it is not an independent critic."""
     return """Bạn là self-critique fail-closed cho một review evidence. So sánh DECISION với PACKET.
-Reject nếu decision có final_answer khác null, thiếu binding, candidate_id ngoài packet, header/raw_value không literal,
-hoặc có bất kỳ suy luận không được trích dẫn. Không được sửa decision.
+Reject nếu decision có final_answer khác null, thiếu binding, candidate_id ngoài packet, column_index không có trong
+candidate, hoặc có bất kỳ suy luận không được trích dẫn. header/raw_value không thuộc output của model; chúng luôn
+được resolver lấy nguyên văn từ PACKET. Không được sửa decision.
 Trả về duy nhất JSON: {\"verdict\": \"approve\" | \"reject\", \"violations\": [\"...\"]}.
 PACKET:\n""" + _canonical_json(packet) + "\nDECISION:\n" + _canonical_json(decision)
 
@@ -469,17 +472,23 @@ def verify_llm_decision(
     selected: list[dict[str, Any]] = []
     seen_required: set[tuple[str, str]] = set()
     for binding in decision.get("selected_bindings") or []:
+        if not isinstance(binding, Mapping):
+            return _blocked(packet, "llm_invalid_binding_schema")
         candidate = candidates.get(str(binding.get("candidate_id") or ""))
         if candidate is None:
             return _blocked(packet, "llm_candidate_escape")
         key = (str(candidate["company"]), str(candidate["variable_id"]))
         if key not in required or key in seen_required:
             return _blocked(packet, "llm_duplicate_or_unrequired_binding")
+        try:
+            selected_column_index = int(binding.get("column_index"))
+        except (TypeError, ValueError):
+            return _blocked(packet, "llm_invalid_value_cell")
         expected_cell = next(
             (
                 cell
                 for cell in candidate.get("available_value_cells") or []
-                if int(cell.get("column_index", -1)) == binding.get("column_index")
+                if int(cell.get("column_index", -1)) == selected_column_index
             ),
             None,
         )
@@ -491,11 +500,9 @@ def verify_llm_decision(
             candidate.get("reporting_period_end"),
         ):
             return _blocked(packet, "llm_non_target_period_cell")
-        if (
-            str(binding.get("canonical_header") or "") != str(expected_cell["canonical_header"])
-            or str(binding.get("raw_value") or "") != str(expected_cell["raw_value"])
-        ):
-            return _blocked(packet, "llm_citation_not_literal")
+        # The model returns a location, not a copied value/header. Any legacy
+        # extra fields are ignored: calculation and audit consume only the
+        # literal source cell materialized below.
         seen_required.add(key)
         selected.append(
             {

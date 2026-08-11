@@ -55,6 +55,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-self-critique", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
+        "--trace-output",
+        type=Path,
+        default=None,
+        help=(
+            "Optional non-promotable JSONL trace of parsed model decisions, self-critique, "
+            "and verifier outcomes for debugging/feedback."
+        ),
+    )
+    parser.add_argument(
         "--decision-fixture",
         type=Path,
         default=None,
@@ -135,6 +144,7 @@ def main() -> None:
     generator = None if args.dry_run or fixtures else QwenGenerator(args.model, args.max_new_tokens)
     output: list[dict[str, Any]] = []
     packets: list[dict[str, Any]] = []
+    traces: list[dict[str, Any]] = []
     processed_questions = 0
     for route_row in routes:
         question_id = int(route_row["id"])
@@ -302,6 +312,8 @@ def main() -> None:
                 )
                 break
             assert generator is not None or fixtures
+            decision: dict[str, Any] | None = None
+            critique: dict[str, Any] | None = None
             try:
                 fixture = fixtures.get((question_id, str(stage.get("stage_id") or "")))
                 if fixtures and fixture is None:
@@ -316,6 +328,19 @@ def main() -> None:
                 )
                 verified = verify_llm_decision(packet, decision, self_critique=critique)
             except (RuntimeError, ValueError, json.JSONDecodeError) as error:
+                traces.append(
+                    {
+                        "id": question_id,
+                        "stage_id": stage.get("stage_id"),
+                        "packet_sha256": packet["packet_sha256"],
+                        "parsed_model_decision": decision,
+                        "self_critique": critique,
+                        "verifier_error": str(error),
+                        "trace_status": "generator_or_verifier_error",
+                        "training_eligible": False,
+                        "submission_eligible": False,
+                    }
+                )
                 output.append(
                     abstention(
                         question_id,
@@ -327,6 +352,20 @@ def main() -> None:
                 break
             verified["stage_id"] = stage.get("stage_id")
             verified["model"] = args.model
+            traces.append(
+                {
+                    "id": question_id,
+                    "stage_id": stage.get("stage_id"),
+                    "packet_sha256": packet["packet_sha256"],
+                    "parsed_model_decision": decision,
+                    "self_critique": critique,
+                    "verifier_annotation_status": verified.get("annotation_status"),
+                    "verifier_reason_codes": list(verified.get("reason_codes") or []),
+                    "trace_status": "verified",
+                    "training_eligible": False,
+                    "submission_eligible": False,
+                }
+            )
             if str(verified.get("annotation_status") or "") != "machine_provisional":
                 output.append(verified)
                 break
@@ -359,6 +398,9 @@ def main() -> None:
     atomic_write_jsonl(destination, output)
     packet_path = destination.with_suffix(".packets.jsonl")
     atomic_write_jsonl(packet_path, packets)
+    trace_path = None if args.trace_output is None else args.trace_output.resolve()
+    if trace_path is not None:
+        atomic_write_jsonl(trace_path, traces)
     manifest = {
         "schema_version": LLM_TABLE_REVIEW_SCHEMA_VERSION,
         "protocol": LLM_TABLE_REVIEW_PROTOCOL + "_staged_execution_v1",
@@ -369,6 +411,10 @@ def main() -> None:
         "supported_families": sorted(SUPPORTED_FAMILIES),
         "record_count": len(output),
         "packet_count": len(packets),
+        "trace_file": None if trace_path is None else str(trace_path),
+        "trace_record_count": len(traces),
+        "trace_training_eligible": False,
+        "trace_submission_eligible": False,
         "submission_eligible": False,
         "provenance_promotion_allowed": False,
     }

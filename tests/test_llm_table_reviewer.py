@@ -49,7 +49,7 @@ def packet() -> dict:
 
 
 class LlmTableReviewerTests(unittest.TestCase):
-    def test_literal_citations_become_machine_provisional_only(self):
+    def test_selection_keys_materialize_literal_cells_machine_provisionally(self):
         decision = {
             "verdict": "supported",
             "final_answer": None,
@@ -57,14 +57,10 @@ class LlmTableReviewerTests(unittest.TestCase):
                 {
                     "candidate_id": "HPG|current_assets|asset-table|2",
                     "column_index": 3,
-                    "canonical_header": "31/12/2022 VND",
-                    "raw_value": "100",
                 },
                 {
                     "candidate_id": "HPG|inventory|asset-table|14",
                     "column_index": 3,
-                    "canonical_header": "31/12/2022 VND",
-                    "raw_value": "20",
                 },
             ],
         }
@@ -72,6 +68,7 @@ class LlmTableReviewerTests(unittest.TestCase):
         self.assertEqual(result["annotation_status"], "machine_provisional")
         self.assertFalse(result["human_verified"])
         self.assertTrue(result["requires_independent_replay"])
+        self.assertEqual(result["selected_bindings"][0]["raw_value"], "100")
 
     def test_final_answer_without_a_literal_citation_is_blocked(self):
         decision = {"verdict": "supported", "final_answer": "80", "selected_bindings": []}
@@ -79,7 +76,7 @@ class LlmTableReviewerTests(unittest.TestCase):
         self.assertEqual(result["annotation_status"], "needs_human")
         self.assertEqual(result["reason_codes"], ["llm_self_inference_detected"])
 
-    def test_wrong_raw_value_is_blocked(self):
+    def test_legacy_model_copied_value_cannot_change_materialized_source_cell(self):
         decision = {
             "verdict": "supported",
             "final_answer": None,
@@ -88,12 +85,30 @@ class LlmTableReviewerTests(unittest.TestCase):
                     "candidate_id": "HPG|current_assets|asset-table|2",
                     "column_index": 3,
                     "canonical_header": "31/12/2022 VND",
-                    "raw_value": "101",
-                }
+                    "raw_value": "999999",
+                },
+                {
+                    "candidate_id": "HPG|inventory|asset-table|14",
+                    "column_index": 3,
+                    "canonical_header": "31/12/2022 VND",
+                    "raw_value": "999999",
+                },
             ],
         }
         result = verify_llm_decision(packet(), decision)
-        self.assertEqual(result["reason_codes"], ["llm_citation_not_literal"])
+        self.assertEqual(result["annotation_status"], "machine_provisional")
+        self.assertEqual(result["selected_bindings"][1]["raw_value"], "20")
+
+    def test_missing_or_non_numeric_column_is_blocked(self):
+        decision = {
+            "verdict": "supported",
+            "final_answer": None,
+            "selected_bindings": [
+                {"candidate_id": "HPG|current_assets|asset-table|2", "column_index": "not-a-column"}
+            ],
+        }
+        result = verify_llm_decision(packet(), decision)
+        self.assertEqual(result["reason_codes"], ["llm_invalid_value_cell"])
 
     def test_abstention_preserves_feedback_without_promoting_provenance(self):
         decision = {
