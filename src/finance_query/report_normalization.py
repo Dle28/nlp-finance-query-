@@ -17,7 +17,6 @@ from dataclasses import dataclass
 import re
 from typing import Any, Iterable, Mapping
 
-from .binding import row_label
 from .financial_metrics import fold_text
 
 
@@ -53,6 +52,31 @@ NON_TICKER_TOKENS = {
     "CTCP", "VND", "USD", "BCTC", "BCTC", "DVT", "DV", "HNX", "HOSE",
     "NPM", "GPM", "ICR", "EBIT", "ROA", "ROE", "EPS", "CEO", "CFO",
 }
+NUMERIC_LIKE_RE = re.compile(r"^[\s()\-+\d.,%]+$")
+
+
+def _source_row_label(row: list[str]) -> str:
+    """Return a source row's label without importing the retrieval stack.
+
+    Report normalization only needs this small, source-preserving helper.  It
+    must stay independent of :mod:`finance_query.binding`, whose retrieval
+    imports require FAISS even though normalization never opens an index.
+    """
+    if not row:
+        return ""
+    cells = row
+    if len(cells) > 1 and re.fullmatch(r"\d{1,3}", cells[0].strip()):
+        cells = cells[1:]
+
+    labels: list[str] = []
+    for cell in cells:
+        if NUMERIC_LIKE_RE.fullmatch(cell.strip()) and labels:
+            break
+        if not NUMERIC_LIKE_RE.fullmatch(cell.strip()):
+            labels.append(cell)
+        if len(labels) >= 3:
+            break
+    return " > ".join(labels) if labels else cells[0]
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,7 +183,7 @@ def source_row_metric_label(row: Iterable[Any]) -> str:
     # stay untouched.
     raw = " > ".join(
         part.strip()
-        for part in row_label([str(value) for value in row]).split(">")
+        for part in _source_row_label([str(value) for value in row]).split(">")
         if part.strip()
     )
     normalized = fold_text(raw)
@@ -210,7 +234,7 @@ def normalize_financial_variable(row: Iterable[Any]) -> dict[str, str] | None:
         "variable_id": variable_id,
         "raw_row_label": " > ".join(
             part.strip()
-            for part in row_label([str(value) for value in row]).split(">")
+            for part in _source_row_label([str(value) for value in row]).split(">")
             if part.strip()
         ),
         "normalized_row_label": normalized,
