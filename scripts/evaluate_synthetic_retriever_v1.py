@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from finance_query.synthetic_curriculum import (
+    PASSAGE_LAYOUTS,
+    PASSAGE_LAYOUT_CONTEXT_FIRST,
     SYNTHETIC_CURRICULUM_PROTOCOL,
     SYNTHETIC_PROVENANCE,
     load_jsonl,
@@ -50,6 +52,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--passage-batch-size", type=int, default=16)
     parser.add_argument("--query-batch-size", type=int, default=32)
     parser.add_argument("--max-seq-length", type=int, default=384)
+    parser.add_argument(
+        "--passage-layout",
+        choices=sorted(PASSAGE_LAYOUTS),
+        default=PASSAGE_LAYOUT_CONTEXT_FIRST,
+    )
     parser.add_argument("--device", default="cuda:0")
     return parser.parse_args()
 
@@ -211,6 +218,7 @@ def _rank_model(
     passage_batch_size: int,
     query_batch_size: int,
     max_seq_length: int,
+    passage_layout: str,
     device: str,
 ) -> dict[str, list[str]]:
     os.environ["WANDB_DISABLED"] = "true"
@@ -219,7 +227,7 @@ def _rank_model(
     from sentence_transformers import SentenceTransformer
 
     table_uids = tuple(sorted(assets))
-    passages = [table_passage(assets[uid]) for uid in table_uids]
+    passages = [table_passage(assets[uid], layout=passage_layout) for uid in table_uids]
     rows = [row for split_rows in rows_by_split.values() for row in split_rows]
     questions = [str(row["question"]) for row in rows]
     model = SentenceTransformer(model_reference, device=device)
@@ -285,6 +293,7 @@ def main() -> None:
             passage_batch_size=args.passage_batch_size,
             query_batch_size=args.query_batch_size,
             max_seq_length=args.max_seq_length,
+            passage_layout=args.passage_layout,
             device=args.device,
         )
         split_metrics: dict[str, Any] = {}
@@ -314,6 +323,7 @@ def main() -> None:
             "passage_batch_size": args.passage_batch_size,
             "query_batch_size": args.query_batch_size,
             "max_seq_length": args.max_seq_length,
+            "passage_layout": args.passage_layout,
             "device": args.device,
         },
         "models": model_results,

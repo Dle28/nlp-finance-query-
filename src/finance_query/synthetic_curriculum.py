@@ -231,8 +231,22 @@ def extract_numeric_cells(asset: Mapping[str, Any], *, max_cells: int) -> list[N
     return cells
 
 
-def table_passage(asset: Mapping[str, Any]) -> str:
-    """Render the same source table consistently for positive and negatives."""
+PASSAGE_LAYOUT_CONTEXT_FIRST = "context_first"
+PASSAGE_LAYOUT_ROWS_FIRST = "rows_first"
+PASSAGE_LAYOUTS = frozenset(
+    {PASSAGE_LAYOUT_CONTEXT_FIRST, PASSAGE_LAYOUT_ROWS_FIRST}
+)
+
+
+def table_passage(
+    asset: Mapping[str, Any],
+    *,
+    layout: str = PASSAGE_LAYOUT_CONTEXT_FIRST,
+) -> str:
+    """Render a source table consistently without silently changing layout."""
+
+    if layout not in PASSAGE_LAYOUTS:
+        raise ValueError(f"Unsupported table passage layout: {layout!r}")
 
     context_trace = asset.get("context_trace") or {}
     source_title = ""
@@ -248,19 +262,20 @@ def table_passage(asset: Mapping[str, Any]) -> str:
             rendered = " | ".join(_clean_text(value) for value in row if _clean_text(value))
             if rendered:
                 table_rows.append(rendered)
-    payload = "\n".join(
-        part
-        for part in (
-            f"ISSUER: {asset.get('ticker')}",
-            f"REPORT_YEAR: {asset.get('report_year')}",
-            f"REPORT_SCOPE: {asset.get('scope')}",
-            f"DOCUMENT: {asset.get('document_id')}",
-            f"SECTION: {context[:700]}",
-            f"COLUMNS: {headers}",
-            "TABLE:\n" + "\n".join(table_rows),
-        )
-        if part
+    identity = (
+        f"ISSUER: {asset.get('ticker')}",
+        f"REPORT_YEAR: {asset.get('report_year')}",
+        f"REPORT_SCOPE: {asset.get('scope')}",
+        f"DOCUMENT: {asset.get('document_id')}",
     )
+    table = (f"COLUMNS: {headers}", "TABLE:\n" + "\n".join(table_rows))
+    section = (f"SECTION: {context[:700]}",)
+    ordered_parts = (
+        identity + section + table
+        if layout == PASSAGE_LAYOUT_CONTEXT_FIRST
+        else identity + table + section
+    )
+    payload = "\n".join(part for part in ordered_parts if part)
     return payload[:6000]
 
 

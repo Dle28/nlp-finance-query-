@@ -3,11 +3,14 @@ from __future__ import annotations
 import unittest
 
 from finance_query.synthetic_curriculum import (
+    PASSAGE_LAYOUT_CONTEXT_FIRST,
+    PASSAGE_LAYOUT_ROWS_FIRST,
     SYNTHETIC_CURRICULUM_PROTOCOL,
     build_synthetic_curriculum,
     build_candidate_index,
     build_hard_negatives,
     extract_numeric_cells,
+    table_passage,
     verify_synthetic_example,
 )
 
@@ -79,6 +82,16 @@ ASSETS = [
 
 
 class SyntheticCurriculumTests(unittest.TestCase):
+    def test_rows_first_passage_preserves_identity_and_moves_table_before_context(self):
+        sample = ASSETS[0]
+        context_first = table_passage(sample, layout=PASSAGE_LAYOUT_CONTEXT_FIRST)
+        rows_first = table_passage(sample, layout=PASSAGE_LAYOUT_ROWS_FIRST)
+        self.assertIn("ISSUER: VJC", rows_first)
+        self.assertLess(context_first.index("SECTION:"), context_first.index("TABLE:"))
+        self.assertLess(rows_first.index("TABLE:"), rows_first.index("SECTION:"))
+        with self.assertRaisesRegex(ValueError, "Unsupported"):
+            table_passage(sample, layout="unknown")
+
     def test_numeric_cells_keep_only_replayable_values(self):
         noisy = asset(
             "noisy",

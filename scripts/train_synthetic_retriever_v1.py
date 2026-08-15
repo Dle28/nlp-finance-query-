@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from finance_query.synthetic_curriculum import (
+    PASSAGE_LAYOUTS,
+    PASSAGE_LAYOUT_CONTEXT_FIRST,
     SYNTHETIC_CURRICULUM_PROTOCOL,
     SYNTHETIC_PROVENANCE,
     load_jsonl,
@@ -53,6 +55,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--max-seq-length", type=int, default=512)
+    parser.add_argument(
+        "--passage-layout",
+        choices=sorted(PASSAGE_LAYOUTS),
+        default=PASSAGE_LAYOUT_CONTEXT_FIRST,
+        help="Order table evidence relative to report context; recorded in training metadata.",
+    )
     parser.add_argument("--device", default=None)
     parser.add_argument("--gpu-id", default="0")
     parser.add_argument("--gradient-checkpointing", action="store_true")
@@ -112,6 +120,8 @@ def make_training_examples(
     assets: dict[str, dict[str, Any]],
     model_name: str,
     input_example_cls: type,
+    *,
+    passage_layout: str = PASSAGE_LAYOUT_CONTEXT_FIRST,
 ) -> tuple[list[Any], int]:
     examples: list[Any] = []
     hard_negative_count = 0
@@ -129,8 +139,16 @@ def make_training_examples(
             input_example_cls(
                 texts=[
                     model_text(model_name, str(row["question"]), query=True),
-                    model_text(model_name, table_passage(assets[positive_uid]), query=False),
-                    model_text(model_name, table_passage(assets[negative_uid]), query=False),
+                    model_text(
+                        model_name,
+                        table_passage(assets[positive_uid], layout=passage_layout),
+                        query=False,
+                    ),
+                    model_text(
+                        model_name,
+                        table_passage(assets[negative_uid], layout=passage_layout),
+                        query=False,
+                    ),
                 ]
             )
         )
@@ -222,7 +240,11 @@ def main() -> None:
     from torch.utils.data import DataLoader
 
     examples, hard_negative_count = make_training_examples(
-        rows, assets, args.model, InputExample
+        rows,
+        assets,
+        args.model,
+        InputExample,
+        passage_layout=args.passage_layout,
     )
     if len(examples) < args.batch_size:
         raise RuntimeError("Not enough examples for one complete training batch")
@@ -278,6 +300,7 @@ def main() -> None:
         "freeze_transformer_layers": frozen_layer_count,
         "seed": args.seed,
         "max_seq_length": args.max_seq_length,
+        "passage_layout": args.passage_layout,
         "loss": "MultipleNegativesRankingLoss(query, positive, hard_negative)",
         "curriculum_sha256": sha256_file(args.curriculum),
         "source_tables_sha256": expected_tables_sha256,
