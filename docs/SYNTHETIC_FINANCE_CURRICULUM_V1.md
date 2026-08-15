@@ -80,3 +80,23 @@ negatives. File `training_metadata.json` giữ hash đầu vào của model arti
 
 Chỉ đánh giá trên `validation`/`test` issuer-held-out. Không promote retriever
 nếu Recall@K cải thiện nhưng wrong-scope hoặc wrong-year tăng.
+
+## Đánh giá issuer-held-out
+
+Không chạy lại notebook fine-tune để đánh giá. Dùng notebook GPU độc lập
+`notebooks/vifinqa_bge_m3_issuer_heldout_evaluation_v1.ipynb`, gắn bốn input:
+
+1. `dungle2810/vifinqa-synthetic-finance-curriculum-v1`;
+2. `dungle2810/vifinqa-baseline-artifacts`;
+3. `dungle2810/vifinqa-synthetic-retriever-source-v1`;
+4. kernel output của `dungle2810/vifinqa-bge-m3-synthetic-retriever-v1-run`.
+
+Evaluator chấp nhận duy nhất split `validation` và `test`, hash-check curriculum,
+manifest, table corpus và fine-tuned `model.safetensors`, rồi so sánh cùng corpus
+giữa `BAAI/bge-m3` base và model fine-tuned. Output gồm `evaluation_manifest.json`
+và ranking JSONL theo model/split, với Recall@K, MRR, cùng breakdown Top-1
+`wrong_entity`, `wrong_year`, `wrong_scope`, `wrong_document`.
+
+`promotion_status` luôn là `offline_evaluation_complete_not_promoted`. Việc
+promotion phải là quyết định tách biệt sau khi kiểm tra Recall@K tăng mà lỗi
+year/scope không tăng vượt ngưỡng đã duyệt.
