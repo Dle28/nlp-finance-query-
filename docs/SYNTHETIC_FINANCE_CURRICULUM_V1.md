@@ -129,3 +129,32 @@ Recall@K/MRR trên train, validation, test và đo cosine `query-positive`,
 `diagnostic_status` luôn là `complete_not_for_promotion_or_submission`.
 Không dùng train metrics để select/promotion model; kết quả hợp lệ duy nhất vẫn
 là issuer-held-out validation/test từ evaluator độc lập.
+
+## Candidate V2: controls và gate follow-up
+
+Trainer hỗ trợ controls để chạy một candidate **mới, tên output mới** sau khi
+diagnostic chỉ ra hướng xử lý: `--learning-rate`, `--steps-per-epoch`,
+`--freeze-transformer-layers`, `--seed`. Defaults giữ nguyên candidate V1;
+không thay đổi hay ghi đè model đã thất bại. Ví dụ conservative V2 chỉ là cấu
+hình dự kiến, không phải kết quả hay approval:
+
+```bash
+--learning-rate 2e-6 --epochs 1 --steps-per-epoch 1047 \
+--freeze-transformer-layers 18 --seed 13
+```
+
+Sau issuer-held-out evaluation, đánh giá gate bằng manifest thay vì chọn theo
+train result:
+
+```bash
+rtk .venv/bin/python scripts/assess_synthetic_retriever_candidate_v1.py \
+  --evaluation-manifest /kaggle/working/bge_m3_issuer_heldout_evaluation_v1/evaluation_manifest.json \
+  --base-label base --candidate-label finetuned --required-k 10 \
+  --output /kaggle/working/bge_m3_candidate_assessment_v1.json
+```
+
+Gate chỉ trả `eligible_for_followup_experiment_not_promoted` khi candidate có
+Recall@10 **tăng nghiêm ngặt** trên cả validation và test, đồng thời Top-1
+`wrong_year` và `wrong_scope` không tăng. Mọi kết quả còn lại là
+`rejected_by_issuer_heldout_gate_not_promoted`; không status nào ở đây là
+production promotion hoặc submission eligibility.

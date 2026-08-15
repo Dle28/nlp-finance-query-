@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--warmup-ratio", type=float, default=0.1)
+    parser.add_argument("--learning-rate", type=float, default=2e-5)
+    parser.add_argument(
+        "--steps-per-epoch",
+        type=int,
+        default=None,
+        help="Optional bounded update count per epoch; must be positive when supplied.",
+    )
+    parser.add_argument(
+        "--freeze-transformer-layers",
+        type=int,
+        default=0,
+        help="Freeze this many lowest Transformer encoder layers before training.",
+    )
+    parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--max-seq-length", type=int, default=512)
     parser.add_argument("--device", default=None)
     parser.add_argument("--gpu-id", default="0")
@@ -135,10 +150,57 @@ def configure_training_environment(*, device: str | None, gpu_id: str) -> None:
     os.environ["WANDB_MODE"] = "disabled"
 
 
+def validate_training_controls(
+    *,
+    learning_rate: float,
+    steps_per_epoch: int | None,
+    freeze_transformer_layers: int,
+    seed: int,
+) -> None:
+    """Reject unsafe or ambiguous candidate controls before model loading."""
+    if not math.isfinite(learning_rate) or not 0.0 < learning_rate <= 1e-3:
+        raise ValueError("learning-rate must be finite and in (0, 1e-3]")
+    if steps_per_epoch is not None and steps_per_epoch < 1:
+        raise ValueError("steps-per-epoch must be positive when supplied")
+    if freeze_transformer_layers < 0:
+        raise ValueError("freeze-transformer-layers must be non-negative")
+    if seed < 0:
+        raise ValueError("seed must be non-negative")
+
+
+def freeze_transformer_layers(model: Any, *, count: int) -> int:
+    """Freeze a bounded lower prefix and fail if the selected encoder is unknown."""
+    if count == 0:
+        return 0
+    try:
+        auto_model = model[0].auto_model
+        layers = auto_model.encoder.layer
+    except (AttributeError, IndexError, TypeError) as error:
+        raise RuntimeError("Selected model does not expose Transformer encoder layers") from error
+    if count > len(layers):
+        raise ValueError(
+            f"freeze-transformer-layers={count} exceeds available encoder layers={len(layers)}"
+        )
+    for layer in layers[:count]:
+        for parameter in layer.parameters():
+            parameter.requires_grad = False
+    return count
+
+
 def main() -> None:
     args = parse_args()
     if args.batch_size < 2:
         raise ValueError("batch-size must be at least 2 for in-batch negatives")
+    if args.epochs < 1:
+        raise ValueError("epochs must be positive")
+    if not 0.0 <= args.warmup_ratio <= 1.0:
+        raise ValueError("warmup-ratio must be in [0, 1]")
+    validate_training_controls(
+        learning_rate=args.learning_rate,
+        steps_per_epoch=args.steps_per_epoch,
+        freeze_transformer_layers=args.freeze_transformer_layers,
+        seed=args.seed,
+    )
     if args.output_dir.exists() and any(args.output_dir.iterdir()):
         raise FileExistsError(f"Refusing to overwrite trained artifact: {args.output_dir}")
     manifest = validate_manifest(args.curriculum, args.manifest, args.bundle_tables)
@@ -156,6 +218,7 @@ def main() -> None:
     configure_training_environment(device=args.device, gpu_id=args.gpu_id)
     from sentence_transformers import InputExample, SentenceTransformer
     from sentence_transformers.losses import MultipleNegativesRankingLoss
+    import torch
     from torch.utils.data import DataLoader
 
     examples, hard_negative_count = make_training_examples(
@@ -165,19 +228,36 @@ def main() -> None:
         raise RuntimeError("Not enough examples for one complete training batch")
     model = SentenceTransformer(args.model, device=args.device)
     model.max_seq_length = args.max_seq_length
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
     if args.gradient_checkpointing:
         auto_model = getattr(model[0], "auto_model", None)
         if auto_model is None or not hasattr(auto_model, "gradient_checkpointing_enable"):
             raise RuntimeError("Selected model does not expose gradient checkpointing")
         auto_model.gradient_checkpointing_enable()
-    train_loader = DataLoader(examples, shuffle=True, batch_size=args.batch_size, drop_last=True)
+    frozen_layer_count = freeze_transformer_layers(
+        model, count=args.freeze_transformer_layers
+    )
+    loader_generator = torch.Generator()
+    loader_generator.manual_seed(args.seed)
+    train_loader = DataLoader(
+        examples,
+        shuffle=True,
+        batch_size=args.batch_size,
+        drop_last=True,
+        generator=loader_generator,
+    )
     train_loss = MultipleNegativesRankingLoss(model)
-    warmup_steps = max(1, int(len(train_loader) * args.epochs * args.warmup_ratio))
+    effective_steps_per_epoch = args.steps_per_epoch or len(train_loader)
+    warmup_steps = max(1, int(effective_steps_per_epoch * args.epochs * args.warmup_ratio))
     args.output_dir.mkdir(parents=True, exist_ok=True)
     model.fit(
         train_objectives=[(train_loader, train_loss)],
         epochs=args.epochs,
+        steps_per_epoch=args.steps_per_epoch,
         warmup_steps=warmup_steps,
+        optimizer_params={"lr": args.learning_rate},
         output_path=str(args.output_dir),
         show_progress_bar=True,
         use_amp=str(model.device).startswith("cuda"),
@@ -191,6 +271,12 @@ def main() -> None:
         "explicit_hard_negative_examples": hard_negative_count,
         "epochs": args.epochs,
         "batch_size": args.batch_size,
+        "learning_rate": args.learning_rate,
+        "steps_per_epoch": args.steps_per_epoch,
+        "effective_steps_per_epoch": effective_steps_per_epoch,
+        "warmup_steps": warmup_steps,
+        "freeze_transformer_layers": frozen_layer_count,
+        "seed": args.seed,
         "max_seq_length": args.max_seq_length,
         "loss": "MultipleNegativesRankingLoss(query, positive, hard_negative)",
         "curriculum_sha256": sha256_file(args.curriculum),

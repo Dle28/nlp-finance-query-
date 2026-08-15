@@ -32,6 +32,55 @@ spec.loader.exec_module(mod)
 
 
 class TrainSyntheticRetrieverTests(unittest.TestCase):
+    def test_candidate_training_controls_fail_closed(self):
+        mod.validate_training_controls(
+            learning_rate=2e-6,
+            steps_per_epoch=100,
+            freeze_transformer_layers=3,
+            seed=13,
+        )
+        with self.assertRaisesRegex(ValueError, "learning-rate"):
+            mod.validate_training_controls(
+                learning_rate=0.0,
+                steps_per_epoch=None,
+                freeze_transformer_layers=0,
+                seed=0,
+            )
+        with self.assertRaisesRegex(ValueError, "steps-per-epoch"):
+            mod.validate_training_controls(
+                learning_rate=2e-6,
+                steps_per_epoch=0,
+                freeze_transformer_layers=0,
+                seed=0,
+            )
+
+    def test_freeze_transformer_layers_is_bounded(self):
+        class Parameter:
+            def __init__(self):
+                self.requires_grad = True
+
+        class Layer:
+            def __init__(self):
+                self.parameter = Parameter()
+
+            def parameters(self):
+                return [self.parameter]
+
+        class Model:
+            def __init__(self):
+                self.layers = [Layer(), Layer(), Layer()]
+                self.auto_model = type(
+                    "AutoModel", (), {"encoder": type("Encoder", (), {"layer": self.layers})()}
+                )()
+
+        model = [Model()]
+        self.assertEqual(mod.freeze_transformer_layers(model, count=2), 2)
+        self.assertFalse(model[0].layers[0].parameter.requires_grad)
+        self.assertFalse(model[0].layers[1].parameter.requires_grad)
+        self.assertTrue(model[0].layers[2].parameter.requires_grad)
+        with self.assertRaisesRegex(ValueError, "exceeds"):
+            mod.freeze_transformer_layers(model, count=4)
+
     def test_training_environment_disables_wandb_before_library_import(self):
         previous = {key: os.environ.get(key) for key in ("WANDB_DISABLED", "WANDB_MODE")}
         try:
