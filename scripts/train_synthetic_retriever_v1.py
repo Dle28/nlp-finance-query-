@@ -123,6 +123,18 @@ def make_training_examples(
     return examples, hard_negative_count
 
 
+def configure_training_environment(*, device: str | None, gpu_id: str) -> None:
+    """Set deterministic runtime switches before importing training libraries."""
+    if device is None or str(device).startswith("cuda"):
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    # SentenceTransformers delegates to Transformers callbacks.  A Kaggle GPU
+    # job has no interactive W&B login, so telemetry must be disabled before
+    # either package is imported.
+    os.environ["WANDB_DISABLED"] = "true"
+    os.environ["WANDB_MODE"] = "disabled"
+
+
 def main() -> None:
     args = parse_args()
     if args.batch_size < 2:
@@ -141,9 +153,7 @@ def main() -> None:
         for asset in load_table_assets(args.bundle_tables)
     }
 
-    if args.device is None or str(args.device).startswith("cuda"):
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_id)
-    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    configure_training_environment(device=args.device, gpu_id=args.gpu_id)
     from sentence_transformers import InputExample, SentenceTransformer
     from sentence_transformers.losses import MultipleNegativesRankingLoss
     from torch.utils.data import DataLoader

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,6 +32,19 @@ spec.loader.exec_module(mod)
 
 
 class TrainSyntheticRetrieverTests(unittest.TestCase):
+    def test_training_environment_disables_wandb_before_library_import(self):
+        previous = {key: os.environ.get(key) for key in ("WANDB_DISABLED", "WANDB_MODE")}
+        try:
+            mod.configure_training_environment(device="cuda:0", gpu_id="0")
+            self.assertEqual(os.environ["WANDB_DISABLED"], "true")
+            self.assertEqual(os.environ["WANDB_MODE"], "disabled")
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
     def test_manifest_and_rows_fail_closed_on_hash_or_replay_drift(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
