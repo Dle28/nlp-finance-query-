@@ -100,3 +100,32 @@ và ranking JSONL theo model/split, với Recall@K, MRR, cùng breakdown Top-1
 `promotion_status` luôn là `offline_evaluation_complete_not_promoted`. Việc
 promotion phải là quyết định tách biệt sau khi kiểm tra Recall@K tăng mà lỗi
 year/scope không tăng vượt ngưỡng đã duyệt.
+
+## Chẩn đoán khi candidate không qua held-out
+
+Khi held-out Recall@K suy giảm mạnh, không dùng split `train` để thay thế hay
+để hợp thức hóa kết quả. Chạy diagnostic độc lập dưới đây để phân biệt hai
+trường hợp: model chỉ nhớ synthetic train distribution, hoặc training làm hỏng
+quan hệ query/table ngay cả trên train.
+
+```bash
+rtk .venv/bin/python scripts/diagnose_synthetic_retriever_v1.py \
+  --curriculum /kaggle/input/vifinqa-synthetic-finance-curriculum-v1/synthetic_finance_curriculum_v1.jsonl \
+  --manifest /kaggle/input/vifinqa-synthetic-finance-curriculum-v1/synthetic_finance_curriculum_v1.manifest.json \
+  --bundle-tables /kaggle/input/vifinqa-baseline-artifacts/tables.jsonl \
+  --model base=BAAI/bge-m3 \
+  --model finetuned=/kaggle/input/vifinqa-bge-m3-synthetic-retriever-v1-run/bge_m3_synthetic_v1 \
+  --output-dir /kaggle/working/bge_m3_synthetic_v1_diagnostic \
+  --diagnostic-allow-train \
+  --device cuda:0 --passage-batch-size 16 --query-batch-size 32 --max-seq-length 384
+```
+
+Flag `--diagnostic-allow-train` là bắt buộc vì train split chỉ được mở cho chẩn
+đoán. Script hash-check/replay toàn bộ curriculum giống evaluator, lập lại
+Recall@K/MRR trên train, validation, test và đo cosine `query-positive`,
+`query-hard-negative`, cùng margin cho từng row. Nó ghi
+`diagnostic_manifest.json` và `<model>_<split>_diagnostic.jsonl`.
+
+`diagnostic_status` luôn là `complete_not_for_promotion_or_submission`.
+Không dùng train metrics để select/promotion model; kết quả hợp lệ duy nhất vẫn
+là issuer-held-out validation/test từ evaluator độc lập.
