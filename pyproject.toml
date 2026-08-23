@@ -36,6 +36,9 @@ llm = [
 kaggle = [
   "kaggle>=1.6",
 ]
+dev = [
+  "pytest>=8.0",
+]
 
 [project.scripts]
 finance-query = "finance_query.cli:main"
