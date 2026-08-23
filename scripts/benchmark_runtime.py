@@ -14,9 +14,11 @@ when aggregate VRAM appears sufficient.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import os
+import sys
 import time
 from itertools import islice
 from pathlib import Path
@@ -107,9 +109,14 @@ def main() -> None:
     if requested_cuda and not args.allow_multi_gpu:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_id)
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    # This is a local synthetic-throughput measurement. Never start an external
+    # experiment-tracking run or prompt for a W&B API key on Kaggle.
+    os.environ["WANDB_DISABLED"] = "true"
+    os.environ["WANDB_MODE"] = "disabled"
 
     from sentence_transformers import InputExample, SentenceTransformer
     from sentence_transformers.losses import MultipleNegativesRankingLoss
+    import torch
     from torch.utils.data import DataLoader
 
     total_assets = count_assets(args.assets)
@@ -122,6 +129,19 @@ def main() -> None:
     device = str(model.device)
     use_amp = device.startswith("cuda")
 
+    def gpu_metrics() -> dict[str, object]:
+        if not use_amp or not torch.cuda.is_available():
+            return {
+                "gpu_name": None,
+                "peak_gpu_memory_allocated_mb": None,
+                "peak_gpu_memory_reserved_mb": None,
+            }
+        return {
+            "gpu_name": torch.cuda.get_device_name(torch.cuda.current_device()),
+            "peak_gpu_memory_allocated_mb": round(torch.cuda.max_memory_allocated() / (1024**2), 2),
+            "peak_gpu_memory_reserved_mb": round(torch.cuda.max_memory_reserved() / (1024**2), 2),
+        }
+
     passages = [
         model_text(args.model, asset.get("search_text", ""), query=False)
         for asset in sample
@@ -133,6 +153,8 @@ def main() -> None:
         normalize_embeddings=True,
         show_progress_bar=False,
     )
+    if use_amp:
+        torch.cuda.reset_peak_memory_stats()
     started = time.perf_counter()
     model.encode(
         passages,
@@ -154,6 +176,7 @@ def main() -> None:
         "encoding_sample_size": len(sample),
         "tables_per_second": tables_per_second,
         "estimated_full_dense_index_hours": estimated_index_seconds / 3600,
+        **gpu_metrics(),
     }
 
     if args.encode_only:
@@ -196,15 +219,20 @@ def main() -> None:
     steps = min(args.train_steps, max(1, len(loader)))
     train_loss = MultipleNegativesRankingLoss(model)
 
+    if use_amp:
+        torch.cuda.reset_peak_memory_stats()
     started = time.perf_counter()
-    model.fit(
-        train_objectives=[(loader, train_loss)],
-        epochs=1,
-        steps_per_epoch=steps,
-        warmup_steps=0,
-        show_progress_bar=False,
-        use_amp=use_amp,
-    )
+    # Trainer's PrinterCallback emits a Python-dict metrics line to stdout.
+    # Keep stdout reserved for the final machine-readable JSON result.
+    with contextlib.redirect_stdout(sys.stderr):
+        model.fit(
+            train_objectives=[(loader, train_loss)],
+            epochs=1,
+            steps_per_epoch=steps,
+            warmup_steps=0,
+            show_progress_bar=False,
+            use_amp=use_amp,
+        )
     train_seconds = time.perf_counter() - started
     seconds_per_step = train_seconds / steps
     target_steps = math.ceil(args.train_pairs / args.train_batch_size) * args.epochs
@@ -220,6 +248,7 @@ def main() -> None:
             "target_training_pairs": args.train_pairs,
             "target_epochs": args.epochs,
             "estimated_training_hours": estimated_train_seconds / 3600,
+            **gpu_metrics(),
             "warning": (
                 "Training throughput uses synthetic pairs and estimates runtime only; "
                 "it does not estimate retrieval quality."

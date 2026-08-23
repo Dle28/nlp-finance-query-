@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_entity_role_relational_chatgpt_review_spec_v1",
+  "decision_provenance": {
+    "reviewer_type": "chatgpt_verified",
+    "reviewer_id": "chatgpt-gpt5-entity-role-relational-critic-v1",
+    "reviewer_role": "authorized_ai_entity_role_evidence_critic",
+    "model_family": "GPT-5",
+    "review_policy": "fail_closed_evidence_bound_v1",
+    "verification_authority": "human_equivalent",
+    "authority_grant": {
+      "granted_by": "campaign_owner",
+      "grant_scope": "entity_role_review_gate_equivalence",
+      "grant_basis": "explicit_user_instruction"
+    }
+  },
+  "authority_receipt": {
+    "verification_authority": "human_equivalent",
+    "gate_effect": "same_eligibility_weight_as_human_verified",
+    "provenance_preserved_as": "chatgpt_verified",
+    "scope": "entity_role_review_gate_equivalence",
+    "release_authority_included": false,
+    "training_authority_included": false,
+    "submission_authority_included": false,
+    "value_selection_authority_included": false,
+    "formula_execution_authority_included": false
+  },
+  "reviews": [
+    {"question_id": 6, "decision": "approve_relational_parent_role", "selected_line_number": 304, "reason_codes": [], "rationale": "Phản biện đạt: line 304 gắn 'Công ty' với một tập công ty con hiện hữu; issuer SHA và document UID khóa VSC, còn separate không tham gia suy luận role.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 10, "decision": "approve_relational_parent_role", "selected_line_number": 415, "reason_codes": [], "rationale": "Phản biện đạt: 'các công ty con của Công ty' là quan hệ sở thuộc rõ, không phải định nghĩa chung hoặc role của một entity khác.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 27, "decision": "approve_relational_parent_role", "selected_line_number": 1222, "reason_codes": [], "rationale": "Phản biện đạt: line 1222 nói công ty con của issuer DLG theo exact-document co-reference; không chọn line định nghĩa chung ở 737/741.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 145, "decision": "approve_relational_parent_role", "selected_line_number": 664, "reason_codes": [], "rationale": "Phản biện đạt: việc chính Công ty thành lập ba subsidiary là bằng chứng quan hệ thực tế, không phải accounting boilerplate.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 168, "decision": "approve_relational_parent_role", "selected_line_number": 344, "reason_codes": [], "rationale": "Phản biện đạt: line 344 xác định subsidiaries là của Công ty trong CRE exact source; line HTML dài không cần dùng.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 181, "decision": "approve_relational_parent_role", "selected_line_number": 760, "reason_codes": [], "rationale": "Phản biện đạt có điều kiện exact co-reference: khoản đầu tư của Công ty vào các công ty con chứng minh VRE có subsidiaries. Dòng Vingroup là công ty mẹ không được dùng cho kết luận này.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 184, "decision": "approve_relational_parent_role", "selected_line_number": 489, "reason_codes": [], "rationale": "Phản biện đạt: named entity Tập đoàn DIC có cả direct và indirect subsidiaries, loại bỏ rủi ro đại từ 'Công ty' trỏ sai issuer.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 249, "decision": "approve_relational_parent_role", "selected_line_number": 400, "reason_codes": [], "rationale": "Phản biện đạt: line 400 là fact-specific subsidiary count của issuer HDG, không phải generic policy text.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 292, "decision": "approve_relational_parent_role", "selected_line_number": 851, "reason_codes": [], "rationale": "Phản biện đạt: exact note nói chi tiết về subsidiaries của Công ty; chọn line 851 cụ thể thay vì suy từ separate scope hay generic definition.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 316, "decision": "approve_relational_parent_role", "selected_line_number": 523, "reason_codes": [], "rationale": "Phản biện đạt: fact statement theo hai mốc ngày xác nhận NKG issuer có subsidiaries; numeric answer values không được mở cho reviewer.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 325, "decision": "approve_relational_parent_role", "selected_line_number": 339, "reason_codes": [], "rationale": "Phản biện đạt: line 339 đồng thời xác nhận Công ty có subsidiaries và định nghĩa Company+subsidiaries là Group; scope riêng vẫn không bị đồng nhất với role.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}}
+  ]
+}

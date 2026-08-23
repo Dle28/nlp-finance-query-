@@ -16,6 +16,9 @@ from .questions import (
 from .schemas import OperandSpec, QuestionFamily, QuestionPlan
 
 
+REVIEWED_ROUTER_LABEL_SOURCE = "reviewed_question_family_v1"
+
+
 class EmbeddingQuestionRouter:
     """Embedding encoder plus a lightweight probabilistic classifier."""
 
@@ -27,6 +30,11 @@ class EmbeddingQuestionRouter:
                 f"Router bundle must contain metadata.json and classifier.joblib: {model_dir}"
             )
         self.metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if self.metadata.get("label_source") != REVIEWED_ROUTER_LABEL_SOURCE:
+            raise ValueError(
+                "Question router must be trained from reviewed semantic-family labels; "
+                "question-ID range supervision is not admissible."
+            )
         self.classifier = joblib.load(classifier_path)
         self.encoder_model = str(self.metadata["encoder_model"])
         self.encoder = SentenceTransformer(self.encoder_model, device=device)

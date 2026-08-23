@@ -178,6 +178,132 @@ def _ratio(
     )
 
 
+def _clean_explicit_ratio_metric(value: str) -> str:
+    """Keep only the row-level metric in an explicitly stated fraction.
+
+    This helper is deliberately conservative.  It removes query scaffolding
+    (for example ``tỷ lệ đóng góp của``) but does not attempt to invent a
+    numerator for shorthand metrics such as ROE or ``tỷ suất lợi nhuận ròng``.
+    Those terms need their own controlled definitions.
+    """
+    metric = re.sub(r"\s+", " ", value).strip(" .,;:?")
+    metric = re.sub(
+        r"^(?:tinh\s+)?(?:dong\s+gop\s+cua\s+|cua\s+)",
+        "",
+        metric,
+    )
+    metric = re.sub(r"^%\s*", "", metric)
+    return metric.strip(" .,;:?")
+
+
+def _trim_explicit_ratio_denominator(value: str) -> str:
+    """Remove only unambiguous report-context suffixes from a denominator."""
+    metric = re.sub(r"\s+", " ", value).strip(" .,;:?")
+    context = re.search(
+        r"\s+(?:"
+        r"cua\s+(?:cong\s+ty\s+me|ctcp|cong\s+ty\s+co\s+phan|tap\s+doan|"
+        r"tong\s+cong\s+ty|ngan\s+hang)|"
+        r"tai\s+ngay|vao\s+(?:cuoi\s+nam|ngay)|den\s+ngay|tinh\s+den|"
+        r"cuoi\s+nam|nam\s+(?:19|20)\d{2}|la\s+bao\s+nhieu|bao\s+nhieu|"
+        r"theo\s+don\s+vi|\(\s*%\s*\)|%"
+        r")\b",
+        metric,
+    )
+    if context:
+        metric = metric[: context.start()]
+    # A short final ticker is report context, not a financial-row label.  Do
+    # not remove a longer phrase: names such as "công ty liên kết" can be a
+    # legitimate denominator label.
+    metric = re.sub(r"\s+cua\s+[a-z0-9]{2,6}$", "", metric)
+    return metric.strip(" .,;:?")
+
+
+def _explicit_fraction_plan(
+    question: str,
+    folded_question: str,
+    years: list[int],
+) -> dict[str, Any] | None:
+    """Recognise a literal ``X trên/trong Y`` fraction without conventions.
+
+    The phrase must itself name both operands.  This is distinct from
+    financial shorthand such as ``ROE`` or ``tỷ suất lợi nhuận ròng``: their
+    denominator is convention-dependent and must remain review-required until
+    a dedicated definition is added.  Multi-entity, temporal, and selection
+    questions are also intentionally excluded here.
+    """
+    unsafe_cues = (
+        "trong nhom",
+        "trong cac doanh nghiep",
+        "trong cac cong ty",
+        "xet cac",
+        "cao nhat",
+        "thap nhat",
+        "trung vi",
+        "chenh lech",
+        "so voi",
+        "tang truong",
+        "tang bao nhieu",
+        "giam bao nhieu",
+    )
+    if len(years) > 1 or any(cue in folded_question for cue in unsafe_cues):
+        return None
+
+    # ``tỷ suất`` is omitted on purpose.  In Vietnamese reports it often
+    # denotes a conventional metric whose numerator is not written in the
+    # question (for example ROE), unlike a literal "tỷ lệ X trên Y".
+    match = re.search(
+        r"\b(?:ty\s+le|ti\s+le|ty\s+trong|ti\s+trong|ty\s+so|he\s+so)\s+"
+        r"(.+?)\s+(?:tren|trong)\s+(.+)$",
+        folded_question,
+    )
+    if not match:
+        # This narrow unprefixed form is common in the corpus and still
+        # explicitly supplies both leaves: "Lợi nhuận sau thuế trên tổng tài
+        # sản ... là bao nhiêu phần trăm".  Do not generalise it to arbitrary
+        # "X trên Y" text, which would capture EPS and prose clauses.
+        match = re.search(
+            r"\b(loi\s+nhuan\s+(?:sau|truoc)\s+thue)\s+tren\s+(.+)$",
+            folded_question,
+        )
+        if not match or not any(
+            cue in folded_question for cue in ("phan tram", "bao nhieu %", "(%)")
+        ):
+            return None
+
+    numerator = _clean_explicit_ratio_metric(match.group(1))
+    denominator = _trim_explicit_ratio_denominator(match.group(2))
+    if not numerator or not denominator:
+        return None
+    # Context/question words in either leaf mean this regex has captured more
+    # than a row label.  Abstain rather than widening a metric at retrieval.
+    forbidden_leaf_cues = ("bao nhieu", "cao nhat", "thap nhat", "doanh nghiep")
+    if any(cue in numerator or cue in denominator for cue in forbidden_leaf_cues):
+        return None
+
+    percent = any(
+        cue in folded_question
+        for cue in ("phan tram", "bao nhieu %", "(%)", "ty le", "ti le", "ty trong", "ti trong")
+    )
+    expression = "numerator / denominator × 100%" if percent else "numerator / denominator"
+    spec = _spec(
+        "explicit_stated_fraction",
+        "Tỷ lệ/tỷ trọng nêu rõ tử số và mẫu số",
+        expression,
+        [
+            _operand("numerator", numerator, [numerator], years[-1:], "numerator"),
+            _operand("denominator", denominator, [denominator], years[-1:], "denominator"),
+        ],
+        confidence=0.97,
+        notes=[
+            "Tử số và mẫu số được lấy đúng theo wording của câu hỏi; không thay bằng định nghĩa tài chính gần đúng.",
+            "Hai operand phải cùng entity, scope, kỳ và source unit trước khi chia.",
+        ],
+    )
+    if not percent:
+        spec["output_unit"] = "times"
+    return spec
+
+
 def _quick_gpm_interest_coverage_plan(
     question_text: str,
     years: list[int],
@@ -730,7 +856,14 @@ def infer_formula_spec(question: str) -> dict[str, Any] | None:
             confidence=0.94,
         )
 
-    if "loi nhuan thuan tu hoat dong tai chinh" in text:
+    if any(
+        phrase in text
+        for phrase in (
+            "loi nhuan thuan tu hoat dong tai chinh",
+            "lai thuan hoat dong tai chinh",
+            "lai rong tu hoat dong tai chinh",
+        )
+    ):
         period = years[-1:] if years else []
         return _spec(
             "net_finance_result",
@@ -741,6 +874,41 @@ def infer_formula_spec(question: str) -> dict[str, Any] | None:
                 _operand("finance_expense", "Chi phí tài chính", ["chi phí tài chính"], period, "subtrahend"),
             ],
             confidence=0.94,
+        )
+
+    if any(
+        phrase in text
+        for phrase in (
+            "thu nhap khac thuan",
+            "thu nhap thuan tu hoat dong khac",
+        )
+    ):
+        period = years[-1:] if years else []
+        return _spec(
+            "net_other_income",
+            "Thu nhập khác thuần",
+            "Thu nhập khác − Chi phí khác",
+            [
+                _operand(
+                    "other_income",
+                    "Thu nhập khác",
+                    ["thu nhập khác"],
+                    period,
+                    "minuend",
+                ),
+                _operand(
+                    "other_expense",
+                    "Chi phí khác",
+                    ["chi phí khác"],
+                    period,
+                    "subtrahend",
+                ),
+            ],
+            confidence=0.94,
+            notes=[
+                "Không dùng một dòng tổng "
+                "thu nhập khác thuần thay cho hai operand nếu câu hỏi yêu cầu tính.",
+            ],
         )
 
     ratio_rules = [
@@ -792,6 +960,10 @@ def infer_formula_spec(question: str) -> dict[str, Any] | None:
             definition_status="ambiguous",
             notes=["Câu hỏi chưa xác định mẫu số là giá gốc, giá trị ghi sổ hay giá trị đầu kỳ của khoản đầu tư."],
         )
+
+    explicit_fraction = _explicit_fraction_plan(question, text, years)
+    if explicit_fraction:
+        return explicit_fraction
 
     growth_terms = ("tang truong", "toc do tang", "ty le tang", "phan tram toc do tang")
     if any(term in text for term in growth_terms) and len(years) >= 2:

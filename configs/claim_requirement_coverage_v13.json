@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_claim_requirement_coverage_v13",
+  "mode": "additive_shadow_audit",
+  "input_lineage": "vifinqa-grounded-e2e-relational-entity-role-v12_20260823-lock1",
+  "claim_completeness_policy": {
+    "self_generated_requirements_can_prove_claim_completeness": false,
+    "independent_requirement_basis_required": true,
+    "missing_dimension_status": "NOT_CHECKED",
+    "unproven_required_dimension_status": "UNRESOLVED"
+  },
+  "proof_statuses": ["PASS", "FAIL", "UNRESOLVED", "NOT_APPLICABLE", "NOT_CHECKED"],
+  "source_truth_tiers": ["ocr_derived", "visual_source_verified", "source_native"],
+  "release_effect": "none_keep_blocked"
+}

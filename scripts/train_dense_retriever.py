@@ -25,7 +25,15 @@ from pathlib import Path
 
 from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
 from finance_query.direct_replay import DIRECT_REPLAY_PROTOCOL
+from finance_query.independent_critic import INDEPENDENT_CRITIC_PROTOCOL
 from finance_query.retrieval import AssetStore
+
+
+TRAINING_QUALITY_GATE_PROTOCOL = "vifinqa_retriever_training_quality_gate_v1"
+MIN_MACHINE_SILVER_PAIRS = 200
+MIN_INDEPENDENT_AUDIT_PRECISION = 0.99
+MIN_AUDIT_CI95_LOWER = 0.97
+MIN_MAJOR_FINGERPRINT_COVERAGE = 0.90
 
 
 def parse_args() -> argparse.Namespace:
@@ -78,9 +86,24 @@ def parse_args() -> argparse.Namespace:
         help="Replay sidecar whose SHA must match every machine-silver label gate.",
     )
     parser.add_argument(
+        "--independent-critic",
+        type=Path,
+        default=None,
+        help="Independent critic sidecar whose SHA must match every machine-silver label gate.",
+    )
+    parser.add_argument(
+        "--quality-gate",
+        type=Path,
+        default=None,
+        help=(
+            "Hash-bound independent-audit quality-gate JSON. Required for "
+            "machine_silver training."
+        ),
+    )
+    parser.add_argument(
         "--min-pairs",
         type=int,
-        default=1,
+        default=MIN_MACHINE_SILVER_PAIRS,
         help="Refuse/defer training below this many source-validated pairs.",
     )
     parser.add_argument(
@@ -103,6 +126,7 @@ def validate_provenance(
     line_number: int,
     *,
     expected_replay_sha: str | None = None,
+    expected_critic_sha: str | None = None,
 ) -> None:
     if provenance == "human_verified":
         if str(row.get("annotation_status") or "") != "human_verified":
@@ -140,6 +164,20 @@ def validate_provenance(
         or replay.get("training_gate_only") is not True
     ):
         raise ValueError(f"Line {line_number} lacks a valid independent direct replay gate")
+    critic = row.get("independent_critic_gate") or {}
+    critic_sha = str(critic.get("critic_artifact_sha256") or "")
+    if (
+        str(critic.get("protocol") or "") != INDEPENDENT_CRITIC_PROTOCOL
+        or str(critic.get("status") or "") != "independent_ready"
+        or int(critic.get("question_id") or -1) != int(row.get("id") or -2)
+        or str(critic.get("machine_selected_uid") or "")
+        not in {str(value) for value in row.get("positive_table_uids") or []}
+        or len(critic_sha) != 64
+        or any(character not in "0123456789abcdef" for character in critic_sha)
+        or critic_sha != expected_critic_sha
+        or critic.get("training_gate_only") is not True
+    ):
+        raise ValueError(f"Line {line_number} lacks a valid reviewer-independent critic gate")
 
 
 def load_label_rows(
@@ -147,6 +185,7 @@ def load_label_rows(
     provenance: str,
     *,
     expected_replay_sha: str | None = None,
+    expected_critic_sha: str | None = None,
 ) -> list[dict]:
     rows: list[dict] = []
     with path.open(encoding="utf-8-sig") as file:
@@ -164,6 +203,7 @@ def load_label_rows(
                 provenance,
                 line_number,
                 expected_replay_sha=expected_replay_sha,
+                expected_critic_sha=expected_critic_sha,
             )
             rows.append(row)
     return rows
@@ -175,6 +215,59 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def validate_machine_silver_quality_gate(
+    path: Path,
+    *,
+    labels_sha256: str,
+    pair_count: int,
+) -> None:
+    """Require sample size, independent-audit quality and coverage together."""
+    if not path.is_file():
+        raise FileNotFoundError(f"Machine-silver quality gate is missing: {path}")
+    gate = json.loads(path.read_text(encoding="utf-8"))
+    if gate.get("protocol") != TRAINING_QUALITY_GATE_PROTOCOL:
+        raise ValueError("Machine-silver quality gate protocol is invalid")
+    if gate.get("status") != "READY":
+        raise ValueError("Machine-silver quality gate is not READY")
+    if gate.get("training_eligible") is not True:
+        raise ValueError("Machine-silver quality gate is not explicitly training-eligible")
+    if (
+        gate.get("answer_eligible") is not False
+        or gate.get("submission_eligible") is not False
+        or gate.get("provenance_promotion_allowed") is not False
+    ):
+        raise ValueError("Machine-silver quality gate violates its non-promoting boundary")
+    if gate.get("labels_sha256") != labels_sha256:
+        raise ValueError("Machine-silver quality gate labels SHA-256 mismatch")
+    if int(gate.get("machine_silver_pair_count") or -1) != pair_count:
+        raise ValueError("Machine-silver quality gate pair count mismatch")
+    if str(gate.get("provenance_leakage_check") or "") != "PASS":
+        raise ValueError("Machine-silver quality gate did not pass provenance leakage check")
+    for field in ("independent_audit_sha256", "fingerprint_census_sha256"):
+        value = str(gate.get(field) or "")
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+            raise ValueError(f"Machine-silver quality gate lacks {field}")
+    metrics = gate.get("metrics") or {}
+    thresholds = {
+        "independent_audit_precision": MIN_INDEPENDENT_AUDIT_PRECISION,
+        "audit_ci95_lower": MIN_AUDIT_CI95_LOWER,
+        "major_fingerprint_coverage": MIN_MAJOR_FINGERPRINT_COVERAGE,
+    }
+    if pair_count < MIN_MACHINE_SILVER_PAIRS:
+        raise ValueError(
+            f"Machine-silver quality gate requires at least {MIN_MACHINE_SILVER_PAIRS} pairs"
+        )
+    for field, minimum in thresholds.items():
+        try:
+            value = float(metrics[field])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Machine-silver quality gate lacks numeric {field}") from exc
+        if value < minimum:
+            raise ValueError(
+                f"Machine-silver quality gate {field}={value} is below {minimum}"
+            )
 
 
 def bundle_search_text(table: dict) -> str:
@@ -246,6 +339,7 @@ def main() -> None:
     args = parse_args()
 
     expected_replay_sha: str | None = None
+    expected_critic_sha: str | None = None
     if args.label_provenance == "machine_silver":
         if args.direct_replay is None or not args.direct_replay.is_file():
             raise FileNotFoundError("Machine-silver training requires --direct-replay")
@@ -256,10 +350,37 @@ def main() -> None:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if str(manifest.get("sidecar_sha256") or "") != expected_replay_sha:
             raise ValueError("Direct replay hash differs from its manifest")
+        if args.independent_critic is None or not args.independent_critic.is_file():
+            raise FileNotFoundError("Machine-silver training requires --independent-critic")
+        if args.quality_gate is None:
+            raise FileNotFoundError("Machine-silver training requires --quality-gate")
+        expected_critic_sha = sha256_file(args.independent_critic)
+        critic_manifest_path = args.independent_critic.with_suffix(".manifest.json")
+        if not critic_manifest_path.is_file():
+            raise FileNotFoundError("Independent critic manifest is missing")
+        critic_manifest = json.loads(critic_manifest_path.read_text(encoding="utf-8"))
+        if (
+            critic_manifest.get("protocol") != INDEPENDENT_CRITIC_PROTOCOL
+            or critic_manifest.get("machine_reviews_sha256") is not None
+            or critic_manifest.get("reviewer_inputs_used") != []
+            or critic_manifest.get("sidecar_sha256") != expected_critic_sha
+        ):
+            raise ValueError("Independent critic artifact is invalid")
+        for critic_key, replay_key in {
+            "bundle_review_items_sha256": "bundle_review_items_sha256",
+            "raw_tables_sha256": "raw_tables_sha256",
+            "structured_tables_sha256": "structured_tables_sha256",
+            "evidence_context_sha256": "evidence_context_sha256",
+        }.items():
+            if critic_manifest.get(critic_key) != manifest.get(replay_key):
+                raise ValueError(
+                    f"Independent critic and direct replay lineage differ: {critic_key}"
+                )
     label_rows = load_label_rows(
         args.train_jsonl,
         args.label_provenance,
         expected_replay_sha=expected_replay_sha,
+        expected_critic_sha=expected_critic_sha,
     )
     pair_count = sum(
         len(row.get("positive_table_uids") or []) for row in label_rows
@@ -273,6 +394,13 @@ def main() -> None:
             print(json.dumps({"status": "deferred", "reason": message}, ensure_ascii=False))
             return
         raise RuntimeError(message)
+    if args.label_provenance == "machine_silver":
+        assert args.quality_gate is not None
+        validate_machine_silver_quality_gate(
+            args.quality_gate,
+            labels_sha256=sha256_file(args.train_jsonl),
+            pair_count=pair_count,
+        )
 
     requested_cuda = args.device is None or str(args.device).startswith("cuda")
     if requested_cuda and not args.allow_multi_gpu:

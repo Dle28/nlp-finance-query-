@@ -60,6 +60,7 @@ REQUIRED_GROUNDING_STATUS = "exact_rows_validated"
 STAGED_GROUNDING_STATUS = "staged_exact_cells_replayed"
 PRODUCTION_ELIGIBILITY_PROTOCOL = "production_execution_lineage_v1"
 PRODUCTION_AUDIT_PROTOCOL = "production_independent_audit_v1"
+PRODUCTION_RELEASE_GATE_PROTOCOL = "production_release_gate_v1"
 REQUIRED_LINEAGE_KEYS = {
     "review_items_sha256",
     "raw_tables_sha256",
@@ -77,6 +78,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--execution-ledger", type=Path, required=True)
     parser.add_argument("--typed-plans", type=Path, required=True)
     parser.add_argument("--independent-audit", type=Path, required=True)
+    parser.add_argument(
+        "--release-gate",
+        type=Path,
+        required=True,
+        help=(
+            "Hash-bound production release gate with release_status="
+            "ready_for_submission_compiler."
+        ),
+    )
     parser.add_argument("--evidence-context", type=Path, default=None)
     parser.add_argument(
         "--questions",
@@ -195,6 +205,80 @@ def validate_ledger_manifest(
     ):
         raise ValueError("Production execution ledger manifest/lineage is invalid")
     return manifest
+
+
+def _gate_record_sha256(
+    inputs: dict[str, Any], name: str, *, nested: bool = False
+) -> str:
+    record: object = inputs.get(name)
+    if nested:
+        record = (record or {}).get("artifact") if isinstance(record, dict) else None
+    if not isinstance(record, dict) or not isinstance(record.get("sha256"), str):
+        raise ValueError(f"Production release gate lacks {name} SHA-256")
+    return str(record["sha256"])
+
+
+def validate_production_release_gate(
+    path: Path, *, lineage: dict[str, str], execution_ledger: Path
+) -> None:
+    """Require a ready gate bound to the exact compiler inputs.
+
+    The release-gate artifact itself remains non-promotable: it permits this
+    compiler to attempt a package only after all upstream production checks are
+    complete. It never supplies an answer or bypasses the independent audit and
+    execution-ledger validators below.
+    """
+    if not path.is_file():
+        raise FileNotFoundError("Production release gate is missing")
+    gate = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(gate, dict):
+        raise ValueError("Production release gate must be a JSON object")
+    if (
+        gate.get("protocol") != PRODUCTION_RELEASE_GATE_PROTOCOL
+        or gate.get("release_status") != "ready_for_submission_compiler"
+        or gate.get("production_eligible") is not True
+        or gate.get("submission_compilation_allowed") is not True
+        or gate.get("submission_eligible") is not False
+        or gate.get("answer_materialization_allowed") is not False
+        or gate.get("blockers") != []
+    ):
+        raise ValueError("Production release gate is not ready for submission compilation")
+    if (gate.get("source_contract") or {}) != {
+        "evidence_eligible": False,
+        "training_eligible": False,
+        "submission_eligible": False,
+        "promotion_allowed": False,
+    }:
+        raise ValueError("Production release gate source contract is invalid")
+    inputs = gate.get("inputs")
+    if not isinstance(inputs, dict):
+        raise ValueError("Production release gate lacks input lineage")
+    expected = {
+        "bundle_review_items": lineage["review_items_sha256"],
+        "typed_plans": lineage["typed_operand_plans_sha256"],
+        "production_independent_audit": lineage["independent_audit_sha256"],
+        "production_execution_ledger": sha256_file(execution_ledger),
+    }
+    actual = {
+        "bundle_review_items": _gate_record_sha256(inputs, "bundle_review_items"),
+        "typed_plans": _gate_record_sha256(inputs, "typed_plans", nested=True),
+        "production_independent_audit": _gate_record_sha256(
+            inputs, "production_independent_audit", nested=True
+        ),
+        "production_execution_ledger": _gate_record_sha256(
+            inputs, "production_execution_ledger", nested=True
+        ),
+    }
+    if actual != expected:
+        raise ValueError("Production release gate does not bind the compiler inputs")
+    ledger_record = inputs.get("production_execution_ledger") or {}
+    manifest_record = ledger_record.get("manifest") if isinstance(ledger_record, dict) else None
+    manifest_path = execution_ledger.with_suffix(".manifest.json")
+    if (
+        not isinstance(manifest_record, dict)
+        or manifest_record.get("sha256") != sha256_file(manifest_path)
+    ):
+        raise ValueError("Production release gate does not bind the execution-ledger manifest")
 
 
 def index_rows(rows: Iterable[dict[str, Any]], *, name: str) -> dict[int, dict[str, Any]]:
@@ -394,6 +478,11 @@ def main() -> None:
     )
     validate_production_audit(args.independent_audit.resolve(), set(question_ids))
     validate_ledger_manifest(args.execution_ledger.resolve(), lineage)
+    validate_production_release_gate(
+        args.release_gate.resolve(),
+        lineage=lineage,
+        execution_ledger=args.execution_ledger.resolve(),
+    )
     missing = sorted(set(question_ids) - set(ledger))
     unexpected = sorted(set(ledger) - set(question_ids))
     if missing or unexpected:

@@ -18,7 +18,12 @@ if str(ROOT / "src") not in sys.path:
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 
-from analyze_formula_evidence import validate_manifest  # noqa: E402
+from analyze_formula_evidence import (  # noqa: E402
+    evidence_context_path,
+    source_completion_paths,
+    validate_manifest,
+    validate_operand_matches,
+)
 from finance_query.query_program import (  # noqa: E402
     QUERY_PROGRAM_PROTOCOL,
     QUERY_PROGRAM_SCHEMA_VERSION,
@@ -68,10 +73,24 @@ def main() -> None:
     evidence_path = args.formula_evidence.resolve()
     output = args.output.resolve()
     formula_manifest = validate_manifest(bundle, evidence_path)
+    evidence_rows = load_jsonl(evidence_path)
+    completion = formula_manifest.get("source_completion") or {}
+    completion_tables, completion_context = (
+        source_completion_paths(bundle, formula_manifest)
+        if bool(completion.get("enabled"))
+        else (None, None)
+    )
+    exact_binding_count_checked = validate_operand_matches(
+        evidence_rows,
+        bundle,
+        evidence_context_path(bundle, formula_manifest),
+        completion_tables,
+        completion_context,
+    )
     rows: list[dict[str, Any]] = []
     compile_counts: Counter[str] = Counter()
     shadow_execution_counts: Counter[str] = Counter()
-    for evidence_set in load_jsonl(evidence_path):
+    for evidence_set in evidence_rows:
         formula = evidence_set.get("formula") or {}
         try:
             program = compile_query_program(formula)
@@ -127,6 +146,7 @@ def main() -> None:
         "formula_evidence_manifest_sha256": sha256_file(evidence_path.with_suffix(".manifest.json")),
         "formula_evidence_schema_version": int(formula_manifest["schema_version"]),
         "program_count": sum(row["program"] is not None for row in rows),
+        "exact_binding_count_checked": exact_binding_count_checked,
         "readiness_counts": dict(sorted(compile_counts.items())),
         "shadow_execution_counts": dict(sorted(shadow_execution_counts.items())),
         "execution_mode": "shadow_only",

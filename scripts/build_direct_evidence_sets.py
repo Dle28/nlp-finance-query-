@@ -55,6 +55,7 @@ TRAILING_PERIOD_PATTERNS = (
     re.compile(r"\s+(?:trong\s+)?năm\s+(?:19|20)\d{2}\s*$", re.IGNORECASE),
 )
 TRAILING_PARENT_ENTITY_RE = re.compile(r"\s+(?:tại\s+)?công\s+ty\s+mẹ\s*$", re.IGNORECASE)
+TRAILING_BARE_YEAR_WORD_RE = re.compile(r"(?<!\d)\s+năm\s*$", re.IGNORECASE)
 LEADING_BALANCE_DESCRIPTOR_RE = re.compile(r"^số\s+dư\s+", re.IGNORECASE)
 LEADING_PERIOD_DESCRIPTOR_RE = re.compile(
     r"^(?:(?:vào|tại|đến)\s+)?(?:đầu|cuối)\s+(?:năm|kỳ)(?:\s+(?:19|20)\d{2})?\s*,?\s*",
@@ -117,6 +118,21 @@ def metric_tokens(value: object) -> list[str]:
     ]
 
 
+def raw_identity_tokens(row: list[Any]) -> list[str]:
+    """Return only the raw metric tokens V4 permits to be structural noise.
+
+    This is deliberately narrower than semantic matching. It mirrors the
+    current source contract: a leading statement-row code and a standalone
+    Roman-note reference may be ignored, while every other metric word must
+    remain exact. The V4 candidate assessment revalidates the full contract
+    before a source-discovery candidate is retained.
+    """
+    label = v4.row_label([str(value) for value in row])
+    without_note = v4.RAW_NOTE_REFERENCE_RE.sub("", label)
+    identity_label = v4.RAW_STRUCTURAL_ROW_CODE_RE.sub("", without_note)
+    return metric_tokens(identity_label)
+
+
 def compact_space(value: object) -> str:
     return " ".join(str(value or "").split())
 
@@ -148,13 +164,25 @@ def context_free_metric_variants(item: dict[str, Any]) -> list[dict[str, Any]]:
     stripped = original
     removed: list[str] = []
     plan = item.get("question_plan") or {}
-    plan_has_year = any(isinstance(value, int) for value in plan.get("years") or [])
+    plan_years = [value for value in plan.get("years") or [] if isinstance(value, int)]
+    plan_has_year = bool(plan_years)
     for pattern in TRAILING_PERIOD_PATTERNS:
         match = pattern.search(stripped)
         if match is not None:
             removed.append(compact_space(match.group(0)))
             stripped = stripped[: match.start()]
             break
+    # The question parser may remove the numeric year into the plan while
+    # retaining a terminal grammatical ``năm`` in the metric text.  A raw
+    # financial row normally carries only the line-item name; the resolved
+    # year is proven separately by its exact canonical header.  Restrict this
+    # recovery to one explicit plan year and never remove ``1 năm``/``2 năm``
+    # duration wording.
+    if len(plan_years) == 1:
+        match = TRAILING_BARE_YEAR_WORD_RE.search(stripped)
+        if match is not None:
+            removed.append(compact_space(match.group(0)))
+            stripped = stripped[: match.start()]
     for ticker in sorted(
         {str(value).strip() for value in plan.get("tickers") or [] if str(value).strip()},
         key=len,
@@ -463,6 +491,8 @@ def main() -> None:
                 for row_index, row in enumerate(table.get("rows") or []):
                     label = v4.row_label([str(value) for value in row])
                     metric_variant = variants_by_tokens.get(tuple(metric_tokens(label)))
+                    if metric_variant is None:
+                        metric_variant = variants_by_tokens.get(tuple(raw_identity_tokens(row)))
                     if (
                         metric_variant is None
                         or not row_endpoint_compatible(str(item.get("question") or ""), label)

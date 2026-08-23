@@ -78,6 +78,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-matches-per-operand", type=int, default=12)
     parser.add_argument(
+        "--typed-plans",
+        type=Path,
+        default=None,
+        help=(
+            "Optional typed_operand_plans_v1 sidecar. When supplied, formula evidence is "
+            "built only from its non-abstaining typed operands and hash-bound to that plan."
+        ),
+    )
+    parser.add_argument(
         "--discover-source-operands",
         action="store_true",
         help=(
@@ -112,6 +121,43 @@ def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
     temporary.replace(path)
 
 
+def validate_typed_plans(bundle: Path, path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if path.parent != bundle:
+        raise ValueError("Typed operand plans must reside directly in the review bundle")
+    manifest_path = path.with_suffix(".manifest.json")
+    if not manifest_path.is_file():
+        raise ValueError("Typed operand plan manifest is missing")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("protocol") != "typed_operand_decomposition_fail_closed_v1":
+        raise ValueError("Unsupported typed operand plan protocol")
+    if manifest.get("review_items_sha256") != sha256_file(bundle / "review_items.jsonl"):
+        raise ValueError("Typed operand plans do not match review_items.jsonl")
+    if manifest.get("sidecar_sha256") != sha256_file(path):
+        raise ValueError("Typed operand plan sidecar hash mismatch")
+    rows = load_jsonl(path)
+    ids = [int(row["question_id"]) for row in rows]
+    if len(ids) != len(set(ids)) or len(ids) != int(manifest.get("question_count") or -1):
+        raise ValueError("Typed operand plan ids/count are invalid")
+    return rows, manifest
+
+
+def typed_formula_operands(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "operand_id": operand["operand_id"],
+            "label": (operand.get("metric_hints") or [operand["operand_id"]])[0],
+            "metric_hints": list(operand.get("metric_hints") or []),
+            "years": list(operand.get("years") or []),
+            "role": operand.get("role") or operand["operand_id"],
+            "entity": operand.get("entity"),
+            "stage_id": operand.get("stage_id"),
+            "allowed_table_functions": list(operand.get("allowed_table_functions") or []),
+            "required": bool(operand.get("required", True)),
+        }
+        for operand in plan.get("operands") or []
+    ]
+
+
 def main() -> None:
     args = parse_args()
     if args.max_matches_per_operand < 1:
@@ -128,6 +174,16 @@ def main() -> None:
             "--source-completion-tables and --source-completion-context must be supplied together"
         )
     items = load_jsonl(bundle / "review_items.jsonl")
+    typed_plan_manifest: dict[str, Any] | None = None
+    typed_plans: dict[int, dict[str, Any]] | None = None
+    typed_plans_path: Path | None = None
+    if args.typed_plans is not None:
+        typed_plans_path = args.typed_plans.resolve()
+        typed_rows, typed_plan_manifest = validate_typed_plans(bundle, typed_plans_path)
+        typed_plans = {int(row["question_id"]): row for row in typed_rows}
+        item_ids = {int(item["id"]) for item in items}
+        if set(typed_plans) != item_ids:
+            raise ValueError("Typed operand plans must cover exactly all review questions")
     source_tables = {
         str(row["internal_table_uid"]): row for row in load_jsonl(bundle / "tables.jsonl")
     }
@@ -189,12 +245,38 @@ def main() -> None:
     source_discovery_candidate_count = 0
     source_title_resolution_count = 0
     source_ticker_resolution_count = 0
+    fingerprint_coverage: Counter[tuple[str, str]] = Counter()
     for item in items:
         formula = infer_formula_spec(str(item.get("question") or ""))
         if formula is None:
             continue
+        typed_plan = typed_plans.get(int(item["id"])) if typed_plans is not None else None
+        if typed_plan is not None:
+            if (
+                typed_plan.get("decomposition_status") == "abstain"
+                or not typed_plan.get("formula_id")
+                or not typed_plan.get("operands")
+            ):
+                continue
+            formula = {**formula, "operands": typed_formula_operands(typed_plan)}
         candidate_item = item
         plan = item.get("question_plan") or {}
+        if typed_plan is not None:
+            typed_entities = sorted(
+                {
+                    str(operand.get("entity") or "").strip()
+                    for operand in typed_plan.get("operands") or []
+                    if str(operand.get("entity") or "").strip()
+                }
+            )
+            plan = {
+                **plan,
+                "family": typed_plan.get("effective_family") or plan.get("family"),
+                "tickers": typed_entities or list(plan.get("tickers") or []),
+                "years": list(typed_plan.get("years") or plan.get("years") or []),
+                "scope": typed_plan.get("scope") or plan.get("scope"),
+            }
+            candidate_item = {**item, "question_plan": plan}
         entity_resolution = None
         if not (plan.get("tickers") or []) and entity_resolution_enabled:
             entity_resolution = (
@@ -242,15 +324,21 @@ def main() -> None:
                     "entity_resolution": entity_resolution,
                 },
             }
-        evidence.append(
-            formula_evidence_set(
+        evidence_row = formula_evidence_set(
                 formula,
                 candidate_item,
                 tables,
                 contexts,
                 max_matches_per_operand=args.max_matches_per_operand,
             )
-        )
+        if typed_plan is not None:
+            evidence_row["typed_plan_fingerprint"] = typed_plan["plan_fingerprint"]
+            evidence_row["typed_plan_status"] = typed_plan["decomposition_status"]
+            evidence_row["typed_plan_sha256"] = sha256_file(typed_plans_path)
+            fingerprint_coverage[
+                (typed_plan["plan_fingerprint"], evidence_row["evidence_completeness"])
+            ] += 1
+        evidence.append(evidence_row)
     output = args.output.resolve()
     write_jsonl(output, evidence)
     source_resolution_configured = bool(
@@ -259,7 +347,9 @@ def main() -> None:
     )
     manifest = {
         "schema_version": (
-            6
+            7
+            if typed_plan_manifest is not None
+            else 6
             if source_resolution_configured
             else 4 if source_completion_manifest is not None else 3 if args.discover_source_operands else 2
         ),
@@ -269,6 +359,27 @@ def main() -> None:
         "evidence_context_sha256": sha256_file(contexts_path),
         "evidence_context_file": contexts_path.name,
         "evidence_set_count": len(evidence),
+        "typed_operand_plans": (
+            {
+                "enabled": True,
+                "file": typed_plans_path.name,
+                "sidecar_sha256": sha256_file(typed_plans_path),
+                "manifest_sha256": sha256_file(typed_plans_path.with_suffix(".manifest.json")),
+                "protocol": typed_plan_manifest["protocol"],
+                "fingerprint_coverage": [
+                    {
+                        "plan_fingerprint": fingerprint,
+                        "evidence_completeness": completeness,
+                        "count": count,
+                    }
+                    for (fingerprint, completeness), count in sorted(fingerprint_coverage.items())
+                ],
+                "answer_eligible": False,
+                "training_eligible": False,
+            }
+            if typed_plan_manifest is not None
+            else {"enabled": False}
+        ),
         "numeric_binding_policy": "one_reliable_raw_v2_number_per_operand",
         "source_discovery": {
             "enabled": bool(args.discover_source_operands),

@@ -82,8 +82,8 @@ def validate_manifest(bundle: Path, sidecar: Path) -> dict[str, Any]:
         raise FileNotFoundError(f"Formula evidence manifest missing: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     version = int(manifest.get("schema_version") or 0)
-    if version not in {2, 3, 4, 5, 6}:
-        raise ValueError("Formula evidence audit requires schema_version=2, 3, 4, 5, or 6")
+    if version not in {2, 3, 4, 5, 6, 7}:
+        raise ValueError("Formula evidence audit requires schema_version=2 through 7")
     expected = {
         "bundle_review_items_sha256": bundle / "review_items.jsonl",
         "structured_tables_sha256": bundle / "tables_structured_v2.jsonl",
@@ -106,6 +106,17 @@ def validate_manifest(bundle: Path, sidecar: Path) -> dict[str, Any]:
         source_entity_alias_paths(bundle, manifest)
     if version >= 6:
         source_entity_resolution_paths_v6(bundle, manifest)
+    if version >= 7:
+        typed = manifest.get("typed_operand_plans") or {}
+        if not bool(typed.get("enabled")):
+            raise ValueError("Formula V7 must enable typed operand plans")
+        if typed.get("protocol") != "typed_operand_decomposition_fail_closed_v1":
+            raise ValueError("Formula V7 typed operand protocol is invalid")
+        typed_path = _bundle_local_path(bundle, typed.get("file"), "typed operand plan")
+        if typed.get("sidecar_sha256") != sha256_file(typed_path):
+            raise ValueError("Formula V7 typed operand sidecar hash mismatch")
+        if typed.get("manifest_sha256") != sha256_file(typed_path.with_suffix(".manifest.json")):
+            raise ValueError("Formula V7 typed operand manifest hash mismatch")
     if str(manifest.get("sidecar_sha256") or "") != sha256_file(sidecar):
         raise ValueError("Formula evidence sidecar hash does not match its manifest")
     if str(manifest.get("numeric_binding_policy") or "") != "one_reliable_raw_v2_number_per_operand":

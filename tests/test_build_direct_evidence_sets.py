@@ -74,6 +74,33 @@ class DirectEvidenceMetricVariantTests(unittest.TestCase):
         self.assertEqual(variants[1]["matched_metric"], "Lợi nhuận sau thuế")
         self.assertEqual(variants[1]["removed_context"], ["cuối năm 2020"])
 
+    def test_variant_removes_bare_terminal_year_word_only_with_one_plan_year(self):
+        variants = mod.context_free_metric_variants(
+            {
+                "effective_metric": "Chi phí khác năm",
+                "question_plan": {"years": [2023]},
+            }
+        )
+        self.assertEqual(variants[1]["matched_metric"], "Chi phí khác")
+        self.assertEqual(variants[1]["removed_context"], ["năm"])
+        unresolved = mod.context_free_metric_variants(
+            {
+                "effective_metric": "Chi phí khác năm",
+                "question_plan": {"years": []},
+            }
+        )
+        self.assertEqual(len(unresolved), 1)
+
+    def test_raw_identity_tokens_ignore_only_source_structural_markers(self):
+        self.assertEqual(
+            mod.raw_identity_tokens(["9. Chi phí quản lý doanh nghiệp", "VI.06", "100"]),
+            ["chi", "phí", "quản", "lý", "doanh", "nghiệp"],
+        )
+        self.assertEqual(
+            mod.raw_identity_tokens(["Trừ: Chi phí quản lý doanh nghiệp", "100"]),
+            ["trừ", "chi", "phí", "quản", "lý", "doanh", "nghiệp"],
+        )
+
     def test_variant_does_not_remove_year_word_from_a_duration_metric(self):
         variants = mod.context_free_metric_variants(
             {

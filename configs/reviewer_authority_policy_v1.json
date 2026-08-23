@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_reviewer_authority_policy_v1",
+  "grant": {
+    "granted_by": "campaign_owner",
+    "grant_basis": "explicit_user_instruction",
+    "reviewer_type": "chatgpt_verified",
+    "verification_authority": "human_equivalent",
+    "gate_effect": "same_eligibility_weight_as_human_verified",
+    "review_policy": "fail_closed_evidence_bound_v1"
+  },
+  "allowed_scopes": [
+    "semantic_binding_review_gate_equivalence",
+    "entity_role_review_gate_equivalence",
+    "route_context_review_gate_equivalence",
+    "operation_graph_review_gate_equivalence",
+    "operation_contract_review_gate_equivalence",
+    "navigation_review_gate_equivalence",
+    "exact_source_operand_review_gate_equivalence",
+    "cross_entity_binding_review_gate_equivalence",
+    "campaign_review_gate_equivalence"
+  ],
+  "excluded_authorities": {
+    "release_authority_included": false,
+    "training_authority_included": false,
+    "submission_authority_included": false,
+    "value_selection_authority_included": false,
+    "formula_execution_authority_included": false,
+    "may_relabel_provenance_as_human_verified": false
+  }
+}

@@ -1,0 +1,380 @@
+schema_version: 1
+protocol: vietnamese_financial_concept_taxonomy_v1
+language: vi
+status: research_candidate
+source_references:
+  - https://www.xbrl.org/the-standard/what/key-concepts-in-xbrl/taxonomies/
+  - https://www.ifrs.org/issued-standards/ifrs-taxonomy/
+  - https://arxiv.org/abs/2109.00122
+  - https://arxiv.org/abs/2105.07624
+  - https://arxiv.org/abs/2206.01347
+
+sectors:
+  - unknown
+  - industrial
+  - banking
+  - securities
+  - insurance
+
+# Signals produce only a document-level sector candidate. Absence of a signal
+# never implies industrial, and no sector candidate is answer eligible.
+sector_signals:
+  banking:
+    - tiền gửi của khách hàng
+    - cho vay khách hàng
+    - thu nhập lãi thuần
+    - tiền gửi tại ngân hàng nhà nước
+    - phát hành giấy tờ có giá
+    - dự phòng rủi ro tín dụng
+  securities:
+    - doanh thu môi giới chứng khoán
+    - tài sản tài chính ghi nhận thông qua lãi lỗ
+    - các khoản cho vay giao dịch ký quỹ
+    - nghiệp vụ môi giới chứng khoán
+    - nghiệp vụ tự doanh
+  insurance:
+    - doanh thu phí bảo hiểm
+    - dự phòng nghiệp vụ bảo hiểm
+    - bồi thường bảo hiểm
+    - phí nhượng tái bảo hiểm
+    - dự phòng bồi thường
+
+semantic_axes:
+  measurement_basis:
+    - value_id: gross_carrying_amount
+      labels_vi: [nguyên giá, giá gốc]
+    - value_id: accumulated_depreciation
+      labels_vi: [giá trị hao mòn lũy kế, hao mòn lũy kế, khấu hao lũy kế]
+    - value_id: carrying_amount
+      labels_vi: [giá trị còn lại, giá trị ghi sổ]
+    - value_id: fair_value
+      labels_vi: [giá trị hợp lý]
+    - value_id: provision
+      labels_vi: [dự phòng]
+  movement:
+    - value_id: opening_balance
+      labels_vi: [số dư đầu năm, số đầu năm, đầu kỳ, tại ngày đầu năm]
+    - value_id: closing_balance
+      labels_vi: [số dư cuối năm, số cuối năm, cuối kỳ, tại ngày cuối năm]
+    - value_id: additions
+      labels_vi: [tăng trong năm, mua trong năm, phát sinh tăng]
+    - value_id: disposals
+      labels_vi: [giảm trong năm, thanh lý, nhượng bán, phát sinh giảm]
+    - value_id: depreciation_charge
+      labels_vi: [khấu hao trong năm, chi phí khấu hao trong năm]
+  aggregation_role:
+    - value_id: total
+      labels_vi: [tổng, tổng cộng, cộng]
+    - value_id: subtotal
+      labels_vi: [cộng thuần, tổng thuần]
+    - value_id: disclosed_component
+      labels_vi: [trong đó, bao gồm]
+    - value_id: other
+      labels_vi: [khác, các khoản khác]
+  maturity:
+    - value_id: current
+      labels_vi: [ngắn hạn]
+    - value_id: non_current
+      labels_vi: [dài hạn]
+
+concepts:
+  - concept_id: assets
+    labels_vi: [tài sản]
+    statement_types: [balance_sheet]
+    sectors: [all]
+    period_type: instant
+    definition: Resources controlled by the reporting entity.
+  - concept_id: current_assets
+    parent_concept_id: assets
+    labels_vi: [tài sản ngắn hạn, tổng tài sản ngắn hạn, tổng cộng tài sản ngắn hạn]
+    statement_types: [balance_sheet]
+    sectors: [industrial, securities, insurance]
+    account_codes: ['100']
+    period_type: instant
+    definition: Assets expected to be realised in the normal operating cycle or within twelve months.
+  - concept_id: cash_and_cash_equivalents
+    parent_concept_id: current_assets
+    labels_vi: [tiền và các khoản tương đương tiền, tiền và tương đương tiền]
+    statement_types: [balance_sheet, cash_flow_statement, notes]
+    sectors: [all]
+    period_type: instant
+    definition: Cash on hand, demand deposits and qualifying cash equivalents.
+  - concept_id: short_term_financial_investments
+    parent_concept_id: current_assets
+    labels_vi: [đầu tư tài chính ngắn hạn, các khoản đầu tư tài chính ngắn hạn]
+    statement_types: [balance_sheet, notes]
+    sectors: [industrial, securities, insurance]
+    period_type: instant
+  - concept_id: current_receivables
+    parent_concept_id: current_assets
+    labels_vi: [các khoản phải thu ngắn hạn, phải thu ngắn hạn]
+    statement_types: [balance_sheet, notes]
+    sectors: [industrial, securities, insurance]
+    period_type: instant
+  - concept_id: inventory
+    parent_concept_id: current_assets
+    labels_vi: [hàng tồn kho, tổng hàng tồn kho]
+    statement_types: [balance_sheet, notes]
+    sectors: [industrial]
+    account_codes: ['140']
+    period_type: instant
+  - concept_id: other_current_assets
+    parent_concept_id: current_assets
+    labels_vi: [tài sản ngắn hạn khác, các tài sản ngắn hạn khác]
+    statement_types: [balance_sheet, notes]
+    sectors: [industrial, securities, insurance]
+    period_type: instant
+  - concept_id: non_current_assets
+    parent_concept_id: assets
+    labels_vi: [tài sản dài hạn, tổng tài sản dài hạn, tổng cộng tài sản dài hạn]
+    statement_types: [balance_sheet]
+    sectors: [industrial, securities, insurance]
+    account_codes: ['200']
+    period_type: instant
+  - concept_id: property_plant_equipment
+    parent_concept_id: non_current_assets
+    labels_vi: [tài sản cố định, tài sản cố định hữu hình]
+    statement_types: [balance_sheet, notes]
+    sectors: [all]
+    period_type: instant
+  - concept_id: total_assets
+    parent_concept_id: assets
+    labels_vi: [tổng cộng tài sản, tổng tài sản]
+    statement_types: [balance_sheet]
+    sectors: [all]
+    account_codes: ['270']
+    period_type: instant
+  - concept_id: liabilities
+    labels_vi: [nợ phải trả, tổng nợ phải trả]
+    statement_types: [balance_sheet]
+    sectors: [all]
+    account_codes: ['300']
+    period_type: instant
+  - concept_id: current_liabilities
+    parent_concept_id: liabilities
+    labels_vi: [nợ ngắn hạn, tổng nợ ngắn hạn, nợ phải trả ngắn hạn, tổng nợ phải trả ngắn hạn]
+    statement_types: [balance_sheet]
+    sectors: [industrial, securities, insurance]
+    account_codes: ['310']
+    period_type: instant
+  - concept_id: non_current_liabilities
+    parent_concept_id: liabilities
+    labels_vi: [nợ dài hạn, tổng nợ dài hạn, nợ phải trả dài hạn]
+    statement_types: [balance_sheet]
+    sectors: [industrial, securities, insurance]
+    account_codes: ['330']
+    period_type: instant
+  - concept_id: borrowings
+    parent_concept_id: liabilities
+    labels_vi: [vay và nợ thuê tài chính, các khoản vay, vay]
+    statement_types: [balance_sheet, notes]
+    sectors: [industrial, securities, insurance]
+    period_type: instant
+  - concept_id: equity
+    labels_vi: [vốn chủ sở hữu, tổng vốn chủ sở hữu]
+    statement_types: [balance_sheet, equity_change_statement]
+    sectors: [all]
+    account_codes: ['400']
+    period_type: instant
+  - concept_id: share_capital
+    parent_concept_id: equity
+    labels_vi: [vốn góp của chủ sở hữu, vốn điều lệ, vốn cổ phần]
+    statement_types: [balance_sheet, equity_change_statement, notes]
+    sectors: [all]
+    period_type: instant
+  - concept_id: retained_earnings
+    parent_concept_id: equity
+    labels_vi: [lợi nhuận sau thuế chưa phân phối, lợi nhuận chưa phân phối]
+    statement_types: [balance_sheet, equity_change_statement, notes]
+    sectors: [all]
+    period_type: instant
+
+  - concept_id: gross_revenue
+    labels_vi: [doanh thu bán hàng và cung cấp dịch vụ, doanh thu bán hàng]
+    statement_types: [income_statement, notes]
+    sectors: [industrial, securities, insurance]
+    account_codes: ['01']
+    period_type: duration
+  - concept_id: revenue_deductions
+    labels_vi: [các khoản giảm trừ doanh thu, khoản giảm trừ doanh thu]
+    statement_types: [income_statement, notes]
+    sectors: [industrial]
+    account_codes: ['02']
+    period_type: duration
+  - concept_id: net_revenue
+    labels_vi: [doanh thu thuần, doanh thu thuần về bán hàng và cung cấp dịch vụ]
+    statement_types: [income_statement, notes]
+    sectors: [industrial, securities, insurance]
+    account_codes: ['10']
+    period_type: duration
+  - concept_id: cost_of_goods_sold
+    labels_vi: [giá vốn hàng bán, giá vốn của hàng bán]
+    statement_types: [income_statement, notes]
+    sectors: [industrial]
+    account_codes: ['11']
+    period_type: duration
+  - concept_id: gross_profit
+    labels_vi: [lợi nhuận gộp, lợi nhuận gộp về bán hàng và cung cấp dịch vụ]
+    statement_types: [income_statement]
+    sectors: [industrial]
+    account_codes: ['20']
+    period_type: duration
+  - concept_id: financial_income
+    labels_vi: [doanh thu hoạt động tài chính, thu nhập hoạt động tài chính]
+    statement_types: [income_statement, notes]
+    sectors: [industrial, securities, insurance]
+    account_codes: ['21']
+    period_type: duration
+  - concept_id: financial_expense
+    labels_vi: [chi phí tài chính]
+    statement_types: [income_statement, notes]
+    sectors: [industrial, securities, insurance]
+    account_codes: ['22']
+    period_type: duration
+  - concept_id: interest_expense
+    parent_concept_id: financial_expense
+    labels_vi: [chi phí lãi vay, chi phí lãi tiền vay, 'trong đó: chi phí lãi vay']
+    statement_types: [income_statement, notes]
+    sectors: [industrial, securities, insurance]
+    account_codes: ['23']
+    period_type: duration
+  - concept_id: selling_expense
+    labels_vi: [chi phí bán hàng]
+    statement_types: [income_statement, notes]
+    sectors: [industrial]
+    account_codes: ['25']
+    period_type: duration
+  - concept_id: general_and_administrative_expense
+    labels_vi: [chi phí quản lý doanh nghiệp, chi phí quản lý]
+    statement_types: [income_statement, notes]
+    sectors: [industrial, securities, insurance]
+    account_codes: ['26']
+    period_type: duration
+  - concept_id: operating_profit
+    labels_vi: [lợi nhuận thuần từ hoạt động kinh doanh, lợi nhuận từ hoạt động kinh doanh]
+    statement_types: [income_statement]
+    sectors: [industrial, securities, insurance]
+    account_codes: ['30']
+    period_type: duration
+  - concept_id: other_income
+    labels_vi: [thu nhập khác]
+    statement_types: [income_statement, notes]
+    sectors: [all]
+    account_codes: ['31']
+    period_type: duration
+  - concept_id: other_expense
+    labels_vi: [chi phí khác]
+    statement_types: [income_statement, notes]
+    sectors: [all]
+    account_codes: ['32']
+    period_type: duration
+  - concept_id: other_profit
+    labels_vi: [lợi nhuận khác]
+    statement_types: [income_statement]
+    sectors: [all]
+    account_codes: ['40']
+    period_type: duration
+  - concept_id: profit_before_tax
+    labels_vi: [lợi nhuận kế toán trước thuế, tổng lợi nhuận kế toán trước thuế, lợi nhuận trước thuế, lỗ kế toán trước thuế]
+    statement_types: [income_statement]
+    sectors: [all]
+    account_codes: ['50']
+    period_type: duration
+  - concept_id: current_income_tax_expense
+    labels_vi: [chi phí thuế thu nhập doanh nghiệp hiện hành, chi phí thuế tndn hiện hành]
+    statement_types: [income_statement, notes]
+    sectors: [all]
+    account_codes: ['51']
+    period_type: duration
+  - concept_id: deferred_income_tax_expense
+    labels_vi: [chi phí thuế thu nhập doanh nghiệp hoãn lại, chi phí thuế tndn hoãn lại]
+    statement_types: [income_statement, notes]
+    sectors: [all]
+    account_codes: ['52']
+    period_type: duration
+  - concept_id: net_income
+    labels_vi: [lợi nhuận sau thuế, lợi nhuận sau thuế thu nhập doanh nghiệp, lợi nhuận sau thuế tndn, lợi nhuận thuần sau thuế tndn]
+    statement_types: [income_statement]
+    sectors: [all]
+    account_codes: ['60']
+    period_type: duration
+
+  - concept_id: operating_cash_flow
+    labels_vi: [lưu chuyển tiền thuần từ hoạt động kinh doanh, lưu chuyển tiền thuần từ hoạt động sxkd]
+    statement_types: [cash_flow_statement]
+    sectors: [all]
+    account_codes: ['20']
+    period_type: duration
+  - concept_id: interest_paid
+    labels_vi: [tiền lãi vay đã trả, lãi vay đã trả]
+    statement_types: [cash_flow_statement]
+    sectors: [industrial, securities, insurance]
+    account_codes: ['04']
+    period_type: duration
+  - concept_id: income_tax_paid
+    labels_vi: [thuế thu nhập doanh nghiệp đã nộp, thuế tndn đã nộp]
+    statement_types: [cash_flow_statement]
+    sectors: [all]
+    account_codes: ['05']
+    period_type: duration
+  - concept_id: investing_cash_flow
+    labels_vi: [lưu chuyển tiền thuần từ hoạt động đầu tư]
+    statement_types: [cash_flow_statement]
+    sectors: [all]
+    account_codes: ['30']
+    period_type: duration
+  - concept_id: financing_cash_flow
+    labels_vi: [lưu chuyển tiền thuần từ hoạt động tài chính]
+    statement_types: [cash_flow_statement]
+    sectors: [all]
+    account_codes: ['40']
+    period_type: duration
+  - concept_id: net_change_in_cash
+    labels_vi: [lưu chuyển tiền thuần trong kỳ, tiền và tương đương tiền tăng giảm thuần trong kỳ]
+    statement_types: [cash_flow_statement]
+    sectors: [all]
+    account_codes: ['50']
+    period_type: duration
+  - concept_id: cash_at_beginning
+    labels_vi: [tiền và tương đương tiền đầu kỳ, tiền và các khoản tương đương tiền đầu năm]
+    statement_types: [cash_flow_statement]
+    sectors: [all]
+    account_codes: ['60']
+    period_type: instant
+  - concept_id: cash_at_end
+    labels_vi: [tiền và tương đương tiền cuối kỳ, tiền và các khoản tương đương tiền cuối năm]
+    statement_types: [cash_flow_statement]
+    sectors: [all]
+    account_codes: ['70']
+    period_type: instant
+
+  - concept_id: loans_to_customers
+    labels_vi: [cho vay khách hàng]
+    statement_types: [balance_sheet, notes]
+    sectors: [banking]
+    period_type: instant
+  - concept_id: deposits_from_customers
+    labels_vi: [tiền gửi của khách hàng]
+    statement_types: [balance_sheet, notes]
+    sectors: [banking]
+    period_type: instant
+  - concept_id: net_interest_income
+    labels_vi: [thu nhập lãi thuần]
+    statement_types: [income_statement, notes]
+    sectors: [banking]
+    period_type: duration
+  - concept_id: securities_issued
+    labels_vi: [phát hành giấy tờ có giá]
+    statement_types: [balance_sheet, notes]
+    sectors: [banking]
+    period_type: instant
+  - concept_id: central_bank_deposits
+    labels_vi: [tiền gửi tại ngân hàng nhà nước, tiền gửi tại nhnn]
+    statement_types: [balance_sheet, notes]
+    sectors: [banking]
+    period_type: instant
+  - concept_id: credit_loss_provision
+    labels_vi: [dự phòng rủi ro tín dụng, dự phòng tổn thất tín dụng]
+    statement_types: [balance_sheet, income_statement, notes]
+    sectors: [banking]
+    period_type: mixed

@@ -1,0 +1,17 @@
+protocol: vifinqa_ccl_phase5_component_selection_pilot_v1
+schema_version: 1
+inputs:
+  packets: artifacts/research/ccl_phase5_component_selection_packets_v33_full_run_002/phase5_component_selection_packets_v1.jsonl
+  packet_manifest: artifacts/research/ccl_phase5_component_selection_packets_v33_full_run_002/phase5_component_selection_manifest.json
+selection:
+  strategy: token_budget_then_packet_id_by_source_context
+  note_context_count: 18
+  row_label_context_count: 6
+route:
+  route_id: qwen3_8b_primary_graph_v33_full
+  model_id: Qwen/Qwen3-8B
+  revision: main
+  parameter_count_billions: 8.0
+  load_in_4bit: true
+  max_input_tokens: 2048
+  max_new_tokens: 384

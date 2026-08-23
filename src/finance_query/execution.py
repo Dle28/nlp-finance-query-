@@ -39,10 +39,12 @@ OPERATOR_REGISTRY: dict[str, OperatorContract] = {
     "sum": OperatorContract("sum", 1, None, "same", "source_unit"),
     "subtract": OperatorContract("subtract", 2, 2, "same", "source_unit"),
     "absolute_difference": OperatorContract("absolute_difference", 2, 2, "same", "source_unit"),
+    "absolute": OperatorContract("absolute", 1, 1, "single", "source_unit"),
     # Multiplication needs dimensional algebra which is intentionally not
     # inferred from report labels in v1.
     "multiply": OperatorContract("multiply", 1, None, "dimensional", "derived", False),
     "divide": OperatorContract("divide", 2, 2, "same", "ratio"),
+    "ratio_to_percent": OperatorContract("ratio_to_percent", 1, 1, "single", "percent"),
     "percentage_change": OperatorContract("percentage_change", 2, 2, "same", "percent"),
     "mean": OperatorContract("mean", 1, None, "same", "source_unit"),
     "median": OperatorContract("median", 1, None, "same", "source_unit"),
@@ -178,6 +180,10 @@ def execute_ast(ast: Mapping[str, Any], values: Mapping[str, Any]) -> Any:
         if len(args) != 2:
             raise ValueError("absolute_difference requires two arguments")
         return abs(_as_decimal(args[0]) - _as_decimal(args[1]))
+    if op == "absolute":
+        if len(args) != 1:
+            raise ValueError("absolute requires one argument")
+        return abs(_as_decimal(args[0]))
     if op == "multiply":
         result = Decimal("1")
         for value in args:
@@ -190,6 +196,10 @@ def execute_ast(ast: Mapping[str, Any], values: Mapping[str, Any]) -> Any:
         if denominator == 0:
             raise ZeroDivisionError("division by zero")
         return _as_decimal(args[0]) / denominator
+    if op == "ratio_to_percent":
+        if len(args) != 1:
+            raise ValueError("ratio_to_percent requires one argument")
+        return _as_decimal(args[0]) * Decimal("100")
     if op == "percentage_change":
         if len(args) != 2:
             raise ValueError("percentage_change requires new and old values")

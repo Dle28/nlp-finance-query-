@@ -54,12 +54,31 @@ def parse_args() -> argparse.Namespace:
         action="append",
         default=[],
         metavar="CHILD=PARENT[,PARENT...]",
-        help="Logical dependency edges; parents must be declared before the child.",
+        help=(
+            "Logical dependency edges; parents must be declared before the child. "
+            "With --refresh, replaces dependencies for a selected artifact."
+        ),
     )
     parser.add_argument(
         "--validate-only",
         action="store_true",
         help="Validate an existing registry without writing it.",
+    )
+    parser.add_argument(
+        "--refresh",
+        action="append",
+        default=[],
+        metavar="LOGICAL_NAME",
+        help=(
+            "Refresh one existing artifact while preserving its declared type, "
+            "schema, and metadata. Repeatable; --depends-on may replace the "
+            "dependencies of a selected artifact."
+        ),
+    )
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Append new --artifact declarations to a validated existing registry.",
     )
     return parser.parse_args()
 
@@ -111,7 +130,7 @@ def main() -> None:
     if not workspace.is_dir():
         raise FileNotFoundError(workspace)
     if args.validate_only:
-        if args.artifact or args.schema_version or args.depends_on:
+        if args.artifact or args.schema_version or args.depends_on or args.refresh or args.append:
             raise ArtifactRegistryError("--validate-only cannot be combined with registry declarations")
         registry = load_artifact_registry(output, workspace, validate=True)
         print(
@@ -126,11 +145,101 @@ def main() -> None:
             )
         )
         return
+    if args.refresh:
+        if args.artifact or args.schema_version or args.append:
+            raise ArtifactRegistryError(
+                "--refresh cannot be combined with --artifact, --schema-version or --append"
+            )
+        # A dashboard/materialized diagnostic can legitimately be regenerated
+        # from unchanged hash-bound inputs. Do not permit a parent refresh here:
+        # children would retain a stale dependency hash and write() would reject it.
+        registry = load_artifact_registry(output, workspace, validate=False)
+        refresh_names = [str(value or "").strip() for value in args.refresh]
+        if any(not name for name in refresh_names):
+            raise ArtifactRegistryError("--refresh requires a non-empty logical_name")
+        if len(set(refresh_names)) != len(refresh_names):
+            raise ArtifactRegistryError("Each --refresh logical_name may be declared once")
+        refresh_set = set(refresh_names)
+        dependency_overrides = parse_dependencies(args.depends_on)
+        unknown_override_names = sorted(set(dependency_overrides) - refresh_set)
+        if unknown_override_names:
+            raise ArtifactRegistryError(
+                "--depends-on with --refresh may name only selected artifacts: "
+                + ", ".join(unknown_override_names)
+            )
+        for name in refresh_names:
+            if name not in registry.records:
+                raise ArtifactRegistryError(f"Artifact is not registered: {name}")
+        effective_dependencies = {
+            name: dependency_overrides.get(name, list(record.dependencies))
+            for name, record in registry.records.items()
+        }
+        for name, parents in dependency_overrides.items():
+            unknown_parents = sorted(set(parents) - set(registry.records))
+            if unknown_parents:
+                raise ArtifactRegistryError(
+                    f"Refreshed artifact {name} has unregistered dependencies: "
+                    + ", ".join(unknown_parents)
+                )
+            if name in parents:
+                raise ArtifactRegistryError("An artifact cannot depend on itself")
+        for name in refresh_names:
+            stale_children = sorted(
+                child_name
+                for child_name, parents in effective_dependencies.items()
+                if name in parents and child_name not in refresh_set
+            )
+            if stale_children:
+                raise ArtifactRegistryError(
+                    f"Cannot refresh {name}; also refresh dependent artifacts: "
+                    + ", ".join(stale_children)
+                )
+
+        # Refresh parents before their selected children so a child's renewed
+        # dependency hash captures the refreshed parent, never a stale digest.
+        pending = set(refresh_names)
+        while pending:
+            ready = sorted(
+                name
+                for name in pending
+                if not (set(effective_dependencies[name]) & pending)
+            )
+            if not ready:
+                raise ArtifactRegistryError("Selected refresh artifacts contain a dependency cycle")
+            for name in ready:
+                record = registry.records[name]
+                registry.register(
+                    workspace_root=workspace,
+                    logical_name=record.logical_name,
+                    artifact_type=record.artifact_type,
+                    schema_version=record.schema_version,
+                    path=workspace / record.relative_path,
+                    dependency_names=effective_dependencies[name],
+                    metadata=record.metadata,
+                    replace=True,
+                )
+                pending.remove(name)
+        write_artifact_registry(output, workspace, registry)
+        print(
+            json.dumps(
+                {
+                    "registry": str(output),
+                    "schema_version": ARTIFACT_REGISTRY_SCHEMA_VERSION,
+                    "artifact_count": len(registry.records),
+                    "refreshed": sorted(refresh_names),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
     if not args.artifact:
         raise ArtifactRegistryError("At least one --artifact declaration is required")
     versions = parse_schema_versions(args.schema_version)
     dependencies = parse_dependencies(args.depends_on)
-    registry = ArtifactRegistry()
+    if args.append:
+        registry = load_artifact_registry(output, workspace, validate=True)
+    else:
+        registry = ArtifactRegistry()
     for raw_artifact in args.artifact:
         name, artifact_type, relative_path = parse_artifact(raw_artifact)
         registry.register(

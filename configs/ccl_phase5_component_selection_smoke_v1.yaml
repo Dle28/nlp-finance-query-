@@ -1,0 +1,19 @@
+protocol: vifinqa_ccl_phase5_component_selection_smoke_v1
+schema_version: 1
+inputs:
+  packets: artifacts/research/ccl_phase5_component_selection_packets_v33_full_run_002/phase5_component_selection_packets_v1.jsonl
+  packet_manifest: artifacts/research/ccl_phase5_component_selection_packets_v33_full_run_002/phase5_component_selection_manifest.json
+route:
+  route_id: qwen3_8b_primary_graph_v33_full
+  model_id: Qwen/Qwen3-8B
+  revision: main
+  parameter_count_billions: 8.0
+  load_in_4bit: true
+  max_input_tokens: 2048
+  max_new_tokens: 384
+  packet_ids:
+    - 3e1a4c370f600f07153427cca0554f716f8378a504991032e6a19edf07ee7ed0
+    - 26c8bb165263d75720a4d1e9e73846cadf7c47d041f4b9ed20ce8e05fb5c1c85
+    - e2c838da64689601038b14255725f1b2a401e4e5f0caab2e3c3695e0f572e99d
+    - 613a1d2a24a933b4e8dc97f46c7dcfbe8d38e9e47708b341046c8983a274f3f7
+    - 99a473ba46e6dbf018e8510eb3cfd7aaedce70b08c381c70fdaa3e7f603f86ef

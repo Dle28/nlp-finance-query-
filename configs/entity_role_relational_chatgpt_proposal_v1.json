@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_entity_role_relational_chatgpt_review_spec_v1",
+  "decision_provenance": {
+    "reviewer_type": "chatgpt_verified",
+    "reviewer_id": "chatgpt-gpt5-entity-role-relational-proposer-v1",
+    "reviewer_role": "authorized_ai_entity_role_evidence_proposer",
+    "model_family": "GPT-5",
+    "review_policy": "fail_closed_evidence_bound_v1",
+    "verification_authority": "human_equivalent",
+    "authority_grant": {
+      "granted_by": "campaign_owner",
+      "grant_scope": "entity_role_review_gate_equivalence",
+      "grant_basis": "explicit_user_instruction"
+    }
+  },
+  "authority_receipt": {
+    "verification_authority": "human_equivalent",
+    "gate_effect": "same_eligibility_weight_as_human_verified",
+    "provenance_preserved_as": "chatgpt_verified",
+    "scope": "entity_role_review_gate_equivalence",
+    "release_authority_included": false,
+    "training_authority_included": false,
+    "submission_authority_included": false,
+    "value_selection_authority_included": false,
+    "formula_execution_authority_included": false
+  },
+  "reviews": [
+    {"question_id": 6, "decision": "approve_relational_parent_role", "selected_line_number": 304, "reason_codes": [], "rationale": "Trong exact VSC document, 'Công ty' đồng tham chiếu issuer và được khẳng định có 6 công ty con; đây là quan hệ parent trực tiếp, không suy từ separate scope.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 10, "decision": "approve_relational_parent_role", "selected_line_number": 415, "reason_codes": [], "rationale": "Dòng exact nói các công ty con 'của Công ty'; document identity ràng buộc Công ty với SSH, nên role parent được chứng minh riêng với reporting scope.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 27, "decision": "approve_relational_parent_role", "selected_line_number": 1222, "reason_codes": [], "rationale": "Exact note nêu công ty con của chính Công ty trong DLG document; issuer identity cộng quan hệ subsidiary đủ suy ra DLG là parent, không dùng separate=>parent.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 145, "decision": "approve_relational_parent_role", "selected_line_number": 664, "reason_codes": [], "rationale": "VJC exact source ghi Công ty đã thành lập ba công ty con; hành vi và quan hệ này trực tiếp chứng minh issuer giữ parent role.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 168, "decision": "approve_relational_parent_role", "selected_line_number": 344, "reason_codes": [], "rationale": "CRE source chỉ rõ thông tin về các công ty con của Công ty; co-reference theo document issuer và subsidiary relation chứng minh parent role.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 181, "decision": "approve_relational_parent_role", "selected_line_number": 760, "reason_codes": [], "rationale": "Dòng VRE nói các khoản đầu tư của Công ty vào các công ty con. Nó gắn subsidiary relation với issuer; không dùng dòng khác nói Vingroup là parent của VRE.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 184, "decision": "approve_relational_parent_role", "selected_line_number": 489, "reason_codes": [], "rationale": "DIG source đặt tên Tập đoàn DIC và nêu có công ty con trực tiếp lẫn gián tiếp; named-issuer relation là parent-role evidence cụ thể.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 249, "decision": "approve_relational_parent_role", "selected_line_number": 400, "reason_codes": [], "rationale": "HDG exact source khẳng định Công ty có 12 công ty con; identity và role được nối bằng exact document provenance, scope vẫn là trục riêng.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 292, "decision": "approve_relational_parent_role", "selected_line_number": 851, "reason_codes": [], "rationale": "CRE 2020 exact note mô tả chi tiết các công ty con của Công ty; dòng này là relational anchor rõ hơn định nghĩa kế toán chung.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 316, "decision": "approve_relational_parent_role", "selected_line_number": 523, "reason_codes": [], "rationale": "NKG exact source khẳng định Công ty có bốn công ty con tại kỳ báo cáo; issuer-subsidiary relation trực tiếp chứng minh parent role.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}},
+    {"question_id": 325, "decision": "approve_relational_parent_role", "selected_line_number": 339, "reason_codes": [], "rationale": "TTF source nói Công ty có các công ty con và gọi Công ty cùng các công ty con là Nhóm Công ty; đây là parent-role proof độc lập với báo cáo riêng.", "semantic_checks": {"issuer_coreference_valid": true, "issuer_has_subsidiary_relation": true, "parent_role_logically_proven": true, "reporting_scope_checked_independently": true, "same_document": true, "sufficient_for_certificate": true}}
+  ]
+}

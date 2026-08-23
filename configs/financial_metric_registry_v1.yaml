@@ -1,0 +1,96 @@
+schema_version: 1
+protocol: financial_metric_registry_v1
+source_references:
+  - https://www.xbrl.org/the-standard/what/key-concepts-in-xbrl/taxonomies/
+  - https://www.ifrs.org/issued-standards/ifrs-taxonomy/
+metrics:
+  - metric_id: quick_ratio
+    labels_vi: [hệ số thanh toán nhanh, khả năng thanh toán nhanh, quick ratio]
+    output_unit: ratio
+    definition_status: review_required
+    formula_ast:
+      op: divide
+      args:
+        - {op: subtract, args: [current_assets, inventory]}
+        - current_liabilities
+    operands:
+      - {role: current_assets, concept_id: current_assets, statement_types: [balance_sheet]}
+      - {role: inventory, concept_id: inventory, statement_types: [balance_sheet]}
+      - {role: current_liabilities, concept_id: current_liabilities, statement_types: [balance_sheet]}
+  - metric_id: current_ratio
+    labels_vi: [hệ số thanh toán hiện hành, khả năng thanh toán hiện hành, current ratio]
+    output_unit: ratio
+    definition_status: defined
+    formula_ast: {op: divide, args: [current_assets, current_liabilities]}
+    operands:
+      - {role: current_assets, concept_id: current_assets, statement_types: [balance_sheet]}
+      - {role: current_liabilities, concept_id: current_liabilities, statement_types: [balance_sheet]}
+  - metric_id: gross_profit_margin
+    labels_vi: [biên lợi nhuận gộp, tỷ suất lợi nhuận gộp, gross profit margin, gpm]
+    output_unit: percent
+    definition_status: defined
+    formula_ast: {op: ratio_to_percent, args: [{op: divide, args: [gross_profit, net_revenue]}]}
+    operands:
+      - {role: gross_profit, concept_id: gross_profit, statement_types: [income_statement]}
+      - {role: net_revenue, concept_id: net_revenue, statement_types: [income_statement]}
+  - metric_id: net_profit_margin
+    labels_vi:
+      - biên lợi nhuận ròng
+      - tỷ suất lợi nhuận ròng
+      - tỷ lệ lợi nhuận sau thuế trên doanh thu thuần
+      - net profit margin
+      - npm
+    output_unit: percent
+    definition_status: defined
+    formula_ast: {op: ratio_to_percent, args: [{op: divide, args: [net_income, net_revenue]}]}
+    operands:
+      - {role: net_income, concept_id: net_income, statement_types: [income_statement]}
+      - {role: net_revenue, concept_id: net_revenue, statement_types: [income_statement]}
+  - metric_id: interest_coverage
+    labels_vi: [khả năng thanh toán lãi vay, hệ số thanh toán lãi vay, interest coverage]
+    output_unit: ratio
+    definition_status: review_required
+    formula_ast:
+      op: divide
+      args:
+        - {op: add, args: [profit_before_tax, {op: abs, args: [interest_expense]}]}
+        - {op: abs, args: [interest_expense]}
+    operands:
+      - {role: profit_before_tax, concept_id: profit_before_tax, statement_types: [income_statement]}
+      - {role: interest_expense, concept_id: interest_expense, statement_types: [income_statement, notes]}
+  - metric_id: return_on_assets
+    labels_vi: [tỷ suất sinh lời trên tài sản, lợi nhuận trên tài sản, roa]
+    output_unit: percent
+    definition_status: review_required
+    formula_ast: {op: ratio_to_percent, args: [{op: divide, args: [net_income, average_total_assets]}]}
+    operands:
+      - {role: net_income, concept_id: net_income, statement_types: [income_statement]}
+      - {role: average_total_assets, concept_id: total_assets, statement_types: [balance_sheet], period_policy: average_open_close}
+  - metric_id: return_on_equity
+    labels_vi: [tỷ suất sinh lời trên vốn chủ sở hữu, lợi nhuận trên vốn chủ sở hữu, roe]
+    output_unit: percent
+    definition_status: review_required
+    formula_ast: {op: ratio_to_percent, args: [{op: divide, args: [net_income, average_equity]}]}
+    operands:
+      - {role: net_income, concept_id: net_income, statement_types: [income_statement]}
+      - {role: average_equity, concept_id: equity, statement_types: [balance_sheet], period_policy: average_open_close}
+  - metric_id: loan_to_deposit
+    labels_vi: [hệ số cho vay trên tiền gửi, cho vay khách hàng trên tổng tiền gửi khách hàng, ldr]
+    output_unit: percent
+    definition_status: defined
+    sectors: [banking]
+    formula_ast: {op: ratio_to_percent, args: [{op: divide, args: [loans_to_customers, deposits_from_customers]}]}
+    operands:
+      - {role: loans_to_customers, concept_id: loans_to_customers, statement_types: [balance_sheet, notes]}
+      - {role: deposits_from_customers, concept_id: deposits_from_customers, statement_types: [balance_sheet, notes]}
+  - metric_id: operating_cash_flow
+    labels_vi:
+      - lưu chuyển tiền thuần từ hoạt động kinh doanh
+      - dòng tiền thuần từ hoạt động kinh doanh
+      - operating cash flow
+      - cfo
+    output_unit: source_unit
+    definition_status: reported_value
+    formula_ast: {op: lookup, args: [operating_cash_flow]}
+    operands:
+      - {role: operating_cash_flow, concept_id: operating_cash_flow, statement_types: [cash_flow_statement]}

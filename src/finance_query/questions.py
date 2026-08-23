@@ -5,7 +5,7 @@ import re
 import unicodedata
 from pathlib import Path
 
-from .schemas import OperandSpec, QuestionFamily, QuestionPlan
+from .schemas import OperandSpec, PlanFieldProvenance, QuestionFamily, QuestionPlan
 
 
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
@@ -14,6 +14,11 @@ PERCENT_RE = re.compile(r"%|phần trăm|tỷ lệ|tỉ lệ", re.IGNORECASE)
 SCOPE_PATTERNS = {
     "separate": re.compile(r"\bcông ty mẹ\b|\briêng lẻ\b", re.IGNORECASE),
     "consolidated": re.compile(r"\bhợp nhất\b", re.IGNORECASE),
+}
+
+ENTITY_ROLE_PATTERNS = {
+    "parent": re.compile(r"\bcông ty mẹ\b", re.IGNORECASE),
+    "subsidiary": re.compile(r"\bcông ty con\b", re.IGNORECASE),
 }
 
 UNIT_PATTERNS = [
@@ -119,24 +124,6 @@ def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
-def weak_family_from_id(question_id: int | None) -> QuestionFamily | None:
-    if question_id is None:
-        return None
-    if 1 <= question_id <= 361:
-        return "direct_lookup"
-    if 362 <= question_id <= 577:
-        return "conditional_analytical"
-    if 578 <= question_id <= 655:
-        return "temporal_change"
-    if 656 <= question_id <= 732:
-        return "ratio_or_derived"
-    if 733 <= question_id <= 812:
-        return "cross_entity_comparison"
-    if 813 <= question_id <= 1012:
-        return "multi_entity_or_period_aggregation"
-    return None
-
-
 def load_ticker_aliases(code_stock_path: Path) -> dict[str, str]:
     """Load normalized company aliases and ticker strings.
 
@@ -221,6 +208,12 @@ def infer_scope(question: str) -> str | None:
     return matches[0] if len(matches) == 1 else None
 
 
+def infer_entity_role(question: str) -> str | None:
+    """Extract legal/group role independently from the reporting perimeter."""
+    matches = [role for role, pattern in ENTITY_ROLE_PATTERNS.items() if pattern.search(question)]
+    return matches[0] if len(matches) == 1 else None
+
+
 def infer_unit(question: str) -> str | None:
     for unit, pattern in UNIT_PATTERNS:
         if pattern.search(question):
@@ -228,15 +221,12 @@ def infer_unit(question: str) -> str | None:
     return "percent" if PERCENT_RE.search(question) else None
 
 
-def infer_family(question: str, question_id: int | None = None) -> tuple[QuestionFamily, float]:
+def infer_family(question: str) -> tuple[QuestionFamily, float]:
     normalized = normalize_text(question)
     for family, pattern, confidence in FAMILY_RULES:
         if pattern.search(normalized):
             return family, confidence
 
-    weak = weak_family_from_id(question_id)
-    if weak is not None:
-        return weak, 0.7
     return "direct_lookup", 0.62
 
 
@@ -328,11 +318,12 @@ class RuleQuestionPlanner:
         family, confidence = (
             ("direct_lookup", 0.98)
             if reported_lookup_reason
-            else infer_family(normalized, question_id)
+            else infer_family(normalized)
         )
         tickers = extract_tickers(normalized, self.aliases)
         years = sorted({int(year) for year in YEAR_RE.findall(normalized)})
         scope = infer_scope(normalized)
+        entity_role = infer_entity_role(normalized)
         unit = infer_unit(normalized)
         hint = metric_hint(normalized)
 
@@ -379,8 +370,36 @@ class RuleQuestionPlanner:
             tickers=tickers,
             years=years,
             scope=scope,
+            entity_role=entity_role,
             requested_unit=unit,
             operands=operands,
             operation_ast=infer_operation_ast(family, normalized),
             warnings=warnings,
+            field_provenance={
+                "tickers": PlanFieldProvenance(
+                    value=tickers,
+                    basis="EXPLICIT_QUERY" if tickers else "UNKNOWN",
+                    confidence=1.0 if tickers else 0.0,
+                ),
+                "years": PlanFieldProvenance(
+                    value=years,
+                    basis="EXPLICIT_QUERY" if years else "UNKNOWN",
+                    confidence=1.0 if years else 0.0,
+                ),
+                "scope": PlanFieldProvenance(
+                    value=scope,
+                    basis="EXPLICIT_QUERY" if scope else "UNKNOWN",
+                    confidence=1.0 if scope else 0.0,
+                ),
+                "entity_role": PlanFieldProvenance(
+                    value=entity_role,
+                    basis="EXPLICIT_QUERY" if entity_role else "UNKNOWN",
+                    confidence=1.0 if entity_role else 0.0,
+                ),
+                "requested_unit": PlanFieldProvenance(
+                    value=unit,
+                    basis="EXPLICIT_QUERY" if unit else "UNKNOWN",
+                    confidence=1.0 if unit else 0.0,
+                ),
+            },
         )

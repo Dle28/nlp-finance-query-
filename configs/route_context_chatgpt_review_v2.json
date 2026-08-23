@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_route_context_chatgpt_review_spec_v1",
+  "review_policy": "fail_closed_literal_operation_semantics_v1",
+  "default_candidate_policy": "approve_literal_label_after_question_semantic_review",
+  "blocked_item_policy": "confirm_incomplete_literal_blocker_fail_closed",
+  "candidate_overrides": []
+}

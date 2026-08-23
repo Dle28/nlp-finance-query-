@@ -2,9 +2,11 @@ import unittest
 
 from finance_query.plan_overrides import (
     EXACT_QUERY_TICKER_TOKEN_POLICY,
+    SOURCE_TITLE_ENTITY_OVERRIDE_POLICY,
     apply_plan_overrides,
     exact_source_ticker_tokens,
     reported_direct_override,
+    source_title_entity_direct_override,
     source_ticker_direct_override,
     validate_plan_overrides,
 )
@@ -83,3 +85,34 @@ class PlanOverrideTests(unittest.TestCase):
                 ["HT1", "PC1"],
             )
         )
+
+    def test_source_title_alias_overrides_only_an_ambiguous_direct_issuer(self):
+        item = {
+            "id": 4,
+            "question": "Lợi nhuận sau thuế của CTCP Chứng khoán FPT năm 2023 là bao nhiêu?",
+            "question_plan": {
+                "family": "direct_lookup",
+                "years": [2023],
+                "tickers": ["FTS", "FPT"],
+                "scope": None,
+                "operation_ast": {"op": "lookup", "args": ["x0"]},
+                "operands": [{"operand_id": "x0", "metric": "Lợi nhuận sau thuế"}],
+            },
+        }
+        override = source_title_entity_direct_override(
+            item,
+            [
+                {
+                    "ticker": "FTS",
+                    "canonical_entity": "chung khoan fpt",
+                    "source_entity": "Công ty Cổ phần Chứng khoán FPT",
+                    "document_id": "FTS_2023",
+                }
+            ],
+        )
+        self.assertIsNotNone(override)
+        assert override is not None
+        self.assertEqual(override["effective_question_plan"]["tickers"], ["FTS"])
+        self.assertEqual(override["effective_question_plan"]["operands"][0]["ticker"], "FTS")
+        self.assertIn(SOURCE_TITLE_ENTITY_OVERRIDE_POLICY, override["reason_code"])
+        self.assertFalse(override["source_title_entity_resolution"]["scope_inferred"])

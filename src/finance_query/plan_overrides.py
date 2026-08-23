@@ -15,11 +15,13 @@ from copy import deepcopy
 from typing import Any, Iterable, Mapping
 
 from .questions import metric_hint, reported_value_lookup_reason
+from .report_entities import REPORT_ENTITY_RESOLUTION_POLICY, resolve_question_entity
 
 
 PLAN_OVERRIDE_SCHEMA_VERSION = 1
 SOURCE_TICKER_RE = re.compile(r"[A-Z][A-Z0-9]{1,5}")
 EXACT_QUERY_TICKER_TOKEN_POLICY = "exact_query_ticker_token_in_bundle_metadata_v1"
+SOURCE_TITLE_ENTITY_OVERRIDE_POLICY = REPORT_ENTITY_RESOLUTION_POLICY
 
 
 def canonical_sha256(value: Any) -> str:
@@ -140,6 +142,66 @@ def source_ticker_direct_override(
         "original_question_plan_sha256": canonical_sha256(original),
         "reason_code": "+".join(reasons),
         "effective_question_plan": effective,
+    }
+
+
+def source_title_entity_direct_override(
+    item: Mapping[str, Any], aliases: Iterable[Mapping[str, Any]]
+) -> dict[str, Any] | None:
+    """Resolve one issuer from a unique source-title alias for a direct row.
+
+    This is deliberately narrower than a generic company-name linker.  The
+    alias must already have been extracted from an immutable report title, and
+    the question must still reduce to exactly one disclosed-row lookup.  It
+    only corrects an unresolved or token-polluted issuer list; scope, period,
+    metric and every exact-cell gate remain untouched.
+    """
+    original = item.get("question_plan") or {}
+    reported = reported_direct_override(item)
+    effective = deepcopy(
+        reported["effective_question_plan"] if reported is not None else original
+    )
+    if str(effective.get("family") or "") != "direct_lookup":
+        return reported
+    tickers = [str(value) for value in effective.get("tickers") or [] if str(value)]
+    operands = effective.get("operands") or []
+    if (
+        len(tickers) == 1
+        or len(operands) != 1
+        or str((operands[0] or {}).get("operand_id") or "") != "x0"
+        or (effective.get("operation_ast") or {}).get("op") != "lookup"
+    ):
+        return reported
+    resolution = resolve_question_entity(str(item.get("question") or ""), aliases)
+    if resolution is None:
+        return reported
+
+    ticker = str(resolution["ticker"])
+    effective["tickers"] = [ticker]
+    effective["operands"][0]["ticker"] = ticker
+    warnings = [str(value) for value in effective.get("warnings") or [] if str(value)]
+    warnings.append(
+        "Plan override: resolved one source-title entity alias; scope was not inferred."
+    )
+    effective["warnings"] = list(dict.fromkeys(warnings))
+    reasons = [] if reported is None else [str(reported["reason_code"])]
+    reasons.append(SOURCE_TITLE_ENTITY_OVERRIDE_POLICY)
+    return {
+        "schema_version": PLAN_OVERRIDE_SCHEMA_VERSION,
+        "id": int(item["id"]),
+        "question_sha256": canonical_sha256(str(item.get("question") or "")),
+        "original_question_plan_sha256": canonical_sha256(original),
+        "reason_code": "+".join(reasons),
+        "effective_question_plan": effective,
+        "source_title_entity_resolution": {
+            "policy": SOURCE_TITLE_ENTITY_OVERRIDE_POLICY,
+            "ticker": ticker,
+            "matched_canonical_entities": list(
+                resolution.get("matched_canonical_entities") or []
+            ),
+            "matched_document_ids": list(resolution.get("matched_document_ids") or []),
+            "scope_inferred": False,
+        },
     }
 
 

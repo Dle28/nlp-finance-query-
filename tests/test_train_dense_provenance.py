@@ -4,6 +4,7 @@ from pathlib import Path
 
 from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
 from finance_query.direct_replay import DIRECT_REPLAY_PROTOCOL
+from finance_query.independent_critic import INDEPENDENT_CRITIC_PROTOCOL
 
 
 spec = importlib.util.spec_from_file_location(
@@ -34,22 +35,36 @@ class TrainDenseProvenanceTests(unittest.TestCase):
                 "replay_artifact_sha256": "a" * 64,
                 "training_gate_only": True,
             },
+            "independent_critic_gate": {
+                "protocol": INDEPENDENT_CRITIC_PROTOCOL,
+                "status": "independent_ready",
+                "question_id": 1,
+                "machine_selected_uid": "table-1",
+                "critic_artifact_sha256": "b" * 64,
+                "training_gate_only": True,
+            },
         }
         mod.validate_provenance(
-            row, "machine_silver", 1, expected_replay_sha="a" * 64
+            row,
+            "machine_silver",
+            1,
+            expected_replay_sha="a" * 64,
+            expected_critic_sha="b" * 64,
         )
 
         row["machine_self_review"]["training_eligible"] = False
         with self.assertRaisesRegex(ValueError, "not training-eligible"):
             mod.validate_provenance(
-                row, "machine_silver", 1, expected_replay_sha="a" * 64
+                row, "machine_silver", 1, expected_replay_sha="a" * 64,
+                expected_critic_sha="b" * 64,
             )
 
         row["machine_self_review"]["training_eligible"] = True
         row["machine_self_review"]["protocol"] = "raw_v2_canonical_context_v1"
         with self.assertRaisesRegex(ValueError, "numeric-safe autonomous"):
             mod.validate_provenance(
-                row, "machine_silver", 1, expected_replay_sha="a" * 64
+                row, "machine_silver", 1, expected_replay_sha="a" * 64,
+                expected_critic_sha="b" * 64,
             )
 
     def test_machine_silver_requires_independent_replay_gate(self):

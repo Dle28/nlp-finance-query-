@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI_guru — Pipeline hệ thống hiện tại</title>
+  <style>
+    :root {
+      --paper: #f5f5f5;
+      --paper-2: #ececec;
+      --ink: #2d3142;
+      --muted: #4f5d75;
+      --soft: #7a8399;
+      --rule: rgba(45, 49, 66, 0.12);
+      --rule-solid: #bfc0c0;
+      --accent: #eb6c36;
+      --accent-tint: rgba(235, 108, 54, 0.08);
+      --link: #2e5aa8;
+      --db: #5e7a9b;
+      --tb: #b8915a;
+      --fl: #9c6b50;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Geist, Inter, Arial, sans-serif;
+    }
+    main { max-width: 1180px; margin: 0 auto; padding: 48px 28px 56px; }
+    .eyebrow, .meta, .caption, .source, .lane-label, .step-label, .step-number,
+    .role, .sub, .tool, .chip-text, .legend-label, .legend-text, .note-label {
+      font-family: "Geist Mono", "SFMono-Regular", Consolas, monospace;
+    }
+    .eyebrow { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { font-family: "Instrument Serif", Georgia, serif; font-size: clamp(38px, 5vw, 62px); font-weight: 400; letter-spacing: -.035em; line-height: .95; margin: 12px 0 18px; }
+    .lede { color: var(--muted); font-size: 17px; line-height: 1.5; max-width: 800px; margin: 0; }
+    .status { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 36px; }
+    .status span { border: 1px solid var(--rule-solid); border-radius: 999px; color: var(--muted); font: 600 10px/1 "Geist Mono", monospace; letter-spacing: .06em; padding: 7px 10px; text-transform: uppercase; }
+    .status .hard { border-color: var(--accent); color: var(--accent); }
+    section { border-top: 1px solid var(--rule-solid); padding-top: 22px; margin-top: 38px; }
+    h2 { font-size: 20px; margin: 0 0 5px; font-weight: 600; letter-spacing: -.02em; }
+    .caption { color: var(--soft); font-size: 11px; line-height: 1.55; margin: 0 0 16px; }
+    .diagram-wrap { border: 1px solid var(--rule-solid); background: #fff; overflow-x: auto; }
+    svg { display: block; height: auto; min-width: 840px; width: 100%; }
+    .source { border-top: 1px solid var(--rule); color: var(--soft); font-size: 10px; line-height: 1.55; margin-top: 36px; padding-top: 14px; }
+    .source code { color: var(--muted); }
+
+    .lane { fill: rgba(45, 49, 66, .018); }
+    .divider { stroke: var(--rule); stroke-width: .8; }
+    .lane-label { fill: var(--muted); font-size: 7px; font-weight: 700; letter-spacing: 1px; text-anchor: middle; }
+    .step-pill { fill: rgba(45, 49, 66, .12); }
+    .step-pill.focal { fill: rgba(235, 108, 54, .20); }
+    .step-number { fill: var(--ink); font-size: 7px; font-weight: 700; text-anchor: middle; }
+    .step-number.focal, .step-label.focal { fill: var(--accent); }
+    .step-label { fill: var(--muted); font-size: 7px; font-weight: 700; letter-spacing: .55px; text-anchor: middle; }
+    .node { fill: #fff; stroke: rgba(45, 49, 66, .30); stroke-width: 1; }
+    .node.focal { fill: var(--accent-tint); stroke: var(--accent); stroke-width: 1.25; }
+    .role-bg { fill: rgba(45, 49, 66, .12); }
+    .role-bg.focal { fill: rgba(235, 108, 54, .20); }
+    .role { fill: var(--muted); font-size: 5.5px; font-weight: 700; text-anchor: middle; }
+    .role.focal { fill: var(--accent); }
+    .node-title { fill: var(--ink); font-size: 9px; font-weight: 600; text-anchor: middle; }
+    .sub { fill: var(--muted); font-size: 6.3px; text-anchor: middle; }
+    .tool { fill: var(--soft); font-size: 6.1px; text-anchor: middle; }
+    .chip { rx: 3; }
+    .chip-text { fill: #fff; font-size: 5px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+    .flow-muted { fill: none; stroke: var(--muted); stroke-width: 1; marker-end: url(#arr-muted); }
+    .flow-trigger { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; marker-end: url(#arr-muted); }
+    .flow-accent { fill: none; stroke: var(--accent); stroke-width: 1.25; marker-end: url(#arr-accent); }
+    .flow-link { fill: none; stroke: var(--link); stroke-width: 1; marker-end: url(#arr-link); }
+    .flow-label-bg { fill: #fff; }
+    .flow-label { fill: var(--accent); font-family: "Geist Mono", monospace; font-size: 6px; font-weight: 600; text-anchor: middle; }
+    .legend-label { fill: var(--muted); font-size: 6px; font-weight: 700; letter-spacing: .7px; }
+    .legend-text { fill: var(--muted); font-size: 6.5px; }
+    .callout { fill: #fff; stroke: var(--rule-solid); stroke-width: 1; }
+    .callout-title { fill: var(--ink); font-size: 9px; font-weight: 600; }
+    .callout-text { fill: var(--muted); font-family: "Geist Mono", monospace; font-size: 6.5px; }
+    .stop { fill: var(--ink); }
+    .note-label { fill: var(--soft); font-size: 6px; letter-spacing: .4px; }
+    @media print { body { background: #fff; } main { max-width: none; padding: 20px; } section { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">AI_guru · current-state architecture</div>
+    <h1>Pipeline hệ thống hiện tại</h1>
+    <p class="lede">Hai đường chạy riêng nhưng cùng một nguyên tắc: số liệu chỉ đi tiếp khi được neo vào nguồn gốc bất biến; mọi bước nghiên cứu, model hoặc calibration đều dừng trước release nếu chưa qua gate độc lập.</p>
+    <div class="status" aria-label="Trạng thái hiện tại">
+      <span>Raw inputs immutable</span>
+      <span>Grounded replay: research only</span>
+      <span>Qwen/CCL: proposal only</span>
+      <span class="hard">Production release: blocked</span>
+    </div>
+
+    <section aria-labelledby="grounded-title">
+      <h2 id="grounded-title">A. ViFinQA grounded answer path</h2>
+      <p class="caption">Hai receipt song song: Decimal replay chỉ là diagnostic, research-only; semantic authorization đi qua Evidence Binding → Binding Certificate → Formula Compatibility. Answer Certificate phải kiểm tra cả hai; <strong>trạng thái hiện tại: toàn bộ corpus ABSTAIN</strong>.</p>
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 840 456" role="img" aria-labelledby="grounded-svg-title grounded-svg-desc">
+          <title id="grounded-svg-title">ViFinQA grounded answer pipeline</title>
+          <desc id="grounded-svg-desc">Raw reports là source authority; V2 V3 là dẫn xuất cấu trúc và context. Exact-cell binding tách thành diagnostic Decimal replay và semantic authorization. Answer Certificate chỉ hoàn tất khi cả hai receipt và formula compatibility đều hợp lệ. Release gate hiện bị block.</desc>
+          <defs>
+            <pattern id="dots-a" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="11" cy="11" r=".8" fill="rgba(45,49,66,.10)"/></pattern>
+            <marker id="arr-muted" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#4f5d75"/></marker>
+            <marker id="arr-accent" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#eb6c36"/></marker>
+            <marker id="arr-link" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2e5aa8"/></marker>
+          </defs>
+          <rect width="840" height="456" fill="#f5f5f5"/>
+          <rect width="840" height="356" fill="url(#dots-a)" opacity=".35"/>
+          <rect class="lane" x="0" y="36" width="840" height="80"/>
+          <rect class="lane" x="0" y="196" width="840" height="80"/>
+          <path class="divider" d="M0 36H840M0 116H840M0 196H840M0 276H840M0 356H840M140 36V356"/>
+
+          <g aria-hidden="true">
+            <rect class="step-pill" x="180" y="6" width="32" height="16" rx="8"/><text class="step-number" x="196" y="15">01</text><text class="step-label" x="196" y="29">SOURCE</text>
+            <rect class="step-pill" x="292" y="6" width="32" height="16" rx="8"/><text class="step-number" x="308" y="15">02</text><text class="step-label" x="308" y="29">DISCOVER</text>
+            <rect class="step-pill" x="404" y="6" width="32" height="16" rx="8"/><text class="step-number" x="420" y="15">03</text><text class="step-label" x="420" y="29">EXACT BIND</text>
+            <rect class="step-pill focal" x="516" y="6" width="32" height="16" rx="8"/><text class="step-number focal" x="532" y="15">04</text><text class="step-label focal" x="532" y="29">AUTHORIZE</text>
+            <rect class="step-pill" x="628" y="6" width="32" height="16" rx="8"/><text class="step-number" x="644" y="15">05</text><text class="step-label" x="644" y="29">CERTIFY</text>
+            <rect class="step-pill" x="740" y="6" width="32" height="16" rx="8"/><text class="step-number" x="756" y="15">06</text><text class="step-label" x="756" y="29">RELEASE</text>
+
+            <text class="lane-label" x="70" y="72">SOURCE</text><text class="lane-label" x="70" y="84">ARTIFACTS</text>
+            <text class="lane-label" x="70" y="152">GROUNDED</text><text class="lane-label" x="70" y="164">ENGINE</text>
+            <text class="lane-label" x="70" y="232">PROOF &amp;</text><text class="lane-label" x="70" y="244">REVIEW</text>
+            <text class="lane-label" x="70" y="312">RELEASE</text><text class="lane-label" x="70" y="324">BOUNDARY</text>
+          </g>
+
+          <!-- Connectors must stay behind every node. -->
+          <g aria-hidden="true">
+            <path class="flow-muted" d="M246 76H258"/>
+            <path class="flow-trigger" d="M308 108V124"/>
+            <path class="flow-muted" d="M358 156H370"/>
+            <path class="flow-muted" d="M470 156H482"/>
+            <path class="flow-accent" d="M470 156H532V204"/>
+            <rect class="flow-label-bg" x="488" y="190" width="88" height="10" rx="2"/>
+            <text class="flow-label" x="532" y="197">semantic anchors</text>
+            <path class="flow-muted" d="M582 236H594"/>
+            <path class="flow-muted" d="M582 156H700V236H706"/>
+            <path class="flow-muted" d="M756 268V284"/>
+          </g>
+
+          <g>
+            <rect class="node" x="146" y="44" width="100" height="64" rx="6"/><rect class="role-bg" x="150" y="48" width="18" height="10" rx="3"/><text class="role" x="159" y="55">SRC</text><text class="node-title" x="196" y="67">Raw reports</text><text class="sub" x="196" y="79">source authority</text><text class="tool" x="196" y="91">RawTableAsset</text><rect class="chip" x="226" y="98" width="16" height="8" fill="#5e7a9b"/><text class="chip-text" x="234" y="102">DB</text>
+            <rect class="node" x="258" y="44" width="100" height="64" rx="6"/><rect class="role-bg" x="262" y="48" width="18" height="10" rx="3"/><text class="role" x="271" y="55">SRC</text><text class="node-title" x="308" y="67">V2 / V3 derivatives</text><text class="sub" x="308" y="79">structure + derived context</text><text class="tool" x="308" y="91">V3 ≠ source authority</text><rect class="chip" x="262" y="98" width="16" height="8" fill="#5e7a9b"/><text class="chip-text" x="270" y="102">DB</text><rect class="chip" x="338" y="98" width="16" height="8" fill="#b8915a"/><text class="chip-text" x="346" y="102">TB</text>
+            <rect class="node" x="258" y="124" width="100" height="64" rx="6"/><rect class="role-bg" x="262" y="128" width="18" height="10" rx="3"/><text class="role" x="271" y="135">ENG</text><text class="node-title" x="308" y="147">Candidate discovery</text><text class="sub" x="308" y="159">candidate set → route packet</text><text class="tool" x="308" y="171">routing eligible only</text><rect class="chip" x="262" y="178" width="16" height="8" fill="#b8915a"/><text class="chip-text" x="270" y="182">TB</text><rect class="chip" x="338" y="178" width="16" height="8" fill="#b8915a"/><text class="chip-text" x="346" y="182">TB</text>
+            <rect class="node" x="370" y="124" width="100" height="64" rx="6"/><rect class="role-bg" x="374" y="128" width="18" height="10" rx="3"/><text class="role" x="383" y="135">ENG</text><text class="node-title" x="420" y="147">Exact-cell binding</text><text class="sub" x="420" y="159">cell · unit · lineage</text><text class="tool" x="420" y="171">no semantic inference</text><rect class="chip" x="374" y="178" width="16" height="8" fill="#b8915a"/><text class="chip-text" x="382" y="182">TB</text><rect class="chip" x="450" y="178" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="458" y="182">FL</text>
+            <rect class="node" x="482" y="124" width="100" height="64" rx="6"/><rect class="role-bg" x="486" y="128" width="18" height="10" rx="3"/><text class="role" x="495" y="135">ENG</text><text class="node-title" x="532" y="147">Diagnostic Decimal</text><text class="sub" x="532" y="159">not answer-authorized</text><text class="tool" x="532" y="171">research-only receipt</text><rect class="chip" x="486" y="178" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="494" y="182">FL</text><rect class="chip" x="562" y="178" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="570" y="182">FL</text>
+            <rect class="node focal" x="482" y="204" width="100" height="64" rx="6"/><rect class="role-bg focal" x="486" y="208" width="18" height="10" rx="3"/><text class="role focal" x="495" y="215">PRF</text><text class="node-title" x="532" y="227">Evidence Binding</text><text class="sub" x="532" y="239">semantic fields + source</text><text class="tool" x="532" y="251">authorization boundary</text><rect class="chip" x="486" y="258" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="494" y="262">FL</text><rect class="chip" x="562" y="258" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="570" y="262">FL</text>
+            <rect class="node" x="594" y="204" width="100" height="64" rx="6"/><rect class="role-bg" x="598" y="208" width="18" height="10" rx="3"/><text class="role" x="607" y="215">PRF</text><text class="node-title" x="644" y="227">Binding certificate</text><text class="sub" x="644" y="239">binding ID + hash lineage</text><text class="tool" x="644" y="251">formula compatibility</text><rect class="chip" x="598" y="258" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="606" y="262">FL</text><rect class="chip" x="674" y="258" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="682" y="262">FL</text>
+            <rect class="node" x="706" y="204" width="100" height="64" rx="6"/><rect class="role-bg" x="710" y="208" width="18" height="10" rx="3"/><text class="role" x="719" y="215">PRF</text><text class="node-title" x="756" y="227">Answer certificate</text><text class="sub" x="756" y="239">[CURRENT] all ABSTAIN</text><text class="tool" x="756" y="251">both receipts required</text><rect class="chip" x="710" y="258" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="718" y="262">FL</text>
+            <rect class="node" x="706" y="284" width="100" height="64" rx="6"/><rect class="role-bg" x="710" y="288" width="18" height="10" rx="3"/><text class="role" x="719" y="295">REL</text><text class="node-title" x="756" y="307">Release gate</text><text class="sub" x="756" y="319">independent audit + ledger</text><text class="tool" x="756" y="331">BLOCKED · no release</text><rect class="chip" x="710" y="338" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="718" y="342">FL</text>
+          </g>
+
+          <g aria-hidden="true">
+            <text class="legend-label" x="144" y="372">STEPS</text><text class="legend-text" x="180" y="372">source → discover → exact bind → authorize → certify → release</text>
+            <text class="legend-label" x="144" y="393">DATA TYPE</text><rect x="206" y="386" width="16" height="8" rx="3" fill="#5e7a9b"/><text class="chip-text" x="214" y="390">DB</text><text class="legend-text" x="228" y="393">dataset</text><rect x="274" y="386" width="16" height="8" rx="3" fill="#b8915a"/><text class="chip-text" x="282" y="390">TB</text><text class="legend-text" x="296" y="393">table</text><rect x="330" y="386" width="16" height="8" rx="3" fill="#9c6b50"/><text class="chip-text" x="338" y="390">FL</text><text class="legend-text" x="352" y="393">receipt · certificate</text><text class="legend-text" x="480" y="393">left chip = input · right chip = output</text>
+            <text class="legend-label" x="144" y="415">FLOW</text><path class="flow-muted" d="M180 411H199"/><text class="legend-text" x="206" y="415">receipt hand-off</text><path class="flow-trigger" d="M288 411H307"/><text class="legend-text" x="314" y="415">diagnostic trigger</text><path class="flow-accent" d="M414 411H433"/><text class="legend-text" x="440" y="415">semantic authorization</text>
+            <rect class="callout" x="580" y="428" width="224" height="18" rx="4"/><rect class="stop" x="588" y="434" width="7" height="7" rx="1"/><text class="callout-title" x="602" y="440">No automatic training, serving, or submission</text>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <section aria-labelledby="ccl-title">
+      <h2 id="ccl-title">B. CCL / Qwen research and calibration path</h2>
+      <p class="caption">Đường nghiên cứu có kiểm soát: packet bất biến → raw model receipt → finite-ID / anchor validation → blind human–model concordance. Output chỉ là proposal; v36 là phép đo nhỏ, không phải factual accuracy hay promotion evidence.</p>
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 840 456" role="img" aria-labelledby="ccl-svg-title ccl-svg-desc">
+          <title id="ccl-svg-title">CCL and Qwen research calibration pipeline</title>
+          <desc id="ccl-svg-desc">Nguồn V10 V2 V3 được chứng nhận và đóng gói thành CCL packets, gửi chạy GPU model, rồi qua finite-ID anchor validation. Receipt chỉ proposal-only; v36 là blind human-model concordance và promotion pilot gate bị chặn.</desc>
+          <defs>
+            <pattern id="dots-b" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="11" cy="11" r=".8" fill="rgba(45,49,66,.10)"/></pattern>
+            <marker id="arr-muted-b" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#4f5d75"/></marker>
+            <marker id="arr-accent-b" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#eb6c36"/></marker>
+            <marker id="arr-link-b" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2e5aa8"/></marker>
+          </defs>
+          <rect width="840" height="456" fill="#f5f5f5"/>
+          <rect width="840" height="356" fill="url(#dots-b)" opacity=".35"/>
+          <rect class="lane" x="0" y="36" width="840" height="80"/>
+          <rect class="lane" x="0" y="196" width="840" height="80"/>
+          <path class="divider" d="M0 36H840M0 116H840M0 196H840M0 276H840M0 356H840M140 36V356"/>
+
+          <g aria-hidden="true">
+            <rect class="step-pill" x="180" y="6" width="32" height="16" rx="8"/><text class="step-number" x="196" y="15">01</text><text class="step-label" x="196" y="29">CERTIFY</text>
+            <rect class="step-pill" x="292" y="6" width="32" height="16" rx="8"/><text class="step-number" x="308" y="15">02</text><text class="step-label" x="308" y="29">PACKAGE</text>
+            <rect class="step-pill" x="404" y="6" width="32" height="16" rx="8"/><text class="step-number" x="420" y="15">03</text><text class="step-label" x="420" y="29">ROUTE</text>
+            <rect class="step-pill" x="516" y="6" width="32" height="16" rx="8"/><text class="step-number" x="532" y="15">04</text><text class="step-label" x="532" y="29">VALIDATE</text>
+            <rect class="step-pill focal" x="628" y="6" width="32" height="16" rx="8"/><text class="step-number focal" x="644" y="15">05</text><text class="step-label focal" x="644" y="29">CONCORD</text>
+            <rect class="step-pill" x="740" y="6" width="32" height="16" rx="8"/><text class="step-number" x="756" y="15">06</text><text class="step-label" x="756" y="29">GATE</text>
+
+            <text class="lane-label" x="70" y="72">SOURCE</text><text class="lane-label" x="70" y="84">PROOF</text>
+            <text class="lane-label" x="70" y="152">CCL</text><text class="lane-label" x="70" y="164">BUILDER</text>
+            <text class="lane-label" x="70" y="232">GPU</text><text class="lane-label" x="70" y="244">RESEARCH</text>
+            <text class="lane-label" x="70" y="312">HUMAN &amp;</text><text class="lane-label" x="70" y="324">RELEASE</text>
+          </g>
+
+          <!-- Connectors stay beneath node rectangles. -->
+          <g aria-hidden="true">
+            <path class="flow-trigger" style="marker-end:url(#arr-muted-b)" d="M196 108V124"/>
+            <path class="flow-muted" style="marker-end:url(#arr-muted-b)" d="M246 156H258"/>
+            <path class="flow-muted" style="marker-end:url(#arr-muted-b)" d="M358 156H376V236H370"/>
+            <path class="flow-muted" style="marker-end:url(#arr-muted-b)" d="M470 236H482"/>
+            <path class="flow-accent" style="marker-end:url(#arr-accent-b)" d="M582 236H620V316H594"/>
+            <rect class="flow-label-bg" x="563" y="281" width="114" height="10" rx="2"/>
+            <text class="flow-label" x="620" y="288">anchor-valid proposal receipt</text>
+            <path class="flow-muted" style="marker-end:url(#arr-muted-b)" d="M694 316H706"/>
+          </g>
+
+          <g>
+            <rect class="node" x="146" y="44" width="100" height="64" rx="6"/><rect class="role-bg" x="150" y="48" width="18" height="10" rx="3"/><text class="role" x="159" y="55">SRC</text><text class="node-title" x="196" y="67">V10 / V2 / V3</text><text class="sub" x="196" y="79">raw source + derived context</text><text class="tool" x="196" y="91">hash-bound inputs</text><rect class="chip" x="226" y="98" width="16" height="8" fill="#5e7a9b"/><text class="chip-text" x="234" y="102">DB</text>
+            <rect class="node" x="146" y="124" width="100" height="64" rx="6"/><rect class="role-bg" x="150" y="128" width="18" height="10" rx="3"/><text class="role" x="159" y="135">CCL</text><text class="node-title" x="196" y="147">Phase 0–2</text><text class="sub" x="196" y="159">lineage certificates</text><text class="tool" x="196" y="171">assertions · issue DAG</text><rect class="chip" x="150" y="178" width="16" height="8" fill="#5e7a9b"/><text class="chip-text" x="158" y="182">DB</text><rect class="chip" x="226" y="178" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="234" y="182">FL</text>
+            <rect class="node" x="258" y="124" width="100" height="64" rx="6"/><rect class="role-bg" x="262" y="128" width="18" height="10" rx="3"/><text class="role" x="271" y="135">CCL</text><text class="node-title" x="308" y="147">Phase 3 packets</text><text class="sub" x="308" y="159">fixed finite anchor IDs</text><text class="tool" x="308" y="171">hash-bound requests</text><rect class="chip" x="262" y="178" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="270" y="182">FL</text><rect class="chip" x="338" y="178" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="346" y="182">FL</text>
+            <rect class="node" x="370" y="204" width="100" height="64" rx="6"/><rect class="role-bg" x="374" y="208" width="18" height="10" rx="3"/><text class="role" x="383" y="215">GPU</text><text class="node-title" x="420" y="227">Qwen + challenger</text><text class="sub" x="420" y="239">raw model receipts</text><text class="tool" x="420" y="251">CPU/CUDA adapter</text><rect class="chip" x="374" y="258" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="382" y="262">FL</text><rect class="chip" x="450" y="258" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="458" y="262">FL</text>
+            <rect class="node" x="482" y="204" width="100" height="64" rx="6"/><rect class="role-bg" x="486" y="208" width="18" height="10" rx="3"/><text class="role" x="495" y="215">GPU</text><text class="node-title" x="532" y="227">Anchor-ID validator</text><text class="sub" x="532" y="239">referential validity only</text><text class="tool" x="532" y="251">proposal, never semantics</text><rect class="chip" x="486" y="258" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="494" y="262">FL</text><rect class="chip" x="562" y="258" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="570" y="262">FL</text>
+            <rect class="node focal" x="594" y="284" width="100" height="64" rx="6"/><rect class="role-bg focal" x="598" y="288" width="18" height="10" rx="3"/><text class="role focal" x="607" y="295">HUM</text><text class="node-title" x="644" y="307">v36 blind review</text><text class="sub" x="644" y="319">human–model concordance</text><text class="tool" x="644" y="331">n=5 · scored, no authority</text><rect class="chip" x="598" y="338" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="606" y="342">FL</text><rect class="chip" x="674" y="338" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="682" y="342">FL</text>
+            <rect class="node" x="706" y="284" width="100" height="64" rx="6"/><rect class="role-bg" x="710" y="288" width="18" height="10" rx="3"/><text class="role" x="719" y="295">REL</text><text class="node-title" x="756" y="307">Promotion / pilot gate</text><text class="sub" x="756" y="319">policy + larger strata</text><text class="tool" x="756" y="331">CLOSED · no pilot</text><rect class="chip" x="710" y="338" width="16" height="8" fill="#9c6b50"/><text class="chip-text" x="718" y="342">FL</text>
+          </g>
+
+          <g aria-hidden="true">
+            <text class="legend-label" x="144" y="372">STEPS</text><text class="legend-text" x="180" y="372">certify → package → route → validate → concordance → gate</text>
+            <text class="legend-label" x="144" y="393">DATA TYPE</text><rect x="206" y="386" width="16" height="8" rx="3" fill="#5e7a9b"/><text class="chip-text" x="214" y="390">DB</text><text class="legend-text" x="228" y="393">source dataset</text><rect x="306" y="386" width="16" height="8" rx="3" fill="#9c6b50"/><text class="chip-text" x="314" y="390">FL</text><text class="legend-text" x="330" y="393">packet · receipt</text><text class="legend-text" x="425" y="393">left chip = input · right chip = output</text>
+            <text class="legend-label" x="144" y="415">FLOW</text><path class="flow-muted" style="marker-end:url(#arr-muted-b)" d="M180 411H199"/><text class="legend-text" x="206" y="415">controlled hand-off</text><path class="flow-trigger" style="marker-end:url(#arr-muted-b)" d="M306 411H325"/><text class="legend-text" x="332" y="415">build trigger</text><path class="flow-accent" style="marker-end:url(#arr-accent-b)" d="M410 411H429"/><text class="legend-text" x="436" y="415">blind-review hand-off</text>
+            <rect class="callout" x="554" y="428" width="250" height="18" rx="4"/><rect class="stop" x="562" y="434" width="7" height="7" rx="1"/><text class="callout-title" x="576" y="440">No promotion, fine-tune, or certified output</text>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <p class="source">Source of truth for this overview: <code>ARCHITECTURE.md</code>, <code>docs/TECHNICAL_CONTRACTS.md</code>, and <code>docs/PROJECT_STATUS.md</code>. Snapshot: 2026-08-22. This diagram intentionally distinguishes source evidence, research proposals, and release authorization; a green-looking model result is never a release approval.</p>
+  </main>
+</body>
+</html>

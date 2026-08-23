@@ -4,6 +4,7 @@ from pathlib import Path
 
 from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
 from finance_query.direct_replay import DIRECT_REPLAY_PROTOCOL
+from finance_query.independent_critic import INDEPENDENT_CRITIC_PROTOCOL
 
 
 spec = importlib.util.spec_from_file_location(
@@ -52,8 +53,23 @@ class ReviewTrainingGateTests(unittest.TestCase):
             "question_id": 1,
             "machine_consensus_status": "machine_calibrated",
             "valid_exact_candidates": [{"internal_table_uid": "u1"}],
+            "replay_value": "10",
+            "replay_unit": "vnd",
         }
-        self.assertTrue(mod.machine_training_eligible(grounded, direct_replay=replay))
+        critic = {
+            "protocol": INDEPENDENT_CRITIC_PROTOCOL,
+            "status": "independent_ready",
+            "question_id": 1,
+            "reviewer_inputs_used": [],
+            "valid_candidates": [{"internal_table_uid": "u1"}],
+            "critic_value": "10",
+            "critic_unit": "vnd",
+        }
+        self.assertTrue(
+            mod.machine_training_eligible(
+                grounded, direct_replay=replay, independent_critic=critic
+            )
+        )
         self.assertFalse(mod.machine_training_eligible(grounded, direct_replay=None))
 
 

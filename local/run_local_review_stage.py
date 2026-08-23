@@ -75,6 +75,33 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="New directory for a validated submission package; submission mode never overwrites it.",
     )
+    p.add_argument(
+        "--typed-plans",
+        type=Path,
+        default=None,
+        help="Typed operand plan sidecar used by the production submission lineage gate.",
+    )
+    p.add_argument(
+        "--independent-critic",
+        type=Path,
+        default=None,
+        help="Reviewer-independent semantic/source critic used by the machine-silver gate.",
+    )
+    p.add_argument(
+        "--production-audit",
+        type=Path,
+        default=None,
+        help="Explicit production_independent_audit_v1 sidecar required only by submission.",
+    )
+    p.add_argument(
+        "--release-gate",
+        type=Path,
+        default=None,
+        help=(
+            "Hash-bound production_release_gate_v1 required only by submission; "
+            "it must be ready for the exact audit/ledger inputs."
+        ),
+    )
     return p.parse_args()
 
 
@@ -194,6 +221,16 @@ def main() -> None:
     autonomous_quarantine = labels / f"autonomous_quarantine_{run_tag}{artifact_variant}.jsonl"
     autonomous_silver = labels / f"machine_silver_labels_{run_tag}{artifact_variant}.jsonl"
     direct_replay = labels / f"direct_evidence_replay_{run_tag}{artifact_variant}.jsonl"
+    independent_critic = (
+        args.independent_critic.resolve()
+        if args.independent_critic is not None
+        else labels / f"independent_critic_replay_{run_tag}{artifact_variant}.jsonl"
+    )
+    typed_plans = (
+        args.typed_plans.resolve()
+        if args.typed_plans is not None
+        else bundle / "typed_operand_plans_v1.jsonl"
+    )
     execution_ledger = labels / f"machine_execution_ledger_{run_tag}{artifact_variant}.jsonl"
     formula_evidence = bundle / "formula_evidence_sets_context_v3_discovered.jsonl"
     direct_evidence = bundle / "direct_evidence_sets_context_v3_discovered.jsonl"
@@ -389,6 +426,17 @@ def main() -> None:
         run(
             [
                 sys.executable,
+                str(root / "scripts/build_typed_operand_plans.py"),
+                "--bundle-dir",
+                str(bundle),
+                "--output",
+                str(typed_plans),
+            ],
+            root,
+        )
+        run(
+            [
+                sys.executable,
                 str(root / "scripts/build_formula_evidence_sets.py"),
                 "--bundle-dir",
                 str(bundle),
@@ -396,6 +444,8 @@ def main() -> None:
                 str(formula_evidence),
                 "--evidence-context",
                 str(evidence_context),
+                "--typed-plans",
+                str(typed_plans),
                 "--discover-source-operands",
             ],
             root,
@@ -413,6 +463,21 @@ def main() -> None:
         if overrides is not None:
             direct_command.extend(["--question-plan-overrides", str(overrides)])
         run(direct_command, root)
+        critic_command = [
+            sys.executable,
+            str(root / "scripts/build_independent_critic_replay.py"),
+            "--bundle-dir",
+            str(bundle),
+            "--direct-evidence",
+            str(direct_evidence),
+            "--evidence-context",
+            str(evidence_context),
+            "--output",
+            str(independent_critic),
+        ]
+        if overrides is not None:
+            critic_command.extend(["--question-plan-overrides", str(overrides)])
+        run(critic_command, root)
         review_command = [
             sys.executable,
             str(root / "scripts/auto_review_bundle_v4.py"),
@@ -453,6 +518,8 @@ def main() -> None:
                 str(autonomous_reviews),
                 "--direct-replay",
                 str(direct_replay),
+                "--independent-critic",
+                str(independent_critic),
                 "--output",
                 str(autonomous_silver),
             ],
@@ -477,6 +544,7 @@ def main() -> None:
         )
         print("\nAutonomous reviews:", autonomous_reviews)
         print("Independent direct replay gate:", direct_replay)
+        print("Reviewer-independent semantic/source gate:", independent_critic)
         print("Quarantined dirty/ambiguous candidates:", autonomous_quarantine)
         print("V4 machine-silver labels only:", autonomous_silver)
         print("Exact-cell execution ledger (direct lookups + audited formula allow-list):", execution_ledger)
@@ -500,6 +568,8 @@ def main() -> None:
                 "machine_silver",
                 "--direct-replay",
                 str(direct_replay),
+                "--independent-critic",
+                str(independent_critic),
                 "--min-pairs",
                 str(args.autonomous_min_pairs),
                 "--defer-below-min",
@@ -517,6 +587,20 @@ def main() -> None:
             raise FileNotFoundError(
                 f"Execution ledger missing: {execution_ledger}. Run autonomous first."
             )
+        if args.production_audit is None:
+            raise FileNotFoundError(
+                "Submission requires --production-audit; a shadow independent critic is not a production approval."
+            )
+        production_audit = args.production_audit.resolve()
+        if not production_audit.is_file():
+            raise FileNotFoundError(production_audit)
+        if args.release_gate is None:
+            raise FileNotFoundError(
+                "Submission requires --release-gate; a partial or blocked coverage checkpoint cannot create a ZIP."
+            )
+        release_gate = args.release_gate.resolve()
+        if not release_gate.is_file():
+            raise FileNotFoundError(release_gate)
         submission_output = (
             args.submission_output_dir
             if args.submission_output_dir is not None
@@ -532,6 +616,14 @@ def main() -> None:
                 str(bundle),
                 "--execution-ledger",
                 str(execution_ledger),
+                "--typed-plans",
+                str(typed_plans),
+                "--independent-audit",
+                str(production_audit),
+                "--release-gate",
+                str(release_gate),
+                "--evidence-context",
+                str(evidence_context),
                 "--output-dir",
                 str(submission_output),
             ],

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_entity_role_provenance_chatgpt_review_spec_v1",
+  "review_policy": "fail_closed_evidence_bound_v1",
+  "reviews": [
+    {"question_id": 6, "decision": "reject_candidate_set", "reason_code": "NO_ROLE_LITERAL_IN_EXACT_DOCUMENT", "rationale": "Exact extracted document contains no candidate literal proving that issuer VSC has the parent role."},
+    {"question_id": 10, "decision": "reject_candidate_set", "reason_code": "NO_ROLE_LITERAL_IN_EXACT_DOCUMENT", "rationale": "Exact extracted document contains no candidate literal proving that issuer SSH has the parent role."},
+    {"question_id": 12, "decision": "approve_role_provenance", "selected_line_number": 309, "reason_code": "ISSUER_EXPLICITLY_NAMED_AS_PARENT", "rationale": "The source directly names Công ty mẹ - Tập đoàn Dệt May Việt Nam, which is the VGT issuer in this document."},
+    {"question_id": 13, "decision": "approve_role_provenance", "selected_line_number": 197, "reason_code": "ISSUER_EXPLICITLY_STATED_PARENT_WITH_SUBSIDIARIES", "rationale": "The report explicitly states that Tổng Công ty is the parent company and has subsidiaries."},
+    {"question_id": 27, "decision": "reject_candidate_set", "reason_code": "NO_ROLE_LITERAL_IN_EXACT_DOCUMENT", "rationale": "The 2024 DLG extracted document contains no candidate literal proving the parent role."},
+    {"question_id": 34, "decision": "approve_role_provenance", "selected_line_number": 74, "reason_code": "ISSUER_REPORT_IDENTIFIED_AS_PARENT_SEPARATE_REPORT", "rationale": "The issuer announcement identifies the included separate financial statements as those of the parent company."},
+    {"question_id": 145, "decision": "reject_candidate_set", "reason_code": "NO_ROLE_LITERAL_IN_EXACT_DOCUMENT", "rationale": "Exact extracted document contains no candidate literal proving that issuer VJC has the parent role."},
+    {"question_id": 155, "decision": "approve_role_provenance", "selected_line_number": 803, "reason_code": "ISSUER_HAS_SUBSIDIARY_AND_PARENT_SEPARATE_REPORT", "rationale": "The source states that the company has a subsidiary and therefore prepares both the parent-only and consolidated statements."},
+    {"question_id": 168, "decision": "reject_candidate_set", "reason_code": "GENERIC_ACCOUNTING_DEFINITION_ONLY", "rationale": "The only candidate is a generic related-party definition and does not assert that issuer CRE is a parent."},
+    {"question_id": 181, "decision": "reject_candidate_set", "reason_code": "LITERAL_REFERS_TO_DIFFERENT_PARENT", "rationale": "The candidates identify Vingroup as VRE's parent or use transaction labels; none directly asserts that issuer VRE is the parent entity claimed."},
+    {"question_id": 184, "decision": "reject_candidate_set", "reason_code": "NO_ROLE_LITERAL_IN_EXACT_DOCUMENT", "rationale": "Exact extracted document contains no candidate literal proving that issuer DIG has the parent role."},
+    {"question_id": 211, "decision": "approve_role_provenance", "selected_line_number": 1681, "reason_code": "ISSUER_EXPLICITLY_STATED_AS_PARENT", "rationale": "The source names Công Ty Cổ Phần Tập Đoàn Đức Long Gia Lai and explicitly says it is the parent company."},
+    {"question_id": 245, "decision": "approve_role_provenance", "selected_line_number": 545, "reason_code": "ISSUER_EXPLICITLY_IDENTIFIED_AS_PARENT_IN_GROUP_MODEL", "rationale": "The corporate history explicitly identifies the issuer as the parent formed in the parent-subsidiary operating model."},
+    {"question_id": 249, "decision": "reject_candidate_set", "reason_code": "NO_ROLE_LITERAL_IN_EXACT_DOCUMENT", "rationale": "Exact extracted document contains no candidate literal proving that issuer HDG has the parent role."},
+    {"question_id": 251, "decision": "approve_role_provenance", "selected_line_number": 31, "reason_code": "ISSUER_OPERATES_AS_PARENT_SUBSIDIARY_MODEL", "rationale": "The source identifies the reporting Tổng Công ty and states that it operates under the parent-subsidiary model."},
+    {"question_id": 292, "decision": "reject_candidate_set", "reason_code": "LITERAL_REFERS_TO_DIFFERENT_PARENT_OR_GENERIC_DEFINITION", "rationale": "The source names Tập đoàn Thế Kỷ as CRE's parent; the remaining literal is only a generic definition, so it does not prove CRE itself is parent."},
+    {"question_id": 316, "decision": "reject_candidate_set", "reason_code": "GENERIC_ACCOUNTING_DEFINITION_ONLY", "rationale": "The candidate is a generic related-party definition and does not assert that issuer NKG is a parent."},
+    {"question_id": 325, "decision": "reject_candidate_set", "reason_code": "NO_ROLE_LITERAL_IN_EXACT_DOCUMENT", "rationale": "Exact extracted document contains no candidate literal proving that issuer TTF has the parent role."},
+    {"question_id": 332, "decision": "approve_role_provenance", "selected_line_number": 443, "reason_code": "ISSUER_EXPLICITLY_NAMED_AS_PARENT", "rationale": "The source directly names Công ty mẹ - Tập đoàn Công nghiệp Cao su Việt Nam, the issuer in this document."},
+    {"question_id": 350, "decision": "approve_role_provenance", "selected_line_number": 87, "reason_code": "ISSUER_EXPLICITLY_STATED_PARENT_WITH_SUBSIDIARIES", "rationale": "The report explicitly states that the company is the parent company and has subsidiaries."},
+    {"question_id": 702, "decision": "approve_role_provenance", "selected_line_number": 446, "reason_code": "ISSUER_REPORT_EXPLICITLY_IDENTIFIED_AS_PARENT_REPORT", "rationale": "The source explicitly identifies the separate financial statements as those of the parent company and says the company also prepares consolidated statements with its subsidiaries."}
+  ]
+}

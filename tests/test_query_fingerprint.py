@@ -38,6 +38,23 @@ class QueryFingerprintTests(unittest.TestCase):
         }
         self.assertEqual(build_query_fingerprint(item)["route"], "requires_operand_decomposition")
 
+    def test_formula_template_does_not_split_structural_fingerprint(self) -> None:
+        item = {
+            "id": 11,
+            "question_plan": {
+                "family": "ratio_or_derived",
+                "tickers": ["AAA"],
+                "years": [2023],
+                "operands": [{"operand_id": "numerator"}, {"operand_id": "denominator"}],
+                "operation_ast": {"op": "divide", "args": ["numerator", "denominator"]},
+                "warnings": [],
+            },
+        }
+        left = build_query_fingerprint(item, formula_record={"formula": {"formula_id": "quick_ratio"}})
+        right = build_query_fingerprint(item, formula_record={"formula": {"formula_id": "debt_ratio"}})
+        self.assertEqual(left["structural_fingerprint"], right["structural_fingerprint"])
+        self.assertNotEqual(left["semantic_template_id"], right["semantic_template_id"])
+
     def test_unknown_program_abstains(self) -> None:
         item = {"id": 9, "question_plan": {"operation_ast": {"op": "plan_required", "args": []}}}
         self.assertEqual(build_query_fingerprint(item)["route"], "abstain_unknown_program")

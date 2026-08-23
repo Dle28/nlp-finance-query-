@@ -4,23 +4,21 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from finance_query.questions import RuleQuestionPlanner, load_ticker_aliases, weak_family_from_id
+from finance_query.questions import RuleQuestionPlanner, load_ticker_aliases
 
 
 class QuestionRouterTests(unittest.TestCase):
     def setUp(self) -> None:
         self.planner = RuleQuestionPlanner()
 
-    def test_observed_id_ranges(self) -> None:
-        self.assertEqual(weak_family_from_id(1), "direct_lookup")
-        self.assertEqual(weak_family_from_id(362), "conditional_analytical")
-        self.assertEqual(weak_family_from_id(578), "temporal_change")
-        self.assertEqual(weak_family_from_id(656), "ratio_or_derived")
-        self.assertEqual(weak_family_from_id(733), "cross_entity_comparison")
-        self.assertEqual(
-            weak_family_from_id(813),
-            "multi_entity_or_period_aggregation",
-        )
+    def test_question_id_does_not_change_semantic_plan(self) -> None:
+        question = "Lợi nhuận của ABC là bao nhiêu?"
+        low_id = self.planner.plan(question, question_id=1)
+        high_id = self.planner.plan(question, question_id=900)
+        self.assertEqual(low_id.family, high_id.family)
+        self.assertEqual(low_id.family_confidence, high_id.family_confidence)
+        self.assertEqual(low_id.operation_ast, high_id.operation_ast)
+        self.assertEqual(low_id.operands, high_id.operands)
 
     def test_direct_lookup_slots(self) -> None:
         plan = self.planner.plan(
@@ -32,6 +30,17 @@ class QuestionRouterTests(unittest.TestCase):
         self.assertEqual(plan.requested_unit, "million_vnd")
         self.assertIn("VIB", plan.tickers)
         self.assertEqual(plan.operation_ast["op"], "lookup")
+        self.assertEqual(plan.field_provenance["years"].basis, "EXPLICIT_QUERY")
+        self.assertEqual(plan.field_provenance["scope"].basis, "UNKNOWN")
+
+    def test_parent_role_is_not_collapsed_into_entity_identity(self) -> None:
+        plan = self.planner.plan(
+            "Tổng lợi nhuận kế toán trước thuế của công ty mẹ DLG năm 2022 là bao nhiêu?",
+            question_id=211,
+        )
+        self.assertEqual(plan.scope, "separate")
+        self.assertEqual(plan.entity_role, "parent")
+        self.assertEqual(plan.field_provenance["entity_role"].basis, "EXPLICIT_QUERY")
 
     def test_temporal_change(self) -> None:
         plan = self.planner.plan(

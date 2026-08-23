@@ -16,6 +16,7 @@ from typing import Any, Iterable
 
 from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
 from finance_query.direct_replay import DIRECT_REPLAY_PROTOCOL
+from finance_query.independent_critic import INDEPENDENT_CRITIC_PROTOCOL
 
 
 def parse_args() -> argparse.Namespace:
@@ -26,6 +27,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Hash-bound independent direct replay; required for production machine silver.",
+    )
+    parser.add_argument(
+        "--independent-critic",
+        type=Path,
+        default=None,
+        help="Reviewer-independent semantic/source critic; required for production machine silver.",
     )
     parser.add_argument("--human-labels", type=Path, default=None)
     parser.add_argument("--output", type=Path, required=True)
@@ -99,6 +106,51 @@ def load_direct_replay(path: Path | None, machine_reviews: Path) -> tuple[dict[i
     return output, sidecar_sha
 
 
+def load_independent_critic(
+    path: Path | None, direct_replay_path: Path | None = None
+) -> tuple[dict[int, dict[str, Any]], str | None]:
+    if path is None:
+        return {}, None
+    manifest_path = path.with_suffix(".manifest.json")
+    if not path.is_file() or not manifest_path.is_file():
+        raise FileNotFoundError("Independent critic sidecar or manifest is missing")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if (
+        int(manifest.get("schema_version") or 0) != 1
+        or str(manifest.get("protocol") or "") != INDEPENDENT_CRITIC_PROTOCOL
+        or manifest.get("machine_reviews_sha256") is not None
+        or manifest.get("reviewer_inputs_used") != []
+        or manifest.get("answer_eligible") is not False
+        or manifest.get("training_eligible") is not False
+        or manifest.get("provenance_promotion_allowed") is not False
+    ):
+        raise ValueError("Independent critic protocol is invalid")
+    sidecar_sha = sha256_file(path)
+    if manifest.get("sidecar_sha256") != sidecar_sha:
+        raise ValueError("Independent critic sidecar hash differs from manifest")
+    if direct_replay_path is not None:
+        replay_manifest = json.loads(
+            direct_replay_path.with_suffix(".manifest.json").read_text(encoding="utf-8")
+        )
+        for critic_key, replay_key in {
+            "bundle_review_items_sha256": "bundle_review_items_sha256",
+            "raw_tables_sha256": "raw_tables_sha256",
+            "structured_tables_sha256": "structured_tables_sha256",
+            "evidence_context_sha256": "evidence_context_sha256",
+        }.items():
+            if manifest.get(critic_key) != replay_manifest.get(replay_key):
+                raise ValueError(
+                    f"Independent critic and direct replay lineage differ: {critic_key}"
+                )
+    output: dict[int, dict[str, Any]] = {}
+    for row in load_jsonl(path):
+        qid = int(row["question_id"])
+        if qid in output:
+            raise ValueError(f"Duplicate Q{qid} in independent critic")
+        output[qid] = row
+    return output, sidecar_sha
+
+
 def id_preview(ids: list[int], limit: int = 12) -> str:
     """Render a bounded operational log summary without hiding the count."""
     if not ids:
@@ -120,6 +172,7 @@ def machine_training_eligible(
     row: dict[str, Any],
     *,
     direct_replay: dict[str, Any] | None = None,
+    independent_critic: dict[str, Any] | None = None,
     include_provisional: bool = False,
 ) -> bool:
     status = str(row.get("consensus_status") or "")
@@ -142,6 +195,22 @@ def machine_training_eligible(
         and str(direct_replay.get("machine_consensus_status") or "") == status
         and selected_uid in replay_selected_uids
     )
+    critic_uids = {
+        str(candidate.get("internal_table_uid") or "")
+        for candidate in (independent_critic or {}).get("valid_candidates") or []
+    }
+    critic_gate = bool(
+        independent_critic
+        and independent_critic.get("protocol") == INDEPENDENT_CRITIC_PROTOCOL
+        and independent_critic.get("status") == "independent_ready"
+        and int(independent_critic.get("question_id") or -1) == int(row.get("id") or -2)
+        and independent_critic.get("reviewer_inputs_used") == []
+        and selected_uid in critic_uids
+        and str(independent_critic.get("critic_value") or "")
+        == str(direct_replay.get("replay_value") or "")
+        and str(independent_critic.get("critic_unit") or "")
+        == str(direct_replay.get("replay_unit") or "")
+    )
     return bool(
         status in allowed
         and row.get("machine_candidate_uid")
@@ -161,6 +230,7 @@ def machine_training_eligible(
                 # Replay is an additional exclusion gate, not a new source of
                 # labels or provenance promotion.
                 and replay_gate
+                and critic_gate
             )
         )
     )
@@ -171,6 +241,9 @@ def main() -> None:
     machine = {int(row["id"]): row for row in load_jsonl(args.machine_reviews)}
     human = {int(row["id"]): row for row in load_jsonl(args.human_labels)}
     replay, replay_sha = load_direct_replay(args.direct_replay, args.machine_reviews)
+    critic, critic_sha = load_independent_critic(
+        args.independent_critic, args.direct_replay
+    )
 
     output: list[dict[str, Any]] = []
     excluded: list[int] = []
@@ -195,6 +268,7 @@ def main() -> None:
         if not machine_training_eligible(
             review,
             direct_replay=replay.get(qid),
+            independent_critic=critic.get(qid),
             include_provisional=args.include_provisional,
         ):
             excluded.append(qid)
@@ -239,6 +313,18 @@ def main() -> None:
                         "training_gate_only": True,
                     }
                     if qid in replay
+                    else None
+                ),
+                "independent_critic_gate": (
+                    {
+                        "protocol": INDEPENDENT_CRITIC_PROTOCOL,
+                        "status": critic[qid]["status"],
+                        "question_id": qid,
+                        "machine_selected_uid": selected,
+                        "critic_artifact_sha256": critic_sha,
+                        "training_gate_only": True,
+                    }
+                    if qid in critic
                     else None
                 ),
             }

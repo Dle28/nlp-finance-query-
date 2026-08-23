@@ -9,9 +9,9 @@ answer.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from decimal import Decimal, InvalidOperation
-from statistics import median
 from typing import Any, Mapping
+
+from .staged_execution import execute_staged_ast_shadow
 
 
 QUERY_PROGRAM_SCHEMA_VERSION = 1
@@ -31,6 +31,8 @@ class QueryProgramStage:
     input_operand_ids: list[str]
     output_name: str
     policy: str
+    config: dict[str, Any] = field(default_factory=dict)
+    entity_source: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -51,6 +53,8 @@ class QueryProgram:
     stages: list[QueryProgramStage]
     screen_years: list[int] = field(default_factory=list)
     target_year: int | None = None
+    result_name: str = "shadow_result"
+    result_unit: str = "source_unit"
     execution_mode: str = "shadow_only"
     submission_eligible: bool = False
     review_status_promotion_allowed: bool = False
@@ -61,15 +65,6 @@ class QueryProgram:
         payload["protocol"] = QUERY_PROGRAM_PROTOCOL
         payload["stages"] = [stage.to_dict() for stage in self.stages]
         return payload
-
-
-def _as_decimal(value: Any) -> Decimal:
-    if isinstance(value, Decimal):
-        return value
-    try:
-        return Decimal(str(value))
-    except (InvalidOperation, ValueError, TypeError) as error:
-        raise QueryProgramError(f"Operand value is not a decimal: {value!r}") from error
 
 
 def _operands_by_entity_role(
@@ -197,28 +192,58 @@ def _compile_cfo_positive_max_net_margin(formula: Mapping[str, Any]) -> QueryPro
         stages=[
             QueryProgramStage(
                 stage_id="cfo_positive_filter",
-                operator="all_strictly_positive_by_screening_year",
+                operator="filter_all_positive",
                 input_operand_ids=cfo_inputs,
                 output_name="eligible_entities",
                 policy="entity qualifies only when every exact CFO operand is > 0",
+                config={
+                    "input_bindings": {
+                        entity: [by_key[(entity, "cfo_positive_screen", year)] for year in screening_years]
+                        for entity in entities
+                    }
+                },
             ),
             QueryProgramStage(
                 stage_id="net_margin_rank",
-                operator="argmax_net_profit_to_net_revenue",
+                operator="map_ast",
                 input_operand_ids=margin_inputs,
-                output_name="winning_entity",
+                output_name="net_margin_percent",
                 policy="net_margin=after_tax_profit/net_revenue; ties block",
+                entity_source="@eligible_entities",
+                config={
+                    "ast": {
+                        "op": "ratio_to_percent",
+                        "args": [{"op": "divide", "args": ["profit", "revenue"]}],
+                    },
+                    "input_bindings": {
+                        entity: {
+                            "profit": by_key[(entity, "net_margin_numerator", target_year)],
+                            "revenue": by_key[(entity, "net_margin_denominator", target_year)],
+                        }
+                        for entity in entities
+                    },
+                },
+            ),
+            QueryProgramStage(
+                stage_id="net_margin_winner",
+                operator="argmax_unique",
+                input_operand_ids=[],
+                output_name="winning_entity",
+                policy="ties block",
+                config={"source": "@net_margin_percent"},
             ),
             QueryProgramStage(
                 stage_id="target_output",
-                operator="emit_winning_net_margin_percent",
-                input_operand_ids=margin_inputs,
+                operator="select_entity_value",
+                input_operand_ids=[],
                 output_name="shadow_result",
-                policy="return only the winning entity's exact computed net margin; shadow-only",
+                policy="select the computed value for the unique winner",
+                config={"values": "@net_margin_percent", "entity": "@winning_entity"},
             ),
         ],
         screen_years=screening_years,
         target_year=target_year,
+        result_unit="percent",
     )
 
 
@@ -266,27 +291,137 @@ def compile_query_program(formula: Mapping[str, Any]) -> QueryProgram | None:
         },
         stages=[
             QueryProgramStage(
-                stage_id="quick_ratio_filter",
-                operator="strict_less_than_group_median",
+                stage_id="quick_ratio",
+                operator="map_ast",
                 input_operand_ids=quick_inputs,
-                output_name="eligible_entities",
-                policy="quick_ratio=(current_assets-inventory)/current_liabilities; entity qualifies only when ratio < median",
+                output_name="quick_ratio",
+                policy="quick_ratio=(current_assets-inventory)/current_liabilities",
+                config={
+                    "ast": {
+                        "op": "divide",
+                        "args": [
+                            {"op": "subtract", "args": ["assets", "inventory"]},
+                            "liabilities",
+                        ],
+                    },
+                    "input_bindings": {
+                        entity: {
+                            "assets": by_key[(entity, "quick_ratio_numerator_base", old_year)],
+                            "inventory": by_key[(entity, "quick_ratio_subtract", old_year)],
+                            "liabilities": by_key[(entity, "quick_ratio_denominator", old_year)],
+                        }
+                        for entity in entities
+                    },
+                },
             ),
             QueryProgramStage(
-                stage_id="gross_margin_rank",
-                operator="argmax_signed_margin_change",
+                stage_id="quick_ratio_median",
+                operator="reduce_ast",
+                input_operand_ids=[],
+                output_name="quick_ratio_median",
+                policy="median over exactly the explicit entity group",
+                config={"source": "@quick_ratio", "ast": {"op": "median", "args": ["values"]}},
+            ),
+            QueryProgramStage(
+                stage_id="quick_ratio_filter",
+                operator="filter_lt",
+                input_operand_ids=[],
+                output_name="eligible_entities",
+                policy="strictly below median; equality is excluded",
+                config={"values": "@quick_ratio", "threshold": "@quick_ratio_median"},
+            ),
+            QueryProgramStage(
+                stage_id="gross_margin_old",
+                operator="map_ast",
                 input_operand_ids=margin_inputs,
+                output_name="gross_margin_old",
+                policy="gross_profit/net_revenue for old year",
+                entity_source="@eligible_entities",
+                config={
+                    "ast": {"op": "divide", "args": ["profit", "revenue"]},
+                    "input_bindings": {
+                        entity: {
+                            "profit": by_key[(entity, "gross_margin_numerator", old_year)],
+                            "revenue": by_key[(entity, "gross_margin_denominator", old_year)],
+                        }
+                        for entity in entities
+                    },
+                },
+            ),
+            QueryProgramStage(
+                stage_id="gross_margin_new",
+                operator="map_ast",
+                input_operand_ids=margin_inputs,
+                output_name="gross_margin_new",
+                policy="gross_profit/net_revenue for new year",
+                entity_source="@eligible_entities",
+                config={
+                    "ast": {"op": "divide", "args": ["profit", "revenue"]},
+                    "input_bindings": {
+                        entity: {
+                            "profit": by_key[(entity, "gross_margin_numerator", new_year)],
+                            "revenue": by_key[(entity, "gross_margin_denominator", new_year)],
+                        }
+                        for entity in entities
+                    },
+                },
+            ),
+            QueryProgramStage(
+                stage_id="gross_margin_change",
+                operator="map_ast",
+                input_operand_ids=[],
+                output_name="gross_margin_change",
+                policy="signed new minus old change",
+                entity_source="@eligible_entities",
+                config={
+                    "ast": {"op": "subtract", "args": ["new", "old"]},
+                    "input_bindings": {
+                        entity: {"new": "@gross_margin_new", "old": "@gross_margin_old"}
+                        for entity in entities
+                    },
+                },
+            ),
+            QueryProgramStage(
+                stage_id="gross_margin_winner",
+                operator="argmax_unique",
+                input_operand_ids=[],
                 output_name="winning_entity",
-                policy="gross_margin=gross_profit/net_revenue; rank signed new-old change; ties block",
+                policy="largest signed change; ties block",
+                config={"source": "@gross_margin_change"},
+            ),
+            QueryProgramStage(
+                stage_id="interest_coverage",
+                operator="map_ast",
+                input_operand_ids=coverage_inputs,
+                output_name="interest_coverage",
+                policy="coverage=(profit_before_tax+abs(interest_expense))/abs(interest_expense)",
+                config={
+                    "ast": {
+                        "op": "divide",
+                        "args": [
+                            {"op": "add", "args": ["pbt", {"op": "absolute", "args": ["interest"]}]},
+                            {"op": "absolute", "args": ["interest"]},
+                        ],
+                    },
+                    "input_bindings": {
+                        entity: {
+                            "pbt": by_key[(entity, "interest_coverage_pbt_component", new_year)],
+                            "interest": by_key[(entity, "interest_coverage_denominator", new_year)],
+                        }
+                        for entity in entities
+                    },
+                },
             ),
             QueryProgramStage(
                 stage_id="interest_coverage_lookup",
-                operator="interest_coverage_from_pbt_and_interest_expense",
-                input_operand_ids=coverage_inputs,
+                operator="select_entity_value",
+                input_operand_ids=[],
                 output_name="shadow_result",
-                policy="coverage=(profit_before_tax+abs(interest_expense))/abs(interest_expense); zero denominator blocks",
+                policy="select target metric for the unique winning entity",
+                config={"values": "@interest_coverage", "entity": "@winning_entity"},
             ),
         ],
+        result_unit="times",
     )
 
 
@@ -385,13 +520,7 @@ def evaluate_shadow_query_program(
     program: QueryProgram,
     operand_values: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Evaluate one coherent, already-grounded operand map in shadow mode.
-
-    This function deliberately accepts only values keyed by the program's exact
-    operand IDs. Evidence/provenance validation is performed before this call
-    by the Formula EvidenceSet and caller; this evaluator does not access raw
-    tables or construct bindings.
-    """
+    """Run a compiled program through the generic staged AST executor."""
     missing = [operand_id for operand_id in program.required_operand_ids if operand_id not in operand_values]
     if missing:
         return {
@@ -400,132 +529,13 @@ def evaluate_shadow_query_program(
             "missing_operand_ids": missing,
             "submission_eligible": False,
         }
-    try:
-        values = {operand_id: _as_decimal(operand_values[operand_id]) for operand_id in program.required_operand_ids}
-
-        def operand(entity: str, role: str, year: int) -> Decimal:
-            key = _binding_key(entity, role, year)
-            try:
-                return values[program.operand_bindings[key]]
-            except KeyError as error:
-                raise QueryProgramError(f"Program operand binding is missing: {key}") from error
-
-        if program.source_formula_id == CFO_NPM_FORMULA_ID:
-            return _evaluate_cfo_positive_max_net_margin(program, operand)
-
-        quick: dict[str, Decimal] = {}
-        for entity in program.entities:
-            current_assets = operand(entity, "quick_ratio_numerator_base", program.old_year)
-            inventory = operand(entity, "quick_ratio_subtract", program.old_year)
-            current_liabilities = operand(entity, "quick_ratio_denominator", program.old_year)
-            if current_liabilities == 0:
-                raise QueryProgramError(f"Quick-ratio denominator is zero: {entity}")
-            quick[entity] = (current_assets - inventory) / current_liabilities
-        threshold = Decimal(str(median(quick.values())))
-        eligible = [entity for entity in program.entities if quick[entity] < threshold]
-        if not eligible:
-            raise QueryProgramError("No entity is strictly below the group median")
-
-        changes: dict[str, Decimal] = {}
-        for entity in eligible:
-            old_revenue = operand(entity, "gross_margin_denominator", program.old_year)
-            new_revenue = operand(entity, "gross_margin_denominator", program.new_year)
-            if old_revenue == 0 or new_revenue == 0:
-                raise QueryProgramError(f"Gross-margin denominator is zero: {entity}")
-            old_margin = operand(entity, "gross_margin_numerator", program.old_year) / old_revenue
-            new_margin = operand(entity, "gross_margin_numerator", program.new_year) / new_revenue
-            changes[entity] = new_margin - old_margin
-        best_change = max(changes.values())
-        winners = [entity for entity in eligible if changes[entity] == best_change]
-        if len(winners) != 1:
-            raise QueryProgramError("Gross-margin change has no unique winner")
-        winner = winners[0]
-        profit_before_tax = operand(winner, "interest_coverage_pbt_component", program.new_year)
-        interest_expense = abs(operand(winner, "interest_coverage_denominator", program.new_year))
-        if interest_expense == 0:
-            raise QueryProgramError("Interest-coverage denominator is zero")
-        result = (profit_before_tax + interest_expense) / interest_expense
-    except QueryProgramError as error:
-        return {
-            "status": "shadow_blocked",
-            "reason_codes": ["query_program_arithmetic_precondition_failed"],
-            "detail": str(error),
-            "submission_eligible": False,
-        }
-    return {
-        "status": "shadow_complete",
-        "winner_entity": winner,
-        "result_value": format(result, "f"),
-        "result_unit": "times",
-        "stage_trace": {
-            "quick_ratio": {entity: format(value, "f") for entity, value in quick.items()},
-            "median": format(threshold, "f"),
-            "eligible_entities": eligible,
-            "gross_margin_change": {entity: format(value, "f") for entity, value in changes.items()},
-        },
-        "submission_eligible": False,
-        "review_status_promotion_allowed": False,
-        "execution_mode": "shadow_only",
-    }
-
-
-def _evaluate_cfo_positive_max_net_margin(
-    program: QueryProgram,
-    operand: Any,
-) -> dict[str, Any]:
-    """Execute only the second allow-listed staged formula in shadow mode."""
-    try:
-        if not program.screen_years or program.target_year is None:
-            raise QueryProgramError("CFO/NPM program lacks explicit years")
-        cfo_values = {
-            entity: {
-                year: operand(entity, "cfo_positive_screen", year)
-                for year in program.screen_years
-            }
-            for entity in program.entities
-        }
-        eligible = [
-            entity
-            for entity in program.entities
-            if all(value > 0 for value in cfo_values[entity].values())
-        ]
-        if not eligible:
-            raise QueryProgramError("No entity has positive CFO for every screening year")
-        margins: dict[str, Decimal] = {}
-        for entity in eligible:
-            revenue = operand(entity, "net_margin_denominator", program.target_year)
-            if revenue == 0:
-                raise QueryProgramError(f"Net-margin denominator is zero: {entity}")
-            margins[entity] = operand(entity, "net_margin_numerator", program.target_year) / revenue
-        best_margin = max(margins.values())
-        winners = [entity for entity in eligible if margins[entity] == best_margin]
-        if len(winners) != 1:
-            raise QueryProgramError("Net-margin ranking has no unique winner")
-        winner = winners[0]
-    except QueryProgramError as error:
-        return {
-            "status": "shadow_blocked",
-            "reason_codes": ["query_program_arithmetic_precondition_failed"],
-            "detail": str(error),
-            "submission_eligible": False,
-        }
-    return {
-        "status": "shadow_complete",
-        "winner_entity": winner,
-        "result_value": format(best_margin * Decimal("100"), "f"),
-        "result_unit": "percent",
-        "stage_trace": {
-            "cfo_by_entity_and_year": {
-                entity: {str(year): format(value, "f") for year, value in values.items()}
-                for entity, values in cfo_values.items()
-            },
-            "eligible_entities": eligible,
-            "net_margin_fraction": {entity: format(value, "f") for entity, value in margins.items()},
-        },
-        "submission_eligible": False,
-        "review_status_promotion_allowed": False,
-        "execution_mode": "shadow_only",
-    }
+    return execute_staged_ast_shadow(
+        [stage.to_dict() for stage in program.stages],
+        operand_values,
+        entities=program.entities,
+        result_name=program.result_name,
+        result_unit=program.result_unit,
+    )
 
 
 def operand_values_from_selected_matches(

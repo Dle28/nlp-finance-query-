@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_cross_entity_binding_promotion_config_v1",
+  "reviewed_at": "2026-08-23T00:00:00Z",
+  "decision_provenance": {
+    "reviewer_type": "chatgpt_verified",
+    "reviewer_id": "chatgpt-gpt5-cross-entity-binding-reviewer-v1",
+    "model_family": "GPT-5",
+    "review_policy": "fail_closed_exact_cross_entity_binding_v1",
+    "authority_grant": {
+      "granted_by": "campaign_owner",
+      "grant_scope": "cross_entity_binding_review_gate_equivalence",
+      "grant_basis": "explicit_user_instruction"
+    }
+  },
+  "promotions": [
+    {
+      "question_id": 750,
+      "stage_order": ["stage_1_net_income", "stage_2_net_income"],
+      "stage_roles": {
+        "stage_1_net_income": "net_income",
+        "stage_2_net_income": "net_income"
+      },
+      "notes": "Approve the exact SAB and DBC net-income operands and the ordered SAB-minus-DBC composition graph. Numeric values remain executor-private."
+    }
+  ]
+}

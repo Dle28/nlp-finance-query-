@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_navigation_chatgpt_review_spec_v1",
+  "review_policy": "fail_closed_exact_row_navigation_semantics_v1",
+  "no_exact_context_policy": "confirm_upstream_blocker_fail_closed",
+  "exact_context_reviews": [
+    {
+      "question_id": 2,
+      "decision": "reject_candidate_set",
+      "reason_codes": ["TRADE_SECTOR_QUALIFIER_NOT_PROVEN"],
+      "rationale": "Raw row chỉ ghi tổng 'Cho vay khách hàng' trong bảng rủi ro tín dụng; không có literal chứng minh phần ngành Thương mại được hỏi."
+    },
+    {
+      "question_id": 28,
+      "decision": "reject_candidate_set",
+      "reason_codes": ["OTHER_RECEIVABLES_GRANULARITY_NOT_PROVEN"],
+      "rationale": "Hai row đều là tổng 'Các khoản phải thu ngắn hạn', không phải riêng khoản phải thu ngắn hạn khác."
+    },
+    {
+      "question_id": 118,
+      "decision": "reject_candidate_set",
+      "reason_codes": ["GENERAL_PROVISION_QUALIFIER_NOT_PROVEN"],
+      "rationale": "Các row chỉ thể hiện tổng cho vay khách hàng hoặc giá trị ghi sổ; không row nào ghi dự phòng chung."
+    },
+    {
+      "question_id": 135,
+      "decision": "reject_candidate_set",
+      "reason_codes": ["THIRD_PARTY_CUSTOMER_QUALIFIER_NOT_PROVEN"],
+      "rationale": "Row là tổng các khoản phải thu ngắn hạn, không chứng minh khoản phải thu khách hàng bên thứ ba."
+    },
+    {
+      "question_id": 167,
+      "decision": "approve_navigation_candidate_semantics",
+      "selected_candidate_evidence_sha256": "b274109bdf5760137d6668a4a647be54c9953ad1cf9fc2f094a851a8c46eb93c",
+      "reason_codes": [],
+      "rationale": "Báo cáo riêng MSR năm 2025 có raw row literal 'Trong đó: Chi phí lãi vay'; entity, scope, year và table type đều khớp câu hỏi."
+    },
+    {
+      "question_id": 201,
+      "decision": "reject_candidate_set",
+      "reason_codes": ["NET_CUSTOMER_RECEIVABLES_GRANULARITY_NOT_PROVEN"],
+      "rationale": "Row là tổng các khoản phải thu ngắn hạn, không chứng minh giá trị thuần phải thu khách hàng."
+    },
+    {
+      "question_id": 264,
+      "decision": "reject_candidate_set",
+      "reason_codes": ["FOREIGN_CUSTOMER_QUALIFIER_NOT_PROVEN"],
+      "rationale": "Các row chỉ ghi tổng cho vay khách hàng; không có phân tách khách hàng nước ngoài."
+    },
+    {
+      "question_id": 356,
+      "decision": "reject_candidate_set",
+      "reason_codes": ["LOAN_LOSS_PROVISION_QUALIFIER_NOT_PROVEN"],
+      "rationale": "Các row cùng entity/năm chỉ ghi cho vay khách hàng hoặc phân tích rủi ro, không row nào literal hóa dự phòng rủi ro cho vay khách hàng."
+    }
+  ]
+}

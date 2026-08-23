@@ -1,0 +1,19 @@
+protocol: vifinqa_ccl_phase5_component_selection_smoke_v1
+schema_version: 1
+inputs:
+  packets: artifacts/research/ccl_phase5_component_selection_packets_v34_numeric_guard_run_001/phase5_component_selection_packets_v1.jsonl
+  packet_manifest: artifacts/research/ccl_phase5_component_selection_packets_v34_numeric_guard_run_001/phase5_component_selection_manifest.json
+route:
+  route_id: qwen3_8b_primary_graph_v33_full
+  model_id: mistralai/Mistral-Nemo-Instruct-2407
+  revision: main
+  parameter_count_billions: 12.0
+  load_in_4bit: true
+  max_input_tokens: 2048
+  max_new_tokens: 384
+  packet_ids:
+    - 01015badde3adf93ebd5132ba36a6aad9a207b6c8d13330507ff9e612489bcd8
+    - 036930a00779ba640f86c7be47ddd8886edfd165480d1a24046709e5ae749f90
+    - 042472e042c0b0ad98d1a6f521f70bc8f3588ed4aa2854aaffb8c0fa7c6a57b7
+    - 07ea0709566fa2759daa4c36f72835987a6d84978f01722e1be9a0acf9e4b80e
+    - 0fc525fca3644f98f9dd4cee2eb014b41fb5546debe0710ad3ba377e801017c0

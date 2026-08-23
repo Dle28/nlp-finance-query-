@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import json
+import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
+from finance_query.plan_overrides import EXACT_QUERY_TICKER_TOKEN_POLICY
+from finance_query.report_entities import FORMULA_ENTITY_RESOLUTION_POLICY, REPORT_ENTITY_RESOLUTION_POLICY
+from finance_query.typed_planner import TYPED_OPERAND_PLAN_PROTOCOL
 
 
 ROOT = Path(__file__).parents[1]
@@ -190,6 +197,77 @@ def _cfo_formula_match(uid: str, year: int, value: str) -> dict:
 
 
 class ExecutionLedgerTests(unittest.TestCase):
+    def test_formula_v7_requires_hash_bound_typed_operand_plans(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory)
+
+            def write(name: str, content: str = "{}\n") -> Path:
+                path = bundle / name
+                path.write_text(content, encoding="utf-8")
+                return path
+
+            def digest(path: Path) -> str:
+                return hashlib.sha256(path.read_bytes()).hexdigest()
+
+            review_items = write("review_items.jsonl")
+            tables = write("tables.jsonl")
+            structured = write("tables_structured_v2.jsonl")
+            context = write("tables_evidence_context_v3.jsonl")
+            aliases = write("report_entity_aliases_v1.jsonl")
+            aliases_manifest = write("report_entity_aliases_v1.manifest.json")
+            typed = write("typed_operand_plans_v1.jsonl")
+            typed_manifest = write("typed_operand_plans_v1.manifest.json")
+            sidecar = write("formula_evidence_sets_typed_v1.jsonl")
+            manifest = {
+                "schema_version": 7,
+                "bundle_review_items_sha256": digest(review_items),
+                "bundle_tables_sha256": digest(tables),
+                "structured_tables_sha256": digest(structured),
+                "evidence_context_sha256": digest(context),
+                "evidence_context_file": context.name,
+                "numeric_binding_policy": "one_reliable_raw_v2_number_per_operand",
+                "source_discovery": {"enabled": True},
+                "source_entity_resolution": {
+                    "enabled": True,
+                    "policy": FORMULA_ENTITY_RESOLUTION_POLICY,
+                    "scope_inference": False,
+                    "evidence_eligible": False,
+                    "training_eligible": False,
+                    "title_aliases": {
+                        "enabled": True,
+                        "policy": REPORT_ENTITY_RESOLUTION_POLICY,
+                        "aliases_file": aliases.name,
+                        "aliases_sha256": digest(aliases),
+                        "alias_manifest_sha256": digest(aliases_manifest),
+                    },
+                    "exact_ticker_tokens": {
+                        "enabled": True,
+                        "policy": EXACT_QUERY_TICKER_TOKEN_POLICY,
+                        "resolution_count": 0,
+                    },
+                },
+                "typed_operand_plans": {
+                    "enabled": True,
+                    "protocol": TYPED_OPERAND_PLAN_PROTOCOL,
+                    "file": typed.name,
+                    "sidecar_sha256": digest(typed),
+                    "manifest_sha256": digest(typed_manifest),
+                },
+                "sidecar_sha256": digest(sidecar),
+            }
+            manifest_path = sidecar.with_suffix(".manifest.json")
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with patch.object(ledger, "validate_report_entity_alias_sidecar"):
+                self.assertEqual(
+                    ledger.validate_formula_evidence_sidecar(bundle, sidecar, context)["schema_version"],
+                    7,
+                )
+            manifest["typed_operand_plans"]["protocol"] = "untrusted"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with patch.object(ledger, "validate_report_entity_alias_sidecar"):
+                with self.assertRaisesRegex(ValueError, "typed operand protocol"):
+                    ledger.validate_formula_evidence_sidecar(bundle, sidecar, context)
+
     def test_machine_calibrated_direct_cell_becomes_exact_execution_record(self) -> None:
         row = ledger.direct_execution_row(_item(), _review(), {UID: _table()})
         self.assertEqual(row["execution_status"], "grounded")

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_campaign_chatgpt_audit_config_v1",
+  "campaign_label": "V10",
+  "reviewed_at": "2026-08-23T23:50:00+07:00",
+  "decision_provenance": {
+    "reviewer_type": "chatgpt_verified",
+    "reviewer_role": "authorized_ai_campaign_reviewer",
+    "reviewer_id": "chatgpt-gpt5-campaign-auditor-v10",
+    "model_family": "GPT-5",
+    "review_policy": "fail_closed_evidence_bound_v1",
+    "verification_authority": "human_equivalent",
+    "authority_grant": {
+      "granted_by": "campaign_owner",
+      "grant_scope": "campaign_review_gate_equivalence",
+      "grant_basis": "explicit_user_instruction"
+    }
+  },
+  "reviews": [
+    {"question_id": 12, "outcome": "approved_candidate", "reason_code": "EXACT_VARIABLE_QUALIFIERS_PROVEN", "row_must_contain": "Vốn cổ phần", "rationale": "Raw row, issuer, parent role, separate scope, period and unit are independently proven."},
+    {"question_id": 13, "outcome": "approved_candidate", "reason_code": "EXACT_VARIABLE_QUALIFIERS_PROVEN", "row_must_contain": "Tiền và các khoản tương đương tiền", "rationale": "Exact balance-sheet row and all requested qualifiers are source-bound."},
+    {"question_id": 34, "outcome": "approved_candidate", "reason_code": "EXACT_VARIABLE_QUALIFIERS_PROVEN", "row_must_contain": "Thu nhập khác", "rationale": "Claim asks other income and the exact row, issuer, role, scope and year match."},
+    {"question_id": 155, "outcome": "approved_candidate", "reason_code": "EXACT_VARIABLE_QUALIFIERS_PROVEN", "row_must_contain": "Tổng lợi nhuận kế toán trước thuế", "rationale": "Exact reported profit-before-tax row and all claim qualifiers are proven."},
+    {"question_id": 167, "outcome": "approved_candidate", "reason_code": "EXACT_NAVIGATION_BINDING_PROVEN", "row_must_contain": "Chi phí lãi vay", "rationale": "The exact MSR separate income-statement row and 2025 Nghìn VND header are source-bound. The document independently defines the Company together with its subsidiaries as the Group. ChatGPT reviewed semantics and provenance only; the executor reopened the value cell."},
+    {"question_id": 211, "outcome": "approved_candidate", "reason_code": "EXACT_VARIABLE_QUALIFIERS_PROVEN", "row_must_contain": "Tổng lợi nhuận kế toán trước thuế", "rationale": "Issuer identity, parent role, separate scope, exact row and period are separate PASS gates."},
+    {"question_id": 245, "outcome": "approved_candidate", "reason_code": "EXACT_VARIABLE_QUALIFIERS_PROVEN", "row_must_contain": "Lợi nhuận gộp", "rationale": "Exact gross-profit row, year, issuer, role and separate scope match."},
+    {"question_id": 251, "outcome": "approved_candidate", "reason_code": "EXACT_VARIABLE_QUALIFIERS_PROVEN", "row_must_contain": "Tiền và các khoản tương đương tiền", "rationale": "Exact cash row at the requested year end and all entity qualifiers are proven."},
+    {"question_id": 256, "outcome": "approved_candidate", "reason_code": "ENTITY_ROLE_NOT_APPLICABLE_CONSOLIDATED", "row_must_contain": "Lợi nhuận sau thuế", "rationale": "The claim requests consolidated scope without a parent-role assertion; exact row and year match."},
+    {"question_id": 332, "outcome": "approved_candidate", "reason_code": "EXACT_VARIABLE_QUALIFIERS_PROVEN", "row_must_contain": "Lợi nhuận sau thuế thu nhập doanh nghiệp", "rationale": "Exact net-income row and all issuer, role, scope and period qualifiers match."},
+    {"question_id": 350, "outcome": "approved_candidate", "reason_code": "BALANCE_SHEET_NET_INVENTORY_PROVEN", "row_must_contain": "Hàng tồn kho", "rationale": "Balance-sheet carrying amount proves net inventory at the requested date with role and scope provenance."},
+    {"question_id": 702, "outcome": "approved_candidate", "reason_code": "NET_OTHER_INCOME_EXACT_REPORTED_ROW_PROVEN", "row_must_contain": "Lợi nhuận khác", "rationale": "The net qualifier is bound to the exact reported net other-profit row; deterministic replay alone reads the value."},
+    {"question_id": 730, "outcome": "approved_candidate", "reason_code": "EXACT_VARIABLE_QUALIFIERS_PROVEN", "row_must_contain": "Lợi nhuận gộp", "rationale": "Exact gross-profit row, year, issuer, title-bound parent role, scope and unit match."},
+    {
+      "question_id": 750,
+      "question": "Lợi nhuận sau thuế của công ty mẹ Tổng Công ty cổ phần Bia - Rượu - Nước giải khát Sài Gòn năm 2024 trừ đi lợi nhuận sau thuế của công ty mẹ CTCP Tập đoàn Dabaco Việt Nam năm 2024 là bao nhiêu tỷ đồng ?",
+      "outcome": "approved_candidate",
+      "reason_code": "EXACT_CROSS_ENTITY_COMPOSITION_PROVEN",
+      "row_must_contain_by_document": {
+        "SAB_financial_statements_2024_separate": "Lợi nhuận thuần sau thuế TNDN",
+        "DBC_financial_statements_2024_separate": "Lợi nhuận sau thuế TNDN"
+      },
+      "operation_must_equal": "subtract",
+      "stage_order_must_equal": ["stage_1_net_income", "stage_2_net_income"],
+      "operation_ast_sha256_must_equal": "a42cbb352adb711ad050cc11254f43d49d87dd0c0fa74638d332b03fbbecb40a",
+      "promotion_decision_sha256_must_equal": "5509c02c713935bc09e0815c7a9d5e27c2d2c78b80d4ec2aca590a739e296051",
+      "rationale": "Both parent-company net-income operands are independently source-bound to separate 2024 statements. The ordered subtract graph and its immutable AST are replayed deterministically; ChatGPT does not see or select numeric values."
+    }
+  ]
+}

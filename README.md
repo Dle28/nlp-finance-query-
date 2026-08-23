@@ -1,305 +1,174 @@
-# ViFinQA — grounded financial QA
+# ViFinQA grounded financial QA
 
-ViFinQA là pipeline hỏi đáp tài chính tiếng Việt theo nguyên tắc:
+ViFinQA is a fail-closed system for Vietnamese financial-report QA. It returns
+or exports a number only after the number is tied to the correct company,
+report, scope, year, table, row, column and unit.
 
 ```text
-ML tìm ứng viên
-→ rule chứng minh exact source
-→ provenance quyết định eligibility
-→ executor mới tính toán
+RAW -> V1 -> V2 -> V3 -> lexical/dense/hierarchy candidates -> exact cell
+    -> numeric cell token -> Evidence Binding -> Binding Certificate
+    -> Formula Contract -> sandboxed Decimal replay -> answer/abstain
 ```
 
-Hệ thống không lấy bảng gần nhất rồi đoán đáp án. Một giá trị chỉ hợp lệ khi
-truy ngược được đúng công ty, năm, scope, bảng, dòng, cột, ô và đơn vị.
+Retrieval, layout and semantic metadata help locate evidence. They are never
+numeric evidence by themselves.
 
-Tài liệu kiến trúc chuẩn: [`ARCHITECTURE.md`](ARCHITECTURE.md).
+## Start here
 
-## Trạng thái hiện tại
-
-| Thành phần | Trạng thái |
+| Need | Read / run |
 | --- | --- |
-| Kaggle corpus, FTS, FAISS và Review Bundle V3 | Hoàn thành cho snapshot hiện tại |
-| Bảng nguồn tái dựng V2 và ngữ cảnh evidence V3 | Hoàn thành |
-| OCR Quality Profile và Semantic Catalog | Hoàn thành, metadata-only |
-| Direct/Formula EvidenceSet | Đã vận hành; formula coverage còn thấp |
-| Reviewer V4 và provenance ledger | Đã vận hành |
-| Evaluation dashboard | Hoàn thành |
-| Query fingerprint census | Hoàn thành: 1.012 câu, 185 fingerprint |
-| Direct exact-source replay | Hoàn thành shadow: 63 ready, 49 ambiguous, 246 blocked |
-| Training production | Chưa mở: 58 replay-gated silver, gate là 200 |
-| Generic operator execution | Grounded registry hoàn thành shadow; multi-stage chưa production |
+| Understand the project | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| See current readiness and blockers | [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) |
+| Run the canonical deterministic path | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
+| Review the next preprocessing/fine-tune architecture | [docs/CERTIFIED_CANONICAL_LAYER.md](docs/CERTIFIED_CANONICAL_LAYER.md) |
+| Inspect stage permissions | [docs/TECHNICAL_CONTRACTS.md](docs/TECHNICAL_CONTRACTS.md) |
+| Inspect V13 claim completeness | [docs/CLAIM_REQUIREMENT_V13.md](docs/CLAIM_REQUIREMENT_V13.md) |
+| Validate artifact lineage | [docs/ARTIFACT_REGISTRY.md](docs/ARTIFACT_REGISTRY.md) |
+| Run GPU benchmarks | [docs/KAGGLE_GPU_BENCHMARK.md](docs/KAGGLE_GPU_BENCHMARK.md) |
 
-Snapshot review hiện tại:
-
-```text
-1.012 questions
-machine_calibrated     62
-machine_provisional   364
-needs_human           586
-```
-
-`needs_human` ở đây là trạng thái abstain/quarantine; hệ thống không bắt buộc
-con người phải review toàn bộ các câu đó.
-
-## Cài đặt local
+## Commands
 
 ```bash
-cd ~/Documents/AI_guru
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -e .
+.venv/bin/python -m unittest discover -s tests -q
+
+.venv/bin/python -m finance_query.cli run-grounded-e2e \
+  --config configs/grounded_e2e_v1.yaml \
+  --output-dir artifacts/runs/vifinqa-grounded-e2e-replay-v1_YYYYMMDD
+
+.venv/bin/python scripts/run_certified_canonical.py \
+  --config configs/certified_canonical_v1.yaml \
+  --output-dir artifacts/research/certified_canonical_v1_run_XXX
 ```
 
-Chạy regression:
+The end-to-end replay is deterministic and research-only. It verifies the
+route/period → exact-cell → hash-bound numeric-token → sandboxed
+Decimal-execution linkage, writes a separate diagnostic telemetry sidecar, then materializes
+typed Evidence Bindings and Answer Certificates without changing its inputs.
+The V8 campaign replay preserves 23 original `human_verified` row/cell
+decisions and adds a separate, hash-bound `chatgpt_verified` entity-role lane.
+Eleven explicit parent-role propositions pass, producing 12 campaign-only
+complete certificates and 1,000 abstentions. This gate equivalence never
+renames AI output as human evidence and does not authorize release, promotion,
+training, or submission. Reproducibility requires all five pinned outputs—V2
+bindings, Decimal execution, Evidence Bindings, Answer Certificates and
+Authorization Readiness—to match their reference hashes.
 
-```bash
-python -m unittest discover -s tests -v
-```
+Q702 is corrected through a second `chatgpt_verified` semantic-row receipt:
+the reviewer selects `Lợi nhuận khác (40 = 31 - 32)` for the qualifier
+`thuần`, while a deterministic executor alone reopens the numeric cell. The
+original human decision remains immutable. The locked V8 replay changes only
+Q702 across binding, execution, Evidence Binding and certificate artifacts;
+the other 1,011 questions are unchanged.
 
-## Kiến trúc ngắn
+V9 applies the owner's human-gate-equivalent review grant to Q167 without
+changing provenance. A separate `chatgpt_verified` receipt proves the exact
+MSR interest-expense row, the 2025 `Nghìn VND` header, the separate income-
+statement role, and a document line defining the Company together with its
+subsidiaries as the Group. It does not infer sector and does not expose or
+select the numeric value. The locked V9 replay changes only Q167, yields 13
+campaign-only certificates and 999 abstentions, and matches all five pinned
+outputs.
 
-```text
-1. Raw reports → Corpus / TableAsset
-2. Question → QuestionPlan / QueryProgram
-3. FTS + dense → candidate Top-K
-4. Raw table → V2 Structure → V3 Context
-5. Planner + V2/V3 → exact EvidenceSet
-6. EvidenceSet → reviewer / critic / provenance
-7. Provenance → evaluation / training gate
-8. Exact bindings → Decimal executor / submission
-```
+V10 extends the same fail-closed authority model to Q750. Two independent
+`chatgpt_verified` operand receipts prove SAB and DBC identity, parent role,
+separate reporting scope, 2024 period, unit and exact net-income row. A
+controlled `subtract(SAB, DBC)` graph is hash-bound before the deterministic
+executor reopens either value. The locked replay changes only Q750 relative to
+V9, yields 14 campaign-only certificates and 998 abstentions, and matches all
+five pinned outputs. The independent campaign audit reopens both source rows
+and records 14/14 PASS with `verification_authority=human_equivalent`; the
+truthful provenance remains `chatgpt_verified` and release remains false.
 
-Chi tiết input, output, quyền hạn và trạng thái từng mô-đun nằm trong
-[`ARCHITECTURE.md`](ARCHITECTURE.md).
+V11 resolves Q746 without conflating reporting scope with entity role. A
+numeric-free packet proves DXS and KHG operands; KHG parent role is derived
+from issuer co-reference plus the source statement that the Company directly
+invests in two subsidiaries. Distinct ChatGPT proposer and critic identities
+must agree on all seven semantic checks before a deterministic reconciler can
+emit a human-equivalent receipt. The locked V10→V11 diff is isolated to Q746,
+produces 15 campaign-only certificates and 997 abstentions, and the independent
+campaign audit records 15/15 PASS with zero numeric exposure. Release remains
+false.
 
-## Artifact contract
+V12 closes the 11 residual parent-role gaps left by the older direct-literal
+review. A new exact-source queue accepts only issuer/subsidiary relational
+anchors; it never treats `reporting_scope=separate` as role evidence. Distinct
+ChatGPT proposer and critic identities select the same exact line and agree on
+all six semantic checks before deterministic reconciliation. The locked
+V11→V12 authorization diff is isolated to Q6, Q10, Q27, Q145, Q168, Q181,
+Q184, Q249, Q292, Q316 and Q325. V12 produces 26 campaign-only certificates
+and 986 abstentions with all five reproducibility checks passing. Its campaign
+audit records 26/26 PASS, zero answer-value exposure and zero blockers;
+release, promotion, training and submission remain false.
 
-Các artifact chính:
+V13 adds a non-mutating claim-requirement shadow audit. It distinguishes
+internal completeness from semantic claim completeness, types the 38 temporal
+blockers, and separates the composed and routing blocker classes. The 26 V12
+certificate candidates remain immutable: 16 are internally complete under the
+expanded rules, while 10 expose an unresolved `accounting.basis` obligation.
+All 1,012 records remain `CLAIM_COMPLETENESS_UNESTABLISHED`, so release stays
+blocked.
 
-```text
-Review Bundle V3
-  ├─ tables.jsonl
-  ├─ review_items.jsonl
-  └─ manifest.json
+The local review UI exposes `/campaign` for V5 entity-role diagnosis, `/audit`
+for the V7→V8→V9→V10→V11→V12 whole-campaign audit, `/roles` for the 11
+relational parent-role proposer ↔ critic dialogues, `/graphs` for operation-graph
+critique, `/contracts` for literal operation-contract review, and `/navigation`
+for exact-row navigation critique. `/operands` shows the Q746 proposer ↔ critic
+interaction over the seven semantic assertions needed for exact cross-entity
+operands. The V12 audit reopens all 26 complete certificate candidates without
+exposing answer values: all 26 pass candidate semantics, including the 11
+relational roles, corrected Q702, promoted Q167 and composed Q746/Q750. Release and promotion
+remain false. Route-context V3 fixes semantic-axis collisions at the rule
+source: parent role no longer implies separate scope, an absolute year
+comparison no longer implies growth, and a year population no longer implies
+multiple companies. Forty-nine reviewed operation contracts are materialized
+only into graph-review eligibility. Generic semantic fingerprints now reject
+heterogeneous population aggregation, filter-without-count and
+ratio-without-ranking sequences before typed review. The graph lane covers 82
+questions: two typed semantic passes and 80 confirmed blockers. All remain
+non-executable in the grounded pipeline until exact-source operands and
+downstream gates pass. A separate research-only operand lane now proves all
+four exact row/header/unit coordinates for Q746/Q750 without showing financial
+values to ChatGPT. Q746 and Q750 now each have a complete
+`chatgpt_verified` operand set, a controlled grounded composition, and a
+campaign-only certificate. They remain research-only and
+not eligible for release, training, promotion or submission.
 
-Local derived sidecars
-  ├─ tables_structured_v2.jsonl
-  ├─ tables_evidence_context_v3.jsonl
-  ├─ report_segments_v1.jsonl
-  ├─ report_entity_aliases_v1.jsonl
-  ├─ ocr_quality_profiles_v1.jsonl
-  ├─ semantic_catalog_v1.jsonl
-  ├─ direct_evidence_sets_*.jsonl
-  └─ formula_evidence_sets_*.jsonl
-
-Evaluation
-  ├─ machine_reviews_*.jsonl
-  ├─ query_fingerprint_census_v1.jsonl
-  ├─ direct_evidence_replay_v1.jsonl
-  ├─ machine_silver_labels_replay_gated_v1.jsonl
-  ├─ query_program_shadow_v1.jsonl
-  └─ grounding_health_dashboard_v1.json
-```
-
-ArtifactRegistry bind logical name với schema, SHA và dependency SHA. Không
-chọn artifact chỉ dựa trên tên file `v2`, `v3`, `v31` hoặc `v4`.
-
-Validate registry hiện tại:
-
-```bash
-python scripts/build_artifact_registry.py \
-  --workspace-root ~/ViFinQA_review \
-  --validate-only
-```
-
-Materialize census/replay mà không rebuild retrieval:
-
-```bash
-python scripts/build_query_fingerprint_census.py \
-  --bundle-dir "$BUNDLE" \
-  --formula-evidence "$BUNDLE/formula_evidence_sets_context_v3_entity_titles_v1.jsonl" \
-  --output "$EVAL/query_fingerprint_census_v1.jsonl"
-
-python scripts/build_direct_evidence_replay.py \
-  --bundle-dir "$BUNDLE" \
-  --machine-reviews "$EVAL/machine_reviews_1012_hierarchy_v3.jsonl" \
-  --output "$EVAL/direct_evidence_replay_v1.jsonl"
-
-python scripts/export_review_labels.py \
-  --machine-reviews "$EVAL/machine_reviews_1012_hierarchy_v3.jsonl" \
-  --direct-replay "$EVAL/direct_evidence_replay_v1.jsonl" \
-  --output "$EVAL/machine_silver_labels_replay_gated_v1.jsonl"
-```
-
-`BUNDLE` và `EVAL` là biến shell do người chạy đặt; script không đọc số từ
-summary và không thay đổi status trong machine review.
-
-## Kaggle và GPU
-
-Kaggle chịu workload nặng:
-
-```text
-raw corpus
-→ TableAsset
-→ lexical index
-→ dense index
-→ hybrid retrieval
-→ immutable Review Bundle V3
-```
-
-Không rebuild Kaggle/FTS/FAISS/dense khi chỉ thay:
-
-- UI review;
-- V2/V3 sidecar;
-- evidence rule;
-- provenance gate;
-- QueryProgram/executor;
-- evaluation dashboard.
-
-GPU phù hợp cho embedding, semantic planner proposal, reranker và training sau
-khi đủ labels. GPU không thay exact row/cell/scope/unit validation.
-
-Hướng dẫn vận hành Kaggle: [`docs/KAGGLE_TO_LOCAL_REVIEW.md`](docs/KAGGLE_TO_LOCAL_REVIEW.md).
-
-## Local preprocessing
-
-Với một bundle đã giải nén:
-
-```bash
-python local/run_local_review_stage.py repair-tables \
-  --bundle-dir ~/ViFinQA_review/run_002
-
-python local/run_local_review_stage.py preprocess \
-  --bundle-dir ~/ViFinQA_review/run_002
-
-python local/run_local_review_stage.py formula-evidence \
-  --bundle-dir ~/ViFinQA_review/run_002
-```
-
-Các bước này không sửa immutable bundle hoặc rebuild index.
-
-## Autonomous review
-
-Chạy source-grounded reviewer:
-
-```bash
-python local/run_local_review_stage.py autonomous \
-  --bundle-dir ~/ViFinQA_review/run_002
-```
-
-Reviewer chỉ tạo `machine_calibrated` khi exact-source gates hoàn tất. Các câu
-khác giữ `machine_provisional` hoặc `needs_human`.
-
-Machine silver còn phải vượt Direct Evidence Replay độc lập. Snapshot hiện tại
-có 62 status `machine_calibrated`, nhưng chỉ 58 record đi vào training input;
-provenance lịch sử không bị đổi, bốn record không vượt replay bị consumer chặn.
-
-Không được đổi:
-
-```text
-machine_provisional → machine_calibrated
-needs_human         → machine_calibrated
-```
-
-chỉ vì model confidence cao hoặc nhiều reviewer đồng ý.
-
-Human/Jupyter widget vẫn được giữ làm công cụ audit tùy chọn, không còn là
-điều kiện để hệ thống chạy hết corpus. `%run` chỉ dùng trong Jupyter, không dùng
-trong Bash.
-
-## Formula và QueryProgram
-
-Formula EvidenceSet tách câu hỏi thành các operand, mỗi operand phải bind vào
-exact raw V2 cell. QueryProgram chỉ được chạy khi:
-
-```text
-formula defined
-operand coverage complete
-selected binding exact
-entity/year/scope coherent
-unit compatible
-operator allow-listed
-```
-
-Hai canary hiện tại:
-
-- Q369 compile nhưng blocked vì không có coherent bindings/global scope;
-- Q551 shadow-complete từ 15 exact cells, nhưng không đủ điều kiện submission
-  hoặc provenance promotion.
-
-Xem [`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md) và
-[`docs/COMPLEX_QUERY_CANARY.md`](docs/COMPLEX_QUERY_CANARY.md).
-
-## Training gate
-
-Training input hợp lệ:
-
-```text
-human_verified      → được dùng, trọng số cao
-machine_calibrated  → được dùng sau gate
-machine_provisional → audit only
-needs_human         → quarantine
-```
-
-Autotrain chỉ chạy khi đủ số pair đã grounded:
-
-```bash
-python local/run_local_review_stage.py autotrain \
-  --bundle-dir ~/ViFinQA_review/run_002 \
-  --autonomous-min-pairs 200
-```
-
-Nếu chưa đủ gate, command phải dừng; không được hạ gate để ép training.
-
-## Không review thủ công 1.012 câu
-
-Hướng hiện tại là nhóm câu theo fingerprint:
-
-```text
-operator DAG
-operand roles
-entity/year cardinality
-scope policy
-table functions
-unit contract
-```
-
-Những câu cùng fingerprint dùng chung contract và executor. Tất cả 1.012 câu
-vẫn qua census tự động; chỉ một mẫu phân tầng của Green pool cần audit độc lập.
-Unknown hoặc ambiguous fingerprint tự abstain.
-
-Kế hoạch MVP 12 giờ và Definition of Done được mô tả trong
-[`ARCHITECTURE.md`](ARCHITECTURE.md). Checklist issue và gate thực thi nằm tại
-[`docs/ARCHITECTURE_COMPLETION_CHECKLIST.md`](docs/ARCHITECTURE_COMPLETION_CHECKLIST.md).
-
-## Tài liệu chuyên sâu
-
-| Chủ đề | Tài liệu |
-| --- | --- |
-| Artifact DAG và SHA | [`docs/ARTIFACT_REGISTRY.md`](docs/ARTIFACT_REGISTRY.md) |
-| Checklist chốt kiến trúc | [`docs/ARCHITECTURE_COMPLETION_CHECKLIST.md`](docs/ARCHITECTURE_COMPLETION_CHECKLIST.md) |
-| V2 structure | [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md) |
-| Formula EvidenceSet | [`docs/FORMULA_EVIDENCE_SETS.md`](docs/FORMULA_EVIDENCE_SETS.md) |
-| QueryProgram | [`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md) |
-| OCR diagnostics | [`docs/OCR_QUALITY_PROFILE.md`](docs/OCR_QUALITY_PROFILE.md) |
-| Semantic table metadata | [`docs/SEMANTIC_CATALOG.md`](docs/SEMANTIC_CATALOG.md) |
-| Grounding dashboard | [`docs/GROUNDING_HEALTH_DASHBOARD.md`](docs/GROUNDING_HEALTH_DASHBOARD.md) |
-| Autonomous review | [`docs/AUTONOMOUS_RAW_REVIEW.md`](docs/AUTONOMOUS_RAW_REVIEW.md) |
-| Submission boundary | [`docs/SUBMISSION_EXECUTION_PIPELINE.md`](docs/SUBMISSION_EXECUTION_PIPELINE.md) |
+The Certified Canonical command implements Phase 0–2 only: immutable-input
+inventory, identity/cell-lineage certificates, mutation checks, assertion
+contracts, issue DAG and a Phase 3 bake-off packet set. It has no model call,
+training path or promotion path.
 
 ## Repository map
 
 ```text
-src/finance_query/   core contracts and runtime
-scripts/             materialization, audit, training and submission commands
-local/               local orchestration and optional review UI
-kaggle/              Kaggle build/export helpers
-configs/             retrieval/training configurations
-tests/               regression and provenance gates
-docs/                focused technical contracts
+src/finance_query/     core schemas, retrieval, grounding and execution
+scripts/               artifact producers and release validators
+configs/               pinned model and end-to-end run configurations
+artifacts/             hash-bound outputs; never overwrite a completed run
+tests/                 contract, fail-closed and integration regression tests
+docs/                  current review and operation documentation
 ```
 
-Generated labels, bundles, indexes and local notebooks are workspace data. Chỉ
-xóa chúng khi đã xác nhận provenance và có bản sao; không coi chúng là source
-code dư thừa.
+## Repository hygiene
+
+- `artifacts/` and `data/labels/` are local, provenance-sensitive outputs. Do
+  not bulk-stage them; publish only an explicitly validated, manifest-bound
+  release with a deliberate `git add -f <exact-path>`.
+- `review_ui/` is an independent nested Git repository for the local review
+  application. Its dependencies and build outputs are not vendored into this
+  Python repository.
+- `uv.lock` is the reproducible Python dependency lock and is intentionally
+  tracked even though transient `*.lock` cache files are ignored.
+- Before every public commit, inspect `git diff --cached`, run the relevant
+  tests, and verify `git diff --check`.
+
+## Non-negotiable rules
+
+1. Raw reports remain the source of truth.
+2. Missing, conflicting or ambiguous evidence is `blocked`/`abstain`.
+3. `machine_provisional` cannot become training or submission data by score.
+4. Only the release gate can permit the submission compiler to start.
+5. Routing metadata may nominate a table but may never authorize a numeric
+   operand. Only a complete, source-anchored Evidence Binding can do that.
+6. A valid binding is evidence only: it cannot authorize training, promotion,
+   serving, or submission. Those decisions have separate gates.

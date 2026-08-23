@@ -112,7 +112,7 @@ def candidate_bindings(
     plan: QuestionPlan,
     retrieved: Iterable[RetrievedTable],
     *,
-    max_tables: int = 10,
+    max_tables: int | None = None,
     operand: OperandSpec | None = None,
     allow_composed_operand: bool = False,
 ) -> list[DirectBinding]:
@@ -131,7 +131,11 @@ def candidate_bindings(
 
     metric = operand.metric
     target_year = operand.period or (plan.years[0] if len(plan.years) == 1 else None)
-    candidates = list(retrieved)[:max_tables]
+    candidates = list(retrieved)
+    if max_tables is not None:
+        if max_tables < 1:
+            raise ValueError("max_tables must be positive when provided")
+        candidates = candidates[:max_tables]
     assets = store.get_assets(candidate.internal_table_uid for candidate in candidates)
     bindings: list[DirectBinding] = []
 

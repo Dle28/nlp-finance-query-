@@ -1,0 +1,24 @@
+name: quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-and-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install project
+        run: python -m pip install --upgrade pip && python -m pip install -e .
+      - name: Portable unit and contract tests
+        run: python -m pytest -q
+      - name: Static fail-closed integration policy
+        run: python scripts/validate_integration_quality_gate.py --policy configs/integration_quality_gate_v1.yaml --policy-only
+      - name: Whitespace integrity
+        run: git diff --check

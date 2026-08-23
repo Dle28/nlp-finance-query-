@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Train the question-family router from observed public ID blocks.
-
-These labels are weak observational labels, not organizer-provided gold labels.
-Use the model as a routing baseline and replace the labels with manually reviewed
-families before treating the reported score as a scientific result.
-"""
+"""Train the question-family router from reviewed semantic labels only."""
 
 from __future__ import annotations
 
@@ -21,7 +16,18 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from finance_query.questions import weak_family_from_id
+from finance_query.router_model import REVIEWED_ROUTER_LABEL_SOURCE
+
+
+VALID_FAMILIES = {
+    "direct_lookup",
+    "conditional_analytical",
+    "temporal_change",
+    "ratio_or_derived",
+    "cross_entity_comparison",
+    "multi_entity_or_period_aggregation",
+    "unknown",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,6 +36,15 @@ def parse_args() -> argparse.Namespace:
         "--questions",
         type=Path,
         default=Path("data/ViFinQA/questions/questions.jsonl"),
+    )
+    parser.add_argument(
+        "--labels",
+        type=Path,
+        required=True,
+        help=(
+            "JSONL reviewed semantic-family labels. Each row must contain id or "
+            "question_id, family, and family_provenance=human_verified."
+        ),
     )
     parser.add_argument(
         "--model",
@@ -44,24 +59,52 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_examples(path: Path) -> tuple[list[str], list[str], list[int]]:
-    texts: list[str] = []
-    labels: list[str] = []
-    ids: list[int] = []
-    with path.open(encoding="utf-8-sig") as file:
+def load_examples(
+    questions_path: Path,
+    labels_path: Path,
+) -> tuple[list[str], list[str], list[int]]:
+    questions: dict[int, str] = {}
+    with questions_path.open(encoding="utf-8-sig") as file:
         for line_number, line in enumerate(file, start=1):
             if not line.strip():
                 continue
             row = json.loads(line)
             question_id = int(row["id"])
-            label = weak_family_from_id(question_id)
-            if label is None:
+            if question_id in questions:
+                raise ValueError(f"Duplicate question id {question_id} at line {line_number}")
+            questions[question_id] = str(row["question"])
+
+    texts: list[str] = []
+    labels: list[str] = []
+    ids: list[int] = []
+    seen_ids: set[int] = set()
+    with labels_path.open(encoding="utf-8-sig") as file:
+        for line_number, line in enumerate(file, start=1):
+            if not line.strip():
                 continue
-            texts.append(str(row["question"]))
+            row = json.loads(line)
+            raw_id = row.get("id", row.get("question_id"))
+            if raw_id is None:
+                raise ValueError(f"Label line {line_number} lacks id/question_id")
+            question_id = int(raw_id)
+            if question_id in seen_ids:
+                raise ValueError(f"Duplicate reviewed label for question id {question_id}")
+            seen_ids.add(question_id)
+            label = str(row.get("family") or "")
+            if label not in VALID_FAMILIES:
+                raise ValueError(f"Label line {line_number} has invalid family: {label!r}")
+            if row.get("family_provenance") != "human_verified":
+                raise ValueError(
+                    f"Label line {line_number} must be human_verified semantic supervision"
+                )
+            question = questions.get(question_id)
+            if question is None:
+                raise ValueError(f"Label line {line_number} references unknown question id {question_id}")
+            texts.append(question)
             labels.append(label)
             ids.append(question_id)
     if not texts:
-        raise ValueError(f"No trainable questions found in {path}")
+        raise ValueError(f"No reviewed semantic labels found in {labels_path}")
     return texts, labels, ids
 
 
@@ -69,7 +112,7 @@ def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    texts, labels, ids = load_examples(args.questions)
+    texts, labels, ids = load_examples(args.questions, args.labels)
     encoder = SentenceTransformer(args.model, device=args.device)
     encoded_texts = [
         f"query: {text}" if "e5" in args.model.casefold() else text
@@ -122,7 +165,8 @@ def main() -> None:
     joblib.dump(classifier, args.output_dir / "classifier.joblib")
     metadata = {
         "encoder_model": args.model,
-        "label_source": "observed_public_question_id_ranges_weak_supervision",
+        "label_source": REVIEWED_ROUTER_LABEL_SOURCE,
+        "labels_path": str(args.labels),
         "question_count": len(texts),
         "train_count": len(train_idx),
         "test_count": len(test_idx),
@@ -130,9 +174,7 @@ def main() -> None:
         "classification_report": report,
         "confusion_matrix": matrix,
         "test_question_ids": [ids[index] for index in test_idx],
-        "warning": (
-            "Metrics measure agreement with weak range labels, not official semantic gold labels."
-        ),
+        "warning": "Metrics measure held-out agreement with reviewed semantic-family labels.",
     }
     (args.output_dir / "metadata.json").write_text(
         json.dumps(metadata, ensure_ascii=False, indent=2),

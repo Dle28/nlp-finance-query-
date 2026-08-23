@@ -1,629 +1,255 @@
-# ViFinQA — kiến trúc 8 mô-đun
+# ViFinQA architecture
 
-> Tài liệu chuẩn để hiểu hệ thống hiện tại. Những tài liệu chuyên sâu trong
-> `docs/` chỉ giải thích contract của từng artifact; nếu có khác biệt, tài liệu
-> này mô tả luồng vận hành hiện hành.
+## Purpose
 
-## 1. Hệ thống đang giải quyết việc gì?
-
-ViFinQA đọc câu hỏi tài chính tiếng Việt và tìm bằng chứng trong báo cáo tài
-chính OCR. Khó khăn không nằm ở phép cộng/chia, mà ở việc chứng minh rằng một
-con số thuộc đúng:
+The system answers a financial question only if it can prove the chain:
 
 ```text
-công ty · báo cáo · scope · năm · bảng · dòng · cột · đơn vị
+issuer -> report -> scope -> period -> table -> row -> column -> raw value -> unit -> operation
 ```
 
-Vì vậy hệ thống không hoạt động như chatbot RAG thông thường:
+The output is therefore either a release-gated grounded replay trace or an
+explicit block. Legacy retrieval/binding helpers may expose candidates, but
+never an answer.
 
-```text
-câu hỏi → bảng gần nhất → mô hình đoán đáp án
-```
+## Components and boundaries
 
-Luồng đúng là:
-
-```text
-câu hỏi
-  → hiểu dạng bài toán
-  → tìm bảng ứng viên
-  → dựng lại cấu trúc bảng
-  → bind đúng ô nguồn
-  → kiểm tra bằng chứng
-  → tính toán bằng rule
-  → trả kết quả hoặc từ chối an toàn
-```
-
-Nguyên tắc ngắn gọn:
-
-```text
-ML tìm ứng viên.
-Rule kiểm chứng.
-Provenance quyết định trạng thái.
-Executor thực hiện phép tính.
-```
-
-## 2. Những điều không được phá vỡ
-
-| Quy tắc | Giải thích dễ hiểu |
-| --- | --- |
-| Raw report là nguồn gốc | Không sửa số OCR rồi giả rằng đó là số nguồn. |
-| Retrieval không phải evidence | Bảng rank 1 chỉ là ứng viên, chưa phải bằng chứng. |
-| Metadata không phải evidence | Tiêu đề/tóm tắt giúp tìm và đọc; không chứng minh giá trị số. |
-| Exact-cell grounding | Giá trị phải truy ngược được về đúng row, column và source cell. |
-| Không tự chọn scope | Nếu `consolidated` và `separate` còn mơ hồ thì phải dừng. |
-| Không tự nâng provenance | Bốn trạng thái nhãn luôn tách biệt. |
-| Fail closed | Thiếu hoặc mơ hồ thì `partial`/`blocked`, không đoán. |
-
-Bốn trạng thái provenance:
-
-| Trạng thái | Ý nghĩa | Được train? |
-| --- | --- | ---: |
-| `human_verified` | Human đã xác minh bằng chứng nguồn | Có, trọng số cao |
-| `machine_calibrated` | Máy qua toàn bộ gate độc lập | Có, sau training gate |
-| `machine_provisional` | Có ứng viên hợp lý nhưng chưa đủ gate | Không |
-| `needs_human` | Thiếu/mơ hồ/quarantine | Không |
-
-## 3. Bản đồ 8 mô-đun
-
-```mermaid
-flowchart LR
-    RAW[Raw OCR reports] --> M1[1. Corpus / TableAsset]
-    Q[Question] --> M2[2. Question Planner]
-    M1 --> M3[3. Retrieval]
-    M2 --> M3
-    M3 --> B[Immutable Review Bundle]
-    B --> M4[4. V2/V3 Normalization]
-    M2 --> M5[5. Evidence Compiler]
-    M4 --> M5
-    M5 --> M6[6. Review + Provenance]
-    M6 --> M7[7. Evaluation + Training]
-    M5 --> M8[8. Execution + Submission]
-    M6 --> M8
-```
-
-Mỗi mô-đun có một đầu vào, một đầu ra và một quyền hạn riêng. Mô-đun sau
-không được âm thầm sửa artifact của mô-đun trước.
-
----
-
-## 4. Mô-đun 1 — Corpus và TableAsset
-
-### Cách hiểu đơn giản
-
-Mô-đun này cắt các báo cáo OCR thành những bảng có danh tính ổn định. Nó giống
-việc đánh số và niêm phong từng bảng trước khi tìm kiếm.
-
-### Input
-
-```text
-raw financial report
-OCR text
-HTML-like tables
-```
-
-### Output chính
-
-```text
-table_assets.jsonl
-```
-
-Mỗi `TableAsset` giữ:
-
-```text
-internal_table_uid
-document_id / ticker / report_year / scope
-raw rows và headers
-page/ordinal/offset
-source SHA và table SHA
-context_before
-search_text
-```
-
-`internal_table_uid` là identity. Các bước review không được tạo UID thay thế.
-
-### Code chính
-
-- `src/finance_query/corpus.py`
-- `src/finance_query/schemas.py`
-- `scripts/build_review_bundle_v3.py`
-
-### Trạng thái
-
-Đã hoàn thành cho snapshot hiện tại trên Kaggle. Không rebuild corpus chỉ vì
-thay UI, evidence rule hay QueryProgram.
-
----
-
-## 5. Mô-đun 2 — Question Planner và QueryProgram
-
-### Cách hiểu đơn giản
-
-Planner biến một câu tiếng Việt thành “phiếu công việc” có cấu trúc:
-
-```text
-cần chỉ tiêu gì?
-của công ty nào?
-năm nào?
-scope nào?
-phải thực hiện phép toán gì?
-```
-
-Ví dụ:
-
-```text
-"A chiếm bao nhiêu phần trăm B?"
-
-→ divide
-  numerator = A
-  denominator = B
-  same entity/year/scope = required
-```
-
-### Hai mức IR
-
-**QuestionPlan** mô tả family, ticker, year, scope, unit, metric và phép toán
-cấp cao.
-
-**QueryProgram** mô tả câu nhiều bước dưới dạng stage:
-
-```text
-source operands → filter → aggregate/rank → lookup/output
-```
-
-### Trạng thái dữ liệu hiện tại
-
-Trong 1.012 câu, census đã materialize:
-
-- 357 câu là `operator_contract_candidate`;
-- 536 câu cần operand decomposition;
-- 119 câu `abstain_unknown_program`;
-- có 185 fingerprint cấu trúc khác nhau.
-
-Các top-level operator hiện quan sát được:
-
-| Operator | Số câu |
-| --- | ---: |
-| `lookup` | 339 |
-| `subtract` | 127 |
-| `max` | 118 |
-| `mean` | 105 |
-| `divide` | 102 |
-| `count` | 47 |
-| `min` | 30 |
-| `percentage_change` | 17 |
-| `sum` | 8 |
-| `plan_required` | 119 |
-
-Con số này chứng minh rằng không cần hardcode 1.012 câu. Ta cần một thư viện
-operator nhỏ và một bộ phân rã operand tốt.
-
-### QueryProgram hiện tại
-
-Hai template đã được allow-list ở chế độ shadow:
-
-1. Quick Ratio → lọc dưới median → xếp hạng thay đổi Gross Margin → Interest
-   Coverage.
-2. CFO dương qua nhiều năm → lọc entity → xếp hạng Net Margin.
-
-Q369 compile nhưng bị chặn vì definition/binding/scope không coherent. Q551
-chạy `shadow_complete` từ 15 exact cells, nhưng không được tạo final answer hay
-nâng provenance.
-
-### Code chính
-
-- `src/finance_query/questions.py`
-- `src/finance_query/financial_metrics.py`
-- `src/finance_query/query_program.py`
-- `src/finance_query/plan_overrides.py`
-
-### Trạng thái
-
-Đã có baseline và canary; chưa hoàn tất DSL tổng quát. Đây là một trong hai
-bottleneck chính còn lại.
-
----
-
-## 6. Mô-đun 3 — Retrieval
-
-### Cách hiểu đơn giản
-
-Retrieval giống người thủ thư: nó đưa ra những bảng có khả năng liên quan,
-không được khẳng định bảng nào đúng.
-
-```text
-Lexical FTS: bắt cụm từ gần giống
-Dense E5: bắt ý nghĩa gần giống
-RRF: hợp nhất hai danh sách
-→ Top-K candidates
-```
-
-Adjacent-table recovery có thể bổ sung bảng đứng cạnh khi context bị lệch,
-nhưng candidate đó phải giữ provenance riêng và qua grounding guard.
-
-### Output
-
-Immutable review bundle V3:
-
-```text
-manifest.json
-review_items.jsonl
-tables.jsonl
-errors.jsonl
-```
-
-### Code chính
-
-- `src/finance_query/retrieval.py`
-- `src/finance_query/pipeline.py`
-- `kaggle/export_review_bundle_v3.py`
-
-### Trạng thái
-
-Đã hoàn thành cho snapshot hiện tại. Không cần rebuild FTS/FAISS/dense trong
-giai đoạn xây DSL và validator.
-
----
-
-## 7. Mô-đun 4 — Chuẩn hóa nguồn V2/V3
-
-### Cách hiểu đơn giản
-
-OCR có thể đọc đúng chữ nhưng làm lệch cột. Mô-đun này dựng lại “khung bảng”
-trước khi đọc số.
-
-```text
-Raw table
-  → V2: dựng đúng grid, ô trống, rowspan, colspan
-  → V3: xác định header path, kỳ, đơn vị và quality
-```
-
-### V2 và V3 khác nhau thế nào?
-
-| Lớp | Chức năng | Không được làm |
+| Component | Responsibility | Current state |
 | --- | --- | --- |
-| **V2 Structure** | Khôi phục hình học bảng và provenance từng cell | Không sửa chữ/số OCR |
-| **V3 Evidence Context** | Chuẩn hóa header, period, unit, row profile | Không trở thành nguồn số mới |
+| 1. Corpus | Extract immutable raw table locator/grid; build legacy retrieval projection | Ready for the pinned bundle |
+| 2. Question understanding | Entity, period, scope, metric and operator contract | Partial; unknown structures abstain |
+| 3. Retrieval | Lexical+dense candidates plus hierarchy-aware soft ranking with metadata constraints | Ready as a candidate generator only |
+| 4. V2/V3 normalization | Exact table grid plus canonical header/period/unit context | Ready |
+| 5. Route and evidence binding | Constrain candidate operands to exact raw cells, then materialize variable/period/unit/entity identity/entity role/scope/revision bindings | Wired into full-corpus replay; missing source propositions stay blocked |
+| 6. Independent audit | Re-check source evidence without answer values or prior verdicts | V12 campaign audit passes 26/26 candidates; production release remains blocked |
+| 7. Evaluation/training | Train only from gate-approved labels | Experimental; no automatic promotion |
+| 8. Execution/release | Hash-bound numeric tokens, sandboxed Decimal replay, telemetry, full ledger and submission compiler | Replay ready; release blocked |
 
-Hai nhánh metadata song song:
+## Canonical flows
 
-- **OCR Quality Profile:** đánh dấu `normal`, `review_required`, `quarantine`;
-- **Semantic Catalog:** mô tả bảng là statement, note, schedule hay source
-  metadata.
-
-Hai nhánh này chỉ giúp điều hướng/audit. Exact evidence vẫn phải đi từ V3 về
-source cell V2.
-
-### Snapshot hiện tại
-
-29.509 bảng đã được profile OCR:
+### Only answer-capable path
 
 ```text
-normal           24.479
-review_required   4.854
-quarantine          176
+question -> semantic planner (identity, entity role, reporting scope) -> lexical/dense/hierarchy discovery -> route/period packet --+
+raw report -> RawTableAsset -> V2 structure -> V3 derived context -----------+-> exact-cell binding
+                                                                                ├-> cell token -> sandboxed Decimal replay --+
+                                                                                └-> Evidence Binding -> Binding Certificate
+                                                                                     -> Formula Contract + compatibility ----+-> answer certificate
+                                                                                                                                -> audit + release gate -> export
 ```
 
-### Code chính
+Only `EXPLICIT_QUERY` or verified `SOURCE_DERIVED` planner fields may remove a
+candidate. `MODEL_INFERRED` fields are ranking hints and cannot hard-filter.
+Hierarchy scoring is an opt-in experimental soft rank signal: it examines source-derived table
+function, section, headers and row labels only inside the already bounded
+lexical/dense candidate pool. A hierarchy miss never removes a candidate and a
+hierarchy hit never becomes numeric evidence. It remains disabled by default
+until a safety-preserving issuer-held-out gate approves a follow-up experiment.
+The source plane and assertion plane remain separate: `RawTableAsset` carries
+source locators, hashes and extracted raw grid; V2/V3 carry versioned structure
+and context assertions. The legacy combined `TableAsset` exists only for
+backwards-compatible retrieval bundles and must be split through its
+`raw_asset()` and `derived_assertions()` views before evidence work.
 
-- `src/finance_query/table_structure.py`
-- `src/finance_query/evidence_context.py`
-- `src/finance_query/ocr_quality.py`
-- `src/finance_query/semantic_catalog.py`
-- `src/finance_query/report_segments.py`
+`diagnostic Decimal replay` is deliberately not answer-authorized computation:
+it creates a research-only execution receipt and cannot make an operand usable,
+complete an Answer Certificate, or reach release on its own. An Answer
+Certificate needs that receipt *and* bound Evidence Bindings, Binding
+Certificates, and formula-specific compatibility to pass; otherwise it emits
+`ABSTAIN`.
 
-### Trạng thái
-
-Đã hoàn thành cho snapshot hiện tại. Đây là lớp chuẩn hóa cấu trúc, không phải
-OCR correction engine.
-
----
-
-## 8. Mô-đun 5 — Evidence Compiler
-
-### Cách hiểu đơn giản
-
-Mô-đun này phải trả lời được câu hỏi:
-
-> “Con số này nằm chính xác ở đâu trong báo cáo?”
-
-### Direct EvidenceSet
-
-Dùng cho câu tra cứu trực tiếp. Một binding hợp lệ cần:
+### Legacy compatibility
 
 ```text
-exact metric row
-exact period column/header
-exact value cell
-matching ticker/year/scope
-raw V2 provenance
+question -> legacy retrieval -> heuristic binding -> candidate probe only
 ```
 
-### Formula EvidenceSet
+`finance-query legacy-binding-probe` (and the deprecated `answer-direct`
+alias) returns no numeric answer and is never submission/training eligible.
+Its score, rank and unit warnings are diagnostics, not proof.
 
-Dùng cho câu cần nhiều số. Câu được tách thành operand slots. Mỗi operand phải
-bind riêng; một bảng đúng cho một operand không làm toàn công thức complete.
-
-Với multi-entity, mọi operand phải có một reporting scope chung nếu contract
-yêu cầu. Duplicate, tie hoặc hai scope đều hợp lệ sẽ làm selection blocked.
-
-### Snapshot hiện tại
-
-Có 136 Formula EvidenceSet:
+### Retrieval and review bundle
 
 ```text
-operand coverage complete       30
-full selected bindings           4
-evidence completeness complete   3
+raw reports -> TableAsset -> FTS/FAISS -> retrieval candidates -> Review Bundle V3
 ```
 
-Vì vậy executor không phải bottleneck duy nhất; thiếu operand binding chính là
-vấn đề phải giải quyết để tăng coverage.
-
-### Source completion
-
-Source completion chỉ tìm bảng raw bị thiếu khỏi immutable bundle. Nó không
-được sửa corpus/index, tạo answer hoặc tự chọn scope. Nếu bảng đã có nhưng chưa
-bind được, thêm lại bảng không giải quyết vấn đề.
-
-### Code chính
-
-- `src/finance_query/binding.py`
-- `src/finance_query/formula_evidence.py`
-- `src/finance_query/source_completion.py`
-- `scripts/build_direct_evidence_sets.py`
-- `scripts/build_formula_evidence_sets.py`
-
-### Trạng thái
-
-Direct evidence đã vận hành; Formula evidence V6 đã có contract chặt nhưng
-coverage còn thấp. Đây là bottleneck chính thứ hai.
-
----
-
-## 9. Mô-đun 6 — Reviewer, critic và provenance
-
-### Cách hiểu đơn giản
-
-Nhiều reviewer không có nghĩa là nhiều AI tự thuyết phục nhau. Các reviewer
-đọc những tín hiệu khác nhau:
+### Grounded deterministic replay
 
 ```text
-lexical match
-dense match
-metadata match
-exact evidence
-challenger candidate
-grounding verifier
-confidence calibrator
+route completeness + period packets
+  -> exact-cell/unit binding V2
+  -> literal-free numeric-cell token view + executor-private token registry
+  -> resource-bounded Decimal AST sandbox + diagnostic telemetry
+  -> authorization replay: Evidence Binding + Formula Compatibility
+  -> Answer Certificate or ABSTAIN
+  -> hash-bound research-only run receipt
 ```
 
-Consensus chỉ được tin khi exact-source validator đồng ý. Confidence cao không
-thể vượt qua binding fail.
+Run it with `finance-query run-grounded-e2e`; see
+[docs/OPERATIONS.md](docs/OPERATIONS.md). The runner creates a new output
+directory and verifies input/output hashes. It never changes the bundle or
+promotes any record.
 
-### Snapshot hiện tại
+The sandbox does not execute generated Python. It interprets only the declared
+formula AST with `Decimal`, bounds AST nodes/depth, operand/result digits and
+wall time, and exposes no filesystem, network, import or process primitive.
+Runtime telemetry is a diagnostic sidecar and is excluded from answer
+authorization. The public numeric-token view contains no numeric literal; the
+private registry is consumed only by the executor and is hash-bound to the
+exact source coordinate.
 
-Trong 1.012 machine reviews:
+### Production release
 
 ```text
-machine_calibrated     62
-machine_provisional   364
-needs_human           586
+exact evidence + independent audit + full production execution ledger
+  -> ready release gate
+  -> submission compiler
 ```
 
-62 calibrated hiện đều thuộc direct lookup. Điều này cho thấy hướng tăng nhanh
-nhất là **Direct Evidence Replay**: tái kiểm deterministic toàn bộ exact
-row/header/cell thay vì yêu cầu human đọc lại từng câu.
+All three upstream conditions are mandatory. The current release gate is
+blocked, so there is no production submission path to execute.
 
-### Code chính
+### V13 claim-requirement shadow audit
 
-- `scripts/auto_review_bundle_v4.py`
-- `scripts/build_review_ledger.py`
-- `scripts/train_review_calibrator.py`
-- `local/review_bundle_widget.py`
-
-### Trạng thái
-
-Đã vận hành. Chưa nên coi mọi `machine_provisional` là silver; cần replay và
-promotion policy độc lập.
-
----
-
-## 10. Mô-đun 7 — Evaluation và Training
-
-### Cách hiểu đơn giản
-
-Mô-đun 7 quyết định dữ liệu nào đủ sạch để học. Nó không làm dữ liệu trở nên
-đúng chỉ vì model cần thêm examples.
+V13 adds a versioned proof-obligation layer without mutating V12:
 
 ```text
-human_verified      → training eligible
-machine_calibrated  → eligible sau provenance/training gate
-machine_provisional → audit only
-needs_human         → quarantine
+claim -> Claim Requirement Set -> proof obligations
+      -> Semantic Coverage Certificate -> Formula Definition
+      -> Operand Compatibility -> numeric execution -> result
 ```
 
-Grounding Health Dashboard tách lỗi theo family, OCR quality, semantic role,
-candidate availability và Formula completeness.
+`INTERNALLY_COMPLETE` means only that every generated requirement passed.
+`CLAIM_COMPLETE` additionally requires an independent requirement universe;
+the current deterministic generator does not provide that independent basis.
+The first V13 shadow run therefore keeps all 1,012 records at
+`CLAIM_COMPLETENESS_UNESTABLISHED`. Of the 26 V12 certificate candidates, 16
+remain internally complete under the expanded schema and 10 expose an
+unresolved `accounting.basis` obligation. V12 artifacts and release state are
+unchanged.
 
-Training gate hiện đặt ở 200 machine-silver grounded; snapshot mới có 62. Do
-đó chưa train dense/reranker chính thức và không ghi đè baseline index.
+### Full-corpus authorization replay
 
-GPU có ích ở đây cho embedding, reranking và training sau khi đủ labels. GPU
-không thay thế exact-cell validation.
+The canonical replay writes `evidence_bindings_v1.jsonl` and
+`answer_certificates_v1.jsonl` after V2 exact binding and Decimal replay. This
+is an integration and fail-closed verification path, not a semantic backfill.
+The resolver can promote a field only from exact source evidence with aligned
+artifact hashes. The current V12 replay materializes all 882 planned operand
+receipts, preserves 23 original `human_verified` row/cell decisions, and
+records ChatGPT's independently authorized semantic decisions under
+`chatgpt_verified`. The V12 role lane adds 11 relational parent-role proofs
+only after distinct proposer and critic identities select the same source line
+and agree on all six semantic checks. It never treats `separate` reporting
+scope as evidence of `parent` entity role. The result is 26 campaign-only
+complete certificates and 986 `ABSTAIN` certificates, with release,
+promotion, training, submission, and answer materialization still false.
 
-### Code chính
-
-- `src/finance_query/evaluation_dashboard.py`
-- `scripts/build_evaluation_dashboard.py`
-- `scripts/export_review_labels.py`
-- `scripts/train_dense_retriever.py`
-- `scripts/train_pilot_candidate_reranker.py`
-
-### Trạng thái
-
-Evaluation đã hoàn thành; training production chưa mở vì chưa đạt gate.
-
----
-
-## 11. Mô-đun 8 — Execution và Submission
-
-### Cách hiểu đơn giản
-
-Sau khi các số đầu vào đã được chứng minh, executor mới thực hiện phép tính.
-Nó dùng `Decimal` và operator allow-list, không dùng LLM để viết/chạy Python tùy
-ý.
-
-Các điều kiện fail-closed gồm:
+### V12 relational entity-role review
 
 ```text
-operand thiếu
-cell không exact
-entity/year/scope không coherent
-unit không tương thích
-mẫu số bằng 0
-tie khi cần unique winner
-formula chưa defined
+11 residual parent-role gaps
+  -> numeric-free exact-source candidate queue
+  -> ChatGPT proposer (6 semantic checks + exact line)
+  -> independent ChatGPT critic (same checks + exact line)
+  -> deterministic exact-consensus reconciler
+  -> role-only semantic augmentation (`chatgpt_verified`)
+  -> locked V11 -> V12 replay
+  -> numeric-free 26-candidate campaign audit
 ```
 
-Submission compiler kiểm lại execution record và binding trước khi xuất kết
-quả. Shadow result không đủ điều kiện submission.
+Identity, legal/group role, and reporting perimeter remain separate fields:
+`issuer match != parent-role match != separate-scope match`. The authority
+grant gives the AI lane human-equivalent gate weight but does not rename its
+provenance, copy answer values into review context, or authorize production
+release.
 
-### Code chính
+Human and ChatGPT reviewers may issue equivalent campaign verdicts only when
+the owner explicitly grants the relevant review scope. Their provenance lanes
+remain distinct: AI review cannot become `human_verified`, invent a source
+proposition, or override an upstream human decision. Route-context promotion
+may clear only the reviewed `controlled_operation_contract` gate; it cannot
+edit a question plan, route, scope, operand or value. Forty-nine such receipts
+expand graph review from 33 to 82 questions. Generic typed-operation
+fingerprints block the three previously false-green graph families before
+review. The graph critique accepts only Q746 and Q750 and confirms 80 blockers;
+none of the graph-review records may execute a formula. A downstream,
+research-only exact-operand lane keeps reviewer and executor authority
+separate: the reviewer sees identity, parent-role provenance, scope, period,
+unit, row label, coordinates and hashes, while only the deterministic executor
+may reopen value cells. Q746 fails closed on missing KHG parent-role evidence;
+Q750 passes all seven semantic checks and replays privately. V10 then promotes
+only this hash-bound operand set into a controlled two-stage grounded graph.
+The deterministic executor reopens both values and applies the ordered
+subtraction; the reviewer never sees either numeric literal. Q746 remains
+blocked because KHG's parent role is still unproven.
 
-- `src/finance_query/execution.py`
-- `src/finance_query/query_program.py`
-- `src/finance_query/submission.py`
-- `scripts/build_query_program_shadow.py`
-- `scripts/build_execution_ledger.py`
-- `scripts/compile_vifinqa_submission.py`
+Campaign completeness is not campaign approval. The independent V7 audit
+reopens every one of the 12 campaign-only candidates with question text, raw
+row text, source/table/value hashes, entity-role anchors and deterministic
+replay status. Numeric literals remain outside the ChatGPT review packet. The
+audit accepts 11 candidate semantics and rejects Q702: the selected row is
+`Thu nhập khác`, while the claim asks for `Thu nhập khác thuần` and the same
+table contains `Lợi nhuận khác (40 = 31 - 32)`. Consequently the campaign state
+is `campaign_revision_required`; release and materialization remain false.
 
-### Trạng thái
+V8 repairs that conflict without rewriting the human sidecar. A separate
+numeric-value-free `chatgpt_verified` correction packet selects only the exact
+semantic row and concept `other_profit`. The deterministic V4 binding
+materializer then reopens the same hash-bound table, reads the period-aligned
+value cell, and records `numeric_value_selected_by_reviewer=false`. Locked
+replay proves that only Q702 changes; the independent V8 audit returns 12/12
+candidate PASS. This campaign verdict still leaves release, promotion and
+answer materialization false.
 
-Typed Operator Registry đã chạy shadow cho lookup/add/sum/subtract/difference,
-divide/change/mean/median/min/max/count. Mọi input phải được đối chiếu lại exact
-V2 cell, V3 source header, cell provenance, entity/year/scope/unit và numeric
-parse trước khi `execute_ast` nhận số. Multiply/CAGR chưa có dimensional/literal
-contract nên fail-closed. Multi-stage QueryProgram vẫn ở shadow canary.
+V9 adds a second, independent overlay for a previously blocked navigation
+candidate. Q167's reviewer packet contains the exact non-value row label,
+canonical period/unit header, source title, and a hash-bound source line proving
+the issuer has subsidiaries. ChatGPT has review-gate equivalence but remains
+`chatgpt_verified`; it cannot infer sector, select a numeric value, execute a
+formula, or authorize release. The V5 materializer alone reopens the exact
+table cell. V8→V9 regression is isolated to Q167, producing 13 campaign-only
+certificates and 999 abstentions.
 
----
+V10 adds a third overlay for exact cross-entity composition. Q750 carries two
+independent Evidence Bindings and a hash-bound `subtract(SAB, DBC)` AST. The
+locked V9→V10 diff is isolated to Q750 and produces 14 campaign-only
+certificates plus 998 abstentions. The independent audit reopens both rows,
+both parent-role anchors and the ordered AST. Its authority receipt records
+`verification_authority=human_equivalent` while preserving
+`reviewer_type=chatgpt_verified`; release and promotion remain false.
 
-## 12. Không review 1.012 câu bằng cách nào?
+## Status and implementation tracking
 
-Ta không bỏ validation. Ta đổi đơn vị kiểm thử từ **câu hỏi** sang **contract
-fingerprint**.
+[docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) is the single short status
+page. It states what has been implemented, the current quantitative blockers,
+and the next work. For detailed stage permissions, read
+[docs/TECHNICAL_CONTRACTS.md](docs/TECHNICAL_CONTRACTS.md).
 
-Một fingerprint gồm:
+## Invariants
 
-```text
-operator DAG
-operand roles
-entity/year cardinality
-scope policy
-allowed table functions
-unit/output contract
-```
-
-Những câu khác wording nhưng cùng fingerprint dùng chung executor và test
-contract. Census thực tế của toàn bộ 1.012 câu:
-
-```text
-operator_contract_candidate       357
-requires_operand_decomposition    536
-abstain_unknown_program            119
-```
-
-Direct replay đã kiểm tra 358 câu direct: 63 ready, 49 ambiguous và 246
-blocked. Trong 62 status calibrated lịch sử, 58 vượt replay; bốn record còn lại
-không bị đổi provenance nhưng bị loại khỏi training input.
-
-### Ba lớp kiểm định
-
-1. **Census tự động:** chạy schema/hash/grounding gate cho 1.012/1.012 câu.
-2. **Fixture theo fingerprint:** positive, missing operand, wrong year/scope,
-   unit mismatch, zero denominator, tie và OCR malformed.
-3. **Risk-stratified audit:** lấy mẫu độc lập từ tập Green; fingerprint hiếm
-   hoặc rủi ro cao được audit nhiều hơn.
-
-Hai model đồng ý không phải là bằng chứng độc lập. Raw-source replay và
-mutation tests mới là validator độc lập với planner/model.
-
-## 13. Kế hoạch tăng tốc trong 12 giờ
-
-Mốc 12 giờ phù hợp để hoàn thiện **MVP shadow**, không đủ để tuyên bố production
-accuracy cho gần hết corpus.
-
-| Thời gian | Việc thực hiện | Kết quả |
-| --- | --- | --- |
-| Giờ 0–2 | Sinh fingerprint/coverage matrix cho 1.012 câu | **Xong:** 185 fingerprint |
-| Giờ 2–5 | Direct Evidence Replay | **Xong:** 358 record, conflict-aware |
-| Giờ 5–8 | Generic operator registry | **Xong shadow:** exact V2/V3 source validation |
-| Giờ 8–10 | Migrate hai QueryProgram canary | Bỏ evaluator riêng ở mức template |
-| Giờ 10–12 | Regression, dashboard, artifact registry | Registry **xong**; dashboard integration còn mở |
-
-GPU chỉ nên chạy song song để đề xuất operand/plan hoặc rerank. Quyết định cuối
-vẫn do CPU validator exact-source thực hiện.
-
-Sau 12 giờ, kết quả hợp lệ mong đợi là:
-
-- 1.012 câu được route thành fingerprint hoặc abstain có reason code;
-- direct questions được replay deterministic;
-- operator chung chạy shadow;
-- không tự nâng provenance hoặc train dense;
-- coverage report cho biết chính xác bước nào còn thiếu.
-
-## 14. Khi nào được coi là hoàn thành 8 mô-đun?
-
-“Có đủ tám file/module” chưa phải hoàn thành. Definition of Done là:
-
-1. 1.012/1.012 câu đi qua schema và routing census.
-2. Mọi output là `executable` hoặc `abstain` có reason code rõ ràng.
-3. Mọi value truy ngược được exact V2 row/header/cell.
-4. Scope, period, entity và unit đều coherent.
-5. Provenance không bị promotion ngầm.
-6. Artifact registry và dependency hash validate được.
-7. Green pool đạt ngưỡng precision đã định trên audit độc lập.
-8. Training/submission chỉ đọc artifact đủ eligibility.
-
-Một hệ thống có thể hoàn thành dù vẫn còn `needs_human`: từ chối đúng là hành
-vi đúng. Hoàn thành không có nghĩa ép 1.012 câu phải có answer.
-
-## 15. Artifact và version hiện hành
-
-| Tên logic | Artifact/schema | Vai trò |
-| --- | --- | --- |
-| Raw table | Review Bundle V3 | snapshot candidate và raw table |
-| Structured table | V2 | grid + cell provenance |
-| Evidence context | V3 | canonical header/period/unit |
-| Formula evidence | V6 | operand discovery và binding |
-| Query fingerprint census | V1 shadow | routing cấu trúc cho 1.012 câu |
-| Direct evidence replay | V1 shadow | revalidation V2/V3 conflict-aware |
-| Machine silver training input | V1 | 58 record đã qua replay gate |
-| Query program | Shadow V1 | multi-stage execution canary |
-| OCR profile | V1 | diagnostic/quarantine metadata |
-| Semantic catalog | V1 | navigation/evaluation metadata |
-| Evaluation dashboard | V1 | trạng thái grounding toàn corpus |
-
-ArtifactRegistry dùng logical name và dependency hash để tránh chọn nhầm file
-chỉ vì tên có `v2`, `v3`, `v31` hoặc `v4`.
-
-Checklist issue, gate và Definition of Done đang dùng để chốt kiến trúc:
-[`docs/ARCHITECTURE_COMPLETION_CHECKLIST.md`](docs/ARCHITECTURE_COMPLETION_CHECKLIST.md).
-
-## 16. Tài liệu chuyên sâu còn giữ
-
-- [`docs/ARTIFACT_REGISTRY.md`](docs/ARTIFACT_REGISTRY.md)
-- [`docs/ARCHITECTURE_COMPLETION_CHECKLIST.md`](docs/ARCHITECTURE_COMPLETION_CHECKLIST.md)
-- [`docs/TABLE_STRUCTURE_V2.md`](docs/TABLE_STRUCTURE_V2.md)
-- [`docs/FORMULA_EVIDENCE_SETS.md`](docs/FORMULA_EVIDENCE_SETS.md)
-- [`docs/QUERY_PROGRAM.md`](docs/QUERY_PROGRAM.md)
-- [`docs/COMPLEX_QUERY_CANARY.md`](docs/COMPLEX_QUERY_CANARY.md)
-- [`docs/OCR_QUALITY_PROFILE.md`](docs/OCR_QUALITY_PROFILE.md)
-- [`docs/SEMANTIC_CATALOG.md`](docs/SEMANTIC_CATALOG.md)
-- [`docs/GROUNDING_HEALTH_DASHBOARD.md`](docs/GROUNDING_HEALTH_DASHBOARD.md)
-- [`docs/AUTONOMOUS_RAW_REVIEW.md`](docs/AUTONOMOUS_RAW_REVIEW.md)
-- [`docs/SUBMISSION_EXECUTION_PIPELINE.md`](docs/SUBMISSION_EXECUTION_PIPELINE.md)
-- [`docs/KAGGLE_TO_LOCAL_REVIEW.md`](docs/KAGGLE_TO_LOCAL_REVIEW.md)
-
-Tài liệu snapshot cũ được loại khỏi nhánh hiện hành sau khi nội dung còn đúng
-đã được hợp nhất vào tài liệu này. Lịch sử vẫn có thể xem hoặc khôi phục bằng
-Git.
+1. Candidate rank, report layout and semantic metadata are not numeric evidence.
+2. Every numeric operand needs an exact V2 coordinate and raw-cell provenance.
+3. V3 may interpret headers/periods/units but cannot alter raw values.
+4. Every operation uses deterministic Decimal logic and an allow-listed formula.
+5. Provenance transitions and model promotion require independent gates.
+6. The release compiler accepts only a full, hash-bound, approved lineage.
+7. Question IDs identify artifacts only; they never influence a semantic plan,
+   fingerprint, route or model-training label.
+8. `routing_eligible` is a candidate-discovery gate only. An operand is usable
+   only when its Evidence Binding has immutable source-cell lineage and every
+   field is `PASS`, except an explicitly contract-non-required
+   `NOT_APPLICABLE` field.
+9. Evidence validity is not deployment approval: evidence may support a
+   reviewable answer certificate, but never trains, promotes or serves a model
+   without independent release gates.
+10. A numeric cell token is de-lexicalization, not semantic grounding. Its
+    literal-free public view may enter model context; its executor-private
+    registry may not.
+11. Sandbox telemetry may diagnose latency or policy failures but may not
+    select a cell, authorize an operand or change release eligibility.
+12. Passing every self-generated requirement proves internal coverage only;
+    claim completeness requires an independent, versioned requirement basis.
+13. Diagnostic computation may precede semantic authorization, but answer
+    authorization requires Evidence Binding, Formula Definition, Operand
+    Compatibility and Numeric Execution to pass.

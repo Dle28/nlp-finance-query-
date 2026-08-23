@@ -69,7 +69,16 @@ class ModelConfig:
     fused_top_k: int = 50
     rerank_top_k: int = 20
     rrf_k: int = 60
+    # Deterministic table-function/section/header rank inside the existing
+    # lexical+dense candidate pool. This is discovery-only, never a hard gate.
+    hierarchy_top_k: int = 50
+    hierarchy_rrf_enabled: bool = False
     device: str = "auto"
+    # LLM inference (local smoke + Kaggle). None = defer to device.
+    inference_model: str | None = None
+    inference_device: str = "auto"
+    inference_max_new_tokens: int = 1024
+    inference_load_in_4bit: bool | None = None
 
     @classmethod
     def from_yaml(cls, path: Path) -> "ModelConfig":
@@ -87,6 +96,21 @@ class ModelConfig:
                 return "cuda"
             if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
                 return "mps"
+        except ImportError:
+            pass
+        return "cpu"
+
+    def resolved_inference_device(self) -> str:
+        if self.inference_device != "auto":
+            return self.inference_device
+        # The optional Qwen adapter currently supports CUDA and CPU only.  Do
+        # not inherit an MPS result from ``resolved_device`` and then fail at
+        # model construction on Apple hosts.
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                return "cuda"
         except ImportError:
             pass
         return "cpu"

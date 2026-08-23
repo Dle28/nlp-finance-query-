@@ -15,10 +15,18 @@ from tqdm import tqdm
 
 from .config import ModelConfig
 from .corpus import iter_assets
+from .hierarchical_retrieval import rank_hierarchy_candidates
 from .schemas import QuestionPlan, RetrievedTable
 
 
 TOKEN_RE = re.compile(r"[\w%]+", re.UNICODE)
+_HARD_CONSTRAINT_BASES = frozenset({"EXPLICIT_QUERY", "SOURCE_DERIVED"})
+
+
+def _hard_constraint(plan: QuestionPlan, field: str) -> bool:
+    """Allow only source-backed planner fields to eliminate candidates."""
+    provenance = plan.field_provenance.get(field)
+    return provenance is not None and provenance.basis in _HARD_CONSTRAINT_BASES
 
 
 def _fts_query(text: str) -> str:
@@ -154,35 +162,60 @@ class AssetStore:
         tickers: list[str] | None = None,
         years: list[int] | None = None,
         scope: str | None = None,
+        allowed_uids: Iterable[str] | None = None,
     ) -> list[tuple[str, float]]:
-        conditions = ["assets_fts.search_text MATCH ?"]
-        parameters: list[object] = [_fts_query(query)]
+        """Run FTS only inside an optional source-derived UID allow-list.
 
-        if tickers:
-            placeholders = ",".join("?" for _ in tickers)
-            conditions.append(f"a.ticker IN ({placeholders})")
-            parameters.extend(tickers)
-        if years:
-            placeholders = ",".join("?" for _ in years)
-            conditions.append(f"a.report_year IN ({placeholders})")
-            parameters.extend(years)
-        if scope:
-            conditions.append("a.scope = ?")
-            parameters.append(scope)
-
-        parameters.append(top_k)
-        sql = f"""
-            SELECT assets_fts.uid AS uid, bm25(assets_fts) AS bm25_score
-            FROM assets_fts
-            JOIN assets AS a ON a.uid = assets_fts.uid
-            WHERE {' AND '.join(conditions)}
-            ORDER BY bm25_score ASC
-            LIMIT ?
+        The allow-list is supplied by the metric stage router, never by an
+        LLM.  SQLite permits a bounded number of bind variables, so a large
+        allow-list is queried in chunks and fused deterministically.
         """
+        permitted = list(dict.fromkeys(str(uid) for uid in allowed_uids or [] if str(uid)))
+        if allowed_uids is not None and not permitted:
+            return []
 
-        with self.connect() as connection:
-            rows = connection.execute(sql, parameters).fetchall()
-        return [(row["uid"], -float(row["bm25_score"])) for row in rows]
+        def search_chunk(chunk: list[str] | None) -> list[tuple[str, float]]:
+            conditions = ["assets_fts.search_text MATCH ?"]
+            parameters: list[object] = [_fts_query(query)]
+
+            if tickers:
+                placeholders = ",".join("?" for _ in tickers)
+                conditions.append(f"a.ticker IN ({placeholders})")
+                parameters.extend(tickers)
+            if years:
+                placeholders = ",".join("?" for _ in years)
+                conditions.append(f"a.report_year IN ({placeholders})")
+                parameters.extend(years)
+            if scope:
+                conditions.append("a.scope = ?")
+                parameters.append(scope)
+            if chunk is not None:
+                placeholders = ",".join("?" for _ in chunk)
+                conditions.append(f"a.uid IN ({placeholders})")
+                parameters.extend(chunk)
+
+            parameters.append(top_k)
+            sql = f"""
+                SELECT assets_fts.uid AS uid, bm25(assets_fts) AS bm25_score
+                FROM assets_fts
+                JOIN assets AS a ON a.uid = assets_fts.uid
+                WHERE {' AND '.join(conditions)}
+                ORDER BY bm25_score ASC
+                LIMIT ?
+            """
+            with self.connect() as connection:
+                rows = connection.execute(sql, parameters).fetchall()
+            return [(row["uid"], -float(row["bm25_score"])) for row in rows]
+
+        if not permitted:
+            return search_chunk(None)
+        # Keep below SQLite's default 999-variable limit after static query
+        # parameters are added. A stage candidate set is normally tiny.
+        result: dict[str, float] = {}
+        for start in range(0, len(permitted), 900):
+            for uid, score in search_chunk(permitted[start : start + 900]):
+                result[uid] = max(result.get(uid, float("-inf")), score)
+        return sorted(result.items(), key=lambda item: (-item[1], item[0]))[:top_k]
 
     def get_assets(self, uids: Iterable[str]) -> dict[str, dict]:
         uid_list = list(dict.fromkeys(uids))
@@ -379,13 +412,37 @@ class HybridRetriever:
             )
         return self._reranker
 
-    def retrieve(self, question: str, plan: QuestionPlan) -> list[RetrievedTable]:
+    def retrieve(
+        self,
+        question: str,
+        plan: QuestionPlan,
+        *,
+        allowed_uids: Iterable[str] | None = None,
+        apply_plan_metadata_filters: bool = True,
+    ) -> list[RetrievedTable]:
+        """Retrieve normally or rank only a metric-router candidate allow-list.
+
+        A routed candidate can expose a comparative period in its canonical
+        V3 header even when the document's publication year differs. In that
+        mode callers set ``apply_plan_metadata_filters=False`` because the
+        stage router has already constrained company/year/scope from the
+        source catalog. Exact V2/V3 binding remains mandatory downstream.
+        """
+        permitted = (
+            set(str(uid) for uid in allowed_uids if str(uid))
+            if allowed_uids is not None
+            else None
+        )
+        hard_tickers = plan.tickers if _hard_constraint(plan, "tickers") else None
+        hard_years = plan.years if _hard_constraint(plan, "years") else None
+        hard_scope = plan.scope if _hard_constraint(plan, "scope") else None
         lexical = self.store.search_lexical(
             question,
             top_k=self.config.lexical_top_k,
-            tickers=plan.tickers or None,
-            years=plan.years or None,
-            scope=plan.scope,
+            tickers=hard_tickers if apply_plan_metadata_filters else None,
+            years=hard_years if apply_plan_metadata_filters else None,
+            scope=hard_scope if apply_plan_metadata_filters else None,
+            allowed_uids=permitted,
         )
 
         dense: list[tuple[str, float]] = []
@@ -399,11 +456,13 @@ class HybridRetriever:
                 asset = raw_assets.get(uid)
                 if asset is None:
                     continue
-                if plan.tickers and asset.get("ticker") not in plan.tickers:
+                if permitted is not None and uid not in permitted:
                     continue
-                if plan.years and asset.get("report_year") not in plan.years:
+                if apply_plan_metadata_filters and hard_tickers and asset.get("ticker") not in hard_tickers:
                     continue
-                if plan.scope and asset.get("scope") != plan.scope:
+                if apply_plan_metadata_filters and hard_years and asset.get("report_year") not in hard_years:
+                    continue
+                if apply_plan_metadata_filters and hard_scope and asset.get("scope") != hard_scope:
                     continue
                 dense.append((uid, score))
                 if len(dense) >= self.config.dense_top_k:
@@ -429,6 +488,19 @@ class HybridRetriever:
             )[: self.config.fused_top_k]
         ]
         assets = self.store.get_assets(ranked_uids)
+
+        hierarchy_ranks: dict[str, int] = {}
+        if self.config.hierarchy_rrf_enabled and assets:
+            hierarchy = rank_hierarchy_candidates(question, assets)[
+                : self.config.hierarchy_top_k
+            ]
+            for rank, (uid, _score) in enumerate(hierarchy, start=1):
+                hierarchy_ranks[uid] = rank
+                fused_scores[uid] += 1.0 / (self.config.rrf_k + rank)
+            ranked_uids = sorted(
+                ranked_uids,
+                key=lambda uid: (-fused_scores[uid], uid),
+            )[: self.config.fused_top_k]
 
         reranker_scores: dict[str, float] = {}
         if self.reranker is not None and ranked_uids:
@@ -464,6 +536,7 @@ class HybridRetriever:
                     scope=asset.get("scope") or "unknown",
                     lexical_rank=lexical_ranks.get(uid),
                     dense_rank=dense_ranks.get(uid),
+                    hierarchy_rank=hierarchy_ranks.get(uid),
                     fused_score=fused_scores[uid],
                     reranker_score=reranker_scores.get(uid),
                     external_table_ref=asset.get("external_table_ref"),

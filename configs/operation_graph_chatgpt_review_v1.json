@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_operation_graph_chatgpt_review_spec_v1",
+  "review_policy": "fail_closed_question_graph_semantics_v1",
+  "blocked_candidate_policy": "confirm_existing_blocker_fail_closed",
+  "typed_candidate_reviews": [
+    {
+      "question_id": 746,
+      "decision": "approve_graph_semantics",
+      "reason_codes": [],
+      "rationale": "Câu hỏi nêu rõ giá trị Đất Xanh trừ giá trị Khải Hoàn Land; hai stage giữ đúng thứ tự và phép subtract trả về scalar tiền tệ.",
+      "semantic_checks": {
+        "operator_matches_question": true,
+        "stage_population_complete": true,
+        "noncommutative_order_correct": true,
+        "final_output_type_matches_question": true
+      }
+    },
+    {
+      "question_id": 750,
+      "decision": "approve_graph_semantics",
+      "reason_codes": [],
+      "rationale": "Câu hỏi nêu rõ SAB trừ DBC; hai stage net income giữ đúng thứ tự và phép subtract trả về scalar tiền tệ.",
+      "semantic_checks": {
+        "operator_matches_question": true,
+        "stage_population_complete": true,
+        "noncommutative_order_correct": true,
+        "final_output_type_matches_question": true
+      }
+    },
+    {
+      "question_id": 819,
+      "decision": "reject_graph_semantics",
+      "reason_codes": ["POPULATION_MEMBERS_INCOMPLETE", "STAGE_METRICS_NOT_HOMOGENEOUS"],
+      "rationale": "Câu hỏi yêu cầu trung bình cùng metric dự phòng rủi ro tín dụng của ba ngân hàng, nhưng graph chỉ có hai stage và stage thứ hai là loans_to_customers, không phải cùng metric.",
+      "semantic_checks": {
+        "operator_matches_question": true,
+        "stage_population_complete": false,
+        "noncommutative_order_correct": "not_applicable",
+        "final_output_type_matches_question": false
+      }
+    },
+    {
+      "question_id": 973,
+      "decision": "reject_graph_semantics",
+      "reason_codes": ["FINAL_COUNT_OPERATOR_MISSING"],
+      "rationale": "filter_positive chỉ chọn các công ty có CFO dương; câu hỏi hỏi số lượng nên graph còn thiếu phép count để trả về scalar.",
+      "semantic_checks": {
+        "operator_matches_question": true,
+        "stage_population_complete": true,
+        "noncommutative_order_correct": "not_applicable",
+        "final_output_type_matches_question": false
+      }
+    },
+    {
+      "question_id": 982,
+      "decision": "reject_graph_semantics",
+      "reason_codes": ["RATIO_OPERATOR_MISSING_BEFORE_ARGMAX"],
+      "rationale": "Câu hỏi yêu cầu argmax của tỷ trọng assets/total_assets theo năm; graph hiện argmax trực tiếp hai stage gốc và chưa tính tỷ trọng.",
+      "semantic_checks": {
+        "operator_matches_question": false,
+        "stage_population_complete": true,
+        "noncommutative_order_correct": "not_applicable",
+        "final_output_type_matches_question": false
+      }
+    }
+  ]
+}

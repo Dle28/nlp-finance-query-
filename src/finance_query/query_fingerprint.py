@@ -11,7 +11,7 @@ import json
 from typing import Any, Mapping, Sequence
 
 
-QUERY_FINGERPRINT_SCHEMA_VERSION = 1
+QUERY_FINGERPRINT_SCHEMA_VERSION = 2
 KNOWN_OPERATORS = {
     "lookup",
     "add",
@@ -99,8 +99,7 @@ def build_query_fingerprint(
     else:
         route = "operator_contract_candidate"
 
-    payload = {
-        "family": str(plan.get("family") or review_item.get("weak_family") or "unknown"),
+    structural_payload = {
         "operator_skeleton": canonical_operator_skeleton(ast),
         "operand_roles": sorted(
             str(operand.get("role") or operand.get("operand_id") or "unspecified")
@@ -110,15 +109,27 @@ def build_query_fingerprint(
         "year_cardinality": _cardinality(plan.get("years") or []),
         "scope_policy": "explicit" if plan.get("scope") else "unspecified",
         "unit_class": _unit_class(plan.get("requested_unit")),
-        "formula_id": str(formula.get("formula_id") or "none"),
-        "warning_categories": warnings,
-        "route": route,
     }
-    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(
+        structural_payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    structural_fingerprint = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    semantic_template_id = str(formula.get("formula_id") or "none")
     return {
         "schema_version": QUERY_FINGERPRINT_SCHEMA_VERSION,
         "question_id": int(review_item["id"]),
-        "fingerprint": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
-        **payload,
+        # ``fingerprint`` remains an alias while consumers migrate to the
+        # explicit name. Neither planner family nor formula template changes
+        # a structural coverage bucket.
+        "fingerprint": structural_fingerprint,
+        "structural_fingerprint": structural_fingerprint,
+        "family": str(plan.get("family") or review_item.get("weak_family") or "unknown"),
+        "semantic_template_id": semantic_template_id,
+        "formula_id": semantic_template_id,
+        "warning_categories": warnings,
+        "route": route,
+        **structural_payload,
     }
-

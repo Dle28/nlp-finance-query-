@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "protocol": "vifinqa_cross_entity_operand_chatgpt_review_spec_v1",
+  "decision_provenance": {
+    "reviewer_type": "chatgpt_verified",
+    "reviewer_id": "chatgpt-gpt5-q746-evidence-critic-v2",
+    "reviewer_role": "authorized_ai_operand_evidence_critic",
+    "model_family": "GPT-5",
+    "review_policy": "fail_closed_exact_operand_semantics_v2",
+    "verification_authority": "human_equivalent",
+    "authority_grant": {
+      "granted_by": "campaign_owner",
+      "grant_scope": "exact_source_operand_review_gate_equivalence",
+      "grant_basis": "explicit_user_instruction"
+    }
+  },
+  "authority_receipt": {
+    "verification_authority": "human_equivalent",
+    "gate_effect": "same_eligibility_weight_as_human_verified",
+    "provenance_preserved_as": "chatgpt_verified",
+    "scope": "exact_source_operand_review_gate_equivalence",
+    "release_authority_included": false,
+    "training_authority_included": false,
+    "submission_authority_included": false,
+    "value_selection_authority_included": false,
+    "formula_execution_authority_included": false
+  },
+  "reviews": [
+    {
+      "question_id": 746,
+      "decision": "approve_exact_operand_set",
+      "reason_codes": [],
+      "rationale": "Phản biện co-reference đạt: document identity gắn KHG với issuer, và anchor 284 nằm trong mục Cấu trúc doanh nghiệp của cùng báo cáo, trực tiếp nói Công ty có hai công ty con. Không dùng separate để suy ra parent và không dùng numeric value trong review.",
+      "semantic_checks": {
+        "operand_order_matches_question": true,
+        "entity_identity_matches": true,
+        "entity_role_parent_proven": true,
+        "reporting_scope_matches": true,
+        "period_header_matches": true,
+        "unit_matches": true,
+        "variable_row_matches": true
+      }
+    }
+  ]
+}

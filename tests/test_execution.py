@@ -38,6 +38,22 @@ class ExecutionTests(unittest.TestCase):
         )
         self.assertEqual(result, Decimal("20"))
 
+    def test_staged_formula_primitives_are_registered(self) -> None:
+        self.assertEqual(
+            execute_ast(
+                {
+                    "op": "ratio_to_percent",
+                    "args": [{"op": "divide", "args": ["profit", "revenue"]}],
+                },
+                {"profit": Decimal("25"), "revenue": Decimal("100")},
+            ),
+            Decimal("25.00"),
+        )
+        self.assertEqual(
+            execute_ast({"op": "absolute", "args": ["expense"]}, {"expense": Decimal("-10")}),
+            Decimal("10"),
+        )
+
     def test_unit_conversion(self) -> None:
         result = convert_unit(
             Decimal("2500"),

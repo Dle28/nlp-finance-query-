@@ -93,10 +93,16 @@ class QueryProgramTests(unittest.TestCase):
     def test_compiles_controlled_multistage_formula(self):
         compiled = program()
         self.assertEqual(compiled.program_id, "quick_ratio_gpm_interest_coverage_selection_v1")
-        self.assertEqual([stage.stage_id for stage in compiled.stages], [
-            "quick_ratio_filter",
-            "gross_margin_rank",
-            "interest_coverage_lookup",
+        self.assertEqual([stage.operator for stage in compiled.stages], [
+            "map_ast",
+            "reduce_ast",
+            "filter_lt",
+            "map_ast",
+            "map_ast",
+            "map_ast",
+            "argmax_unique",
+            "map_ast",
+            "select_entity_value",
         ])
         self.assertEqual(len(compiled.required_operand_ids), 36)
         self.assertFalse(compiled.submission_eligible)
@@ -120,7 +126,7 @@ class QueryProgramTests(unittest.TestCase):
         tied["nkg_gross_profit_2023"] = "23"
         result = evaluate_shadow_query_program(program(), tied)
         self.assertEqual(result["status"], "shadow_blocked")
-        self.assertIn("arithmetic_precondition", result["reason_codes"][0])
+        self.assertIn("staged_ast_contract", result["reason_codes"][0])
 
     def test_readiness_preserves_existing_formula_evidence_blocks(self):
         formula = infer_formula_spec(QUESTION)

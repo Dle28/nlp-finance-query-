@@ -6,6 +6,7 @@ from pathlib import Path
 
 from finance_query.evidence_context import AUTONOMOUS_REVIEW_PROTOCOL
 from finance_query.direct_replay import DIRECT_REPLAY_PROTOCOL
+from finance_query.independent_critic import INDEPENDENT_CRITIC_PROTOCOL
 
 
 ROOT = Path(__file__).parents[1]
@@ -44,24 +45,52 @@ class ExportReviewLabelTests(unittest.TestCase):
             "question_id": 1,
             "machine_consensus_status": "machine_calibrated",
             "valid_exact_candidates": [{"internal_table_uid": "table-1"}],
+            "replay_value": "10",
+            "replay_unit": "vnd",
         }
-        self.assertTrue(mod.machine_training_eligible(review, direct_replay=replay))
+        critic = {
+            "protocol": INDEPENDENT_CRITIC_PROTOCOL,
+            "status": "independent_ready",
+            "question_id": 1,
+            "reviewer_inputs_used": [],
+            "valid_candidates": [{"internal_table_uid": "table-1"}],
+            "critic_value": "10",
+            "critic_unit": "vnd",
+        }
+        self.assertTrue(
+            mod.machine_training_eligible(
+                review, direct_replay=replay, independent_critic=critic
+            )
+        )
 
         self.assertFalse(mod.machine_training_eligible(review, direct_replay=None))
-        replay["status"] = "shadow_ambiguous"
         self.assertFalse(mod.machine_training_eligible(review, direct_replay=replay))
+        replay["status"] = "shadow_ambiguous"
+        self.assertFalse(
+            mod.machine_training_eligible(
+                review, direct_replay=replay, independent_critic=critic
+            )
+        )
         replay["status"] = "shadow_replay_ready"
 
         review["machine_self_review"]["selected_assessment"]["raw_metric_identity"][
             "exact"
         ] = False
-        self.assertFalse(mod.machine_training_eligible(review, direct_replay=replay))
+        self.assertFalse(
+            mod.machine_training_eligible(
+                review, direct_replay=replay, independent_critic=critic
+            )
+        )
 
         review["machine_self_review"]["selected_assessment"]["raw_metric_identity"][
             "exact"
         ] = True
         review["machine_self_review"]["protocol"] = "raw_v2_canonical_context_v2"
-        self.assertFalse(mod.machine_training_eligible(review, direct_replay=replay))
+        self.assertFalse(
+            mod.machine_training_eligible(
+                review, direct_replay=replay, independent_critic=critic
+            )
+        )
 
 
 if __name__ == "__main__":

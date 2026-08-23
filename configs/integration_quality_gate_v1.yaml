@@ -1,0 +1,621 @@
+schema_version: 1
+protocol: vifinqa_integration_quality_gate_v1
+
+safety_defaults:
+  hierarchy_rrf_enabled: false
+  evidence_eligible: false
+  promotion_allowed: false
+
+reviewer_authority_policy:
+  path: configs/reviewer_authority_policy_v1.json
+  sha256: 057548f3c18bd514339887f39f3938a489be4d78607643e7eb075883fccef3e5
+
+baseline:
+  path: artifacts/runs/vifinqa-grounded-e2e-replay-v1_20260823-secure-baseline-v1/grounded_e2e_run_v1.json
+  sha256: 435d0a72d35edaf29ac335ca2880b0409477b15ecb824de24d52c9cd6a1488f1
+  run_status: complete_research_only
+  question_count: 1012
+  token_count: 14
+  sandbox_execution_count: 14
+  execution_status_counts:
+    route_incomplete: 951
+    binding_conflict: 47
+    execution_replay_ready: 14
+  answer_certificate_status_counts:
+    ABSTAIN: 1012
+  human_semantic_approval_count: 0
+
+hierarchy_ablations:
+  unconstrained:
+    path: artifacts/research/hierarchy_retrieval_ablation_v1_20260823/hierarchy_retrieval_ablation_v1.manifest.json
+    sha256: 1e01ce08c8a63a59e17f5e0a5dadadd93f1a9f6324990e27be7891c3bbe2be80
+    explicit_context_filter: false
+    expected_statuses:
+      base: rejected_or_inconclusive_not_promoted
+      finetuned: rejected_or_inconclusive_not_promoted
+  context_safe:
+    path: artifacts/research/hierarchy_retrieval_ablation_context_safe_v1_20260823/hierarchy_retrieval_ablation_v1.manifest.json
+    sha256: 9225cb01588dde0ad4ca5831c62abe73a7be97088adda430754b8b2466146ff0
+    explicit_context_filter: true
+    expected_statuses:
+      base: eligible_for_followup_experiment_not_promoted
+      finetuned: rejected_or_inconclusive_not_promoted
+
+coverage_diagnostics:
+  path: artifacts/research/grounded_coverage_diagnostics_v1_20260823/grounded_coverage_diagnostics_v1.manifest.json
+  sha256: 7340bcc965bf9ef0bb10465d66d21f796502c01352f1953bf3bb377bddeb618a
+  route_remediation_count: 951
+  binding_conflict_remediation_count: 47
+
+human_handoff:
+  path: artifacts/research/semantic_binding_human_handoff_v1_20260823/semantic_binding_human_handoff_v1.manifest.json
+  sha256: 42c6bb0ab8a5ae64f902c54e2e46753ce5e7fbc437a0cf4d829ac19483a5a754
+  review_item_count: 14
+  human_decision_count: 0
+
+context_unit_v3:
+  path: artifacts/runs/vifinqa-grounded-e2e-context-unit-v3_20260823-final/grounded_e2e_run_v1.json
+  sha256: b29b28ef47761a8ff225c6a5a03a096be9ea3ef2800597b38b99010fc1ca7f33
+  binding_protocol: v3_context_unit
+  token_count: 15
+  sandbox_execution_count: 15
+  execution_status_counts:
+    route_incomplete: 951
+    binding_conflict: 46
+    execution_replay_ready: 15
+  answer_certificate_status_counts:
+    ABSTAIN: 1012
+  human_semantic_approval_count: 0
+
+route_semantics_v5:
+  path: artifacts/research/production_coverage_iteration_v9_route_semantics/route_completeness_overlay_v5.manifest.json
+  sha256: cacf218d9f1db10f0ea9453d9953c0675aefc54c858ebb4543db7d2abb1ba1f9
+  route_status_counts:
+    composed_execution_required: 597
+    route_complete: 62
+    route_incomplete: 353
+
+operation_graph_review:
+  path: artifacts/research/operation_graph_review_v1_20260823/operation_graph_review_queue_v1.manifest.json
+  sha256: 44bc3ee0813c23c571e2821ba3eb17320d895009afc59396e5794628ce4014e6
+  queue_item_count: 597
+  human_decision_count: 0
+  queue_status_counts:
+    blocked_missing_context: 564
+    review_required_operation_graph: 33
+
+binding_conflict_workbench:
+  path: artifacts/research/binding_conflict_workbench_v3_remaining_20260823/binding_conflict_workbench_v1.manifest.json
+  sha256: 5f38e0f91908eba963c0585c0ec1c75ce67403ae8f7c6a55717e6b893116a467
+  binding_conflict_count: 46
+  source_title_unit_candidate_count: 0
+  human_decision_count: 0
+
+human_handoff_v3:
+  path: artifacts/research/semantic_binding_human_handoff_v3_context_unit_20260823/semantic_binding_human_handoff_v1.manifest.json
+  sha256: f4d3a0f6dc7d1dcea48326c3227ad80953ca02a9a8e5c36ea5c142ab08ab7c13
+  review_item_count: 15
+  human_decision_count: 0
+
+period_title_recovery_v2:
+  path: artifacts/research/production_coverage_iteration_v11_period_title/period_column_candidate_packets_v2_exact_source_title.manifest.json
+  sha256: f59faba9f3fea965adcfd41008725204e7cafb7bf5a867c0ee96cd5c8acf8a69
+  recovered_question_count: 14
+  packet_status_counts:
+    ambiguous_period_columns: 9
+    no_period_column: 2
+    packet_blocked: 962
+    unique_period_column_candidate: 39
+  recovery_reason_counts:
+    NAVIGATION_CANDIDATE_NOT_UNIQUE: 2
+    QUESTION_SOURCE_ENTITY_NOT_CORROBORATED: 1
+    RECOVERED_EXACT_SOURCE_TITLE_CURRENT_HEADER: 16
+
+grounded_v4:
+  path: artifacts/runs/vifinqa-grounded-e2e-period-title-v4_20260823-final/grounded_e2e_run_v1.json
+  sha256: b3752ecac4b7cb9edc20dd0c68e0fa0d92d7fa4c561b31397a1000997677a65b
+  binding_protocol: v3_context_unit
+  token_count: 23
+  sandbox_execution_count: 23
+  execution_status_counts:
+    route_incomplete: 950
+    binding_conflict: 39
+    execution_replay_ready: 23
+  answer_certificate_status_counts:
+    ABSTAIN: 1012
+  human_semantic_approval_count: 0
+  period_field_status_counts:
+    PASS: 23
+    UNRESOLVED: 859
+
+grounded_v5_human_verified:
+  path: artifacts/runs/vifinqa-grounded-e2e-human-verified-v5_20260823-final/grounded_e2e_run_v1.json
+  sha256: 20a687b9c8f3474f7f4cb926d02bd1299362c10d8151c24743c6739ae9bdadaa
+  binding_protocol: v3_context_unit
+  token_count: 23
+  sandbox_execution_count: 23
+  execution_status_counts:
+    route_incomplete: 950
+    binding_conflict: 39
+    execution_replay_ready: 23
+  answer_certificate_status_counts:
+    ABSTAIN: 989
+    ANSWER_CERTIFICATE_COMPLETE_CAMPAIGN_ONLY: 23
+  evidence_binding_status_counts:
+    BLOCKED: 859
+    BOUND: 23
+  human_semantic_approval_count: 23
+  release_authorized: false
+  authorization_status: blocked
+
+grounded_campaign_review_v5:
+  path: artifacts/research/grounded_campaign_review_v5_human_verified_v2_20260823/grounded_campaign_review_handoff_v1.manifest.json
+  sha256: 624582afaea4d2d3f524fadd9202b4dfe21a9060a01e46521ac78cb75cb287b7
+  campaign_status: awaiting_independent_campaign_review
+  candidate_count: 23
+  human_campaign_decision_count: 0
+
+binding_conflict_workbench_v4:
+  path: artifacts/research/binding_conflict_workbench_v4_period_title_20260823/binding_conflict_workbench_v1.manifest.json
+  sha256: 18a605628c64435f2ba17e15159bded084da6f66045a2d9d65bd3516d93a2830
+  binding_conflict_count: 39
+  classification_counts:
+    exact_period_header_review_required: 1
+    upstream_navigation_candidate_required: 38
+  human_decision_count: 0
+
+operation_graph_candidates_v1:
+  path: artifacts/research/operation_graph_candidates_v4_semantic_fingerprints_20260823/operation_graph_candidates_v1.manifest.json
+  sha256: 2cfa2065a2c309bec88c5cc1ff166c2ac135a5be31c8cd88bb89b060c7f10701
+  candidate_item_count: 82
+  candidate_status_counts:
+    blocked_graph_candidate: 80
+    typed_candidate_validated_not_authorized: 2
+
+route_context_repairs_v1:
+  path: artifacts/research/route_context_repair_candidates_v3_semantic_axes_20260823/route_context_repair_candidates_v1.manifest.json
+  sha256: 4d5f353dd3b5c4733a7dc95f26a667b518a4aa771bbf42c2d80ef27ace421707
+  queue_item_count: 564
+  repair_status_counts:
+    blocked_no_literal_repair: 515
+    machine_provisional_requires_human: 49
+  human_decision_count: 0
+
+route_context_chatgpt_review_v1:
+  path: artifacts/research/route_context_chatgpt_review_v3_semantic_axes_20260823/route_context_chatgpt_decisions_v1.manifest.json
+  sha256: 0b724f37b3d50c1e5980915828b7da849744845b889c8f13fd7fdc606f1e909a
+  decision_count: 564
+  approve_all_literal_candidates: 49
+  confirmed_incomplete_literal_blocker: 515
+  candidate_decision_counts:
+    approve_literal_label: 259
+
+route_context_chatgpt_promotion_v1:
+  path: artifacts/research/operation_graph_review_v3_context_promoted_20260823/operation_graph_review_queue_v2.manifest.json
+  sha256: 88dd2bd8b00e2ac3b750413a96b09c3aac995b313640f65bf09635ff5cfbeb43
+  queue_item_count: 597
+  promoted_question_count: 49
+  queue_status_counts:
+    blocked_missing_context: 515
+    review_required_operation_graph: 82
+
+navigation_remediation_v1:
+  path: artifacts/research/navigation_remediation_v1_20260823/navigation_remediation_queue_v1.manifest.json
+  sha256: ec915418d82eb00bcaca2bbf31e644ec97b8a65b1924a91caa2e66b6142a4900
+  queue_item_count: 38
+  primary_cause_counts:
+    ENTITY: 14
+    MULTIPLE_INSEPARABLE_BLOCKERS: 13
+    ROUTING_ELIGIBILITY: 4
+    SECTOR: 7
+  automatic_materialization_eligible_count: 0
+  human_decision_count: 0
+
+navigation_review_evidence_v1:
+  path: artifacts/research/navigation_review_evidence_v1_20260823/navigation_review_evidence_v1.manifest.json
+  sha256: 8099a8197abd7cf3ac68a8dcb2e2a3733cbe23693ff5f0010d624dba9fcd5de6
+  packet_count: 38
+  candidate_count: 620
+  exact_identity_scope_year_table_count: 17
+  numeric_value_exposure_count: 0
+  primary_cause_counts:
+    ENTITY: 14
+    MULTIPLE_INSEPARABLE_BLOCKERS: 13
+    ROUTING_ELIGIBILITY: 4
+    SECTOR: 7
+
+navigation_chatgpt_review_v1:
+  path: artifacts/research/navigation_chatgpt_review_v1_20260823/navigation_chatgpt_decisions_v1.manifest.json
+  sha256: 8f62faa01f494442ae1d6b9b77260a2c57e8e4f0637e50cfbd13729e21328359
+  decision_count: 38
+  approve_navigation_candidate_semantics: 1
+  reject_candidate_set: 7
+  confirmed_upstream_blocker: 30
+  candidate_decision_counts:
+    approve_navigation_candidate_semantics: 1
+    reject_navigation_candidate: 619
+
+human_handoff_v4:
+  path: artifacts/research/semantic_binding_human_handoff_v4_period_title_20260823/semantic_binding_human_handoff_v1.manifest.json
+  sha256: 2ad1f2f817edb728696f5354585e787a7a340b0d6edc275d3ed5ca50968b74d3
+  review_item_count: 23
+  human_decision_count: 0
+
+entity_role_provenance_candidates_v1:
+  path: artifacts/research/entity_role_provenance_candidates_v1_20260823/entity_role_provenance_candidates_v1.manifest.json
+  sha256: f4ef87adb1f1ffe2ff316c0801370d66ad4e3dce69fe1dad1c1ad9bf0ea7ce99
+  queue_item_count: 21
+  candidate_count: 59
+  documents_with_role_literal: 14
+  documents_without_role_literal: 7
+  already_bound_in_source_title: 1
+
+entity_role_chatgpt_reviews_v1:
+  path: artifacts/research/entity_role_provenance_chatgpt_decisions_v1_20260823/entity_role_provenance_chatgpt_decisions_v1.manifest.json
+  sha256: 2a8117e3d409198f1b29fbe064bf89b9de04c1690f1eb6bd25f40334277f46ea
+  decision_count: 21
+  approved_role_provenance: 10
+  rejected_candidate_set: 11
+
+entity_role_augmentation_v7:
+  path: artifacts/research/semantic_binding_review_v7_document_role_chatgpt_20260823/semantic_entity_role_provenance_augmentation_v1.manifest.json
+  sha256: 8bd7b0564ce380971b5e3e14af40f184d61e4927e6315f4a0e95e25108f02945
+  decision_count: 23
+  document_line_role_augmented: 10
+  existing_title_role_preserved: 1
+  role_not_applicable: 1
+  role_review_rejected: 11
+
+grounded_v7_document_role:
+  path: artifacts/runs/vifinqa-grounded-e2e-document-entity-role-v7_20260823-lock1/grounded_e2e_run_v1.json
+  sha256: d9ebc2a39ee2bdac6943fd0ad8a17ca12a9b9ec5f3828f552b43e8d454f0b36d
+  binding_protocol: v3_context_unit
+  token_count: 23
+  sandbox_execution_count: 23
+  execution_status_counts:
+    route_incomplete: 950
+    binding_conflict: 39
+    execution_replay_ready: 23
+  answer_certificate_status_counts:
+    ABSTAIN: 1000
+    ANSWER_CERTIFICATE_COMPLETE_CAMPAIGN_ONLY: 12
+  evidence_binding_status_counts:
+    BLOCKED: 870
+    BOUND: 12
+  entity_role_field_status_counts:
+    NOT_APPLICABLE: 702
+    PASS: 11
+    UNRESOLVED: 169
+  human_semantic_approval_count: 23
+  release_authorized: false
+  authorization_status: blocked
+
+grounded_campaign_review_v7:
+  path: artifacts/research/grounded_campaign_review_v7_document_role_20260823/grounded_campaign_review_handoff_v1.manifest.json
+  sha256: 2650cc95cef49115884b0ab0fdf1e2116e3be862a4e25a86056514b43ff02f32
+  campaign_status: awaiting_independent_campaign_review
+  candidate_count: 12
+  entity_role_issue_count: 0
+  human_campaign_decision_count: 0
+
+grounded_campaign_chatgpt_audit_v7:
+  path: artifacts/research/grounded_campaign_chatgpt_audit_v7_20260823/grounded_campaign_chatgpt_audit_v1.manifest.json
+  sha256: d175f1afad4a8deceb8a24a1b0be0b228a8302ce21c147d21ff8af51521453fd
+  status: campaign_revision_required
+  candidate_count: 12
+  candidate_review_outcome_counts:
+    approved_candidate: 11
+    semantic_mismatch: 1
+  blocking_issue_count: 1
+  numeric_value_exposure_count: 0
+  scope_coverage:
+    - consolidated
+    - separate
+  period_method_coverage:
+    - v3_exact_header_and_source_title_duration_v1
+    - v3_exact_header_balance_sheet_date_v1
+    - v3_exact_source_title_current_balance_header_v1
+    - v3_exact_source_title_current_duration_header_v1
+
+semantic_binding_chatgpt_correction_q702_v2:
+  path: artifacts/research/semantic_binding_chatgpt_correction_q702_20260823_v2/semantic_binding_correction_review_v1.manifest.json
+  sha256: 5d68d101e3afc7dc73373b6b2d40e9ad6241049102fb30ed0151ed8e1aa26be5
+  status: reviewed_for_deterministic_rebinding
+  correction_count: 1
+  numeric_literal_exposure_count: 0
+  superseded_human_decision_count: 1
+
+grounded_v8_semantic_correction:
+  path: artifacts/runs/vifinqa-grounded-e2e-semantic-correction-v8_20260823-lock3/grounded_e2e_run_v1.json
+  sha256: 65132b3f616a68230151f886ed48c30f90ff52be4306940774bef0fec81a3162
+  binding_protocol: v4_semantic_correction
+  chatgpt_semantic_correction_count: 1
+  human_semantic_approval_count: 23
+  answer_certificate_status_counts:
+    ABSTAIN: 1000
+    ANSWER_CERTIFICATE_COMPLETE_CAMPAIGN_ONLY: 12
+  release_authorized: false
+  authorization_status: blocked
+
+grounded_campaign_review_v8:
+  path: artifacts/research/grounded_campaign_review_v8_semantic_correction_20260823_lock3/grounded_campaign_review_handoff_v1.manifest.json
+  sha256: f74fc30e88978629ddf237e19d7e058768718c203e18f9fffb6b118396579064
+  campaign_status: awaiting_independent_campaign_review
+  candidate_count: 12
+  entity_role_issue_count: 0
+  human_campaign_decision_count: 0
+
+grounded_campaign_chatgpt_audit_v8:
+  path: artifacts/research/grounded_campaign_chatgpt_audit_v8_20260823_lock3/grounded_campaign_chatgpt_audit_v1.manifest.json
+  sha256: 0853bda7f32abccdffb735d76099076f7055716400ce38b5a0af2f63e3d9b945
+  status: campaign_approved_not_released
+  candidate_count: 12
+  candidate_review_outcome_counts:
+    approved_candidate: 12
+  blocking_issue_count: 0
+  numeric_value_exposure_count: 0
+
+navigation_binding_chatgpt_promotion_q167_v1:
+  path: artifacts/research/navigation_binding_chatgpt_promotion_q167_20260823_v1/navigation_binding_promotion_review_v1.manifest.json
+  sha256: 37733b1c254ed8288c774a68a743749f37075cf37650c125e1fdb787bc081c82
+  status: reviewed_for_deterministic_navigation_binding
+  promotion_count: 1
+  numeric_value_exposure_count: 0
+
+grounded_v9_navigation_promotion:
+  path: artifacts/runs/vifinqa-grounded-e2e-navigation-promotion-v9_20260823-lock1/grounded_e2e_run_v1.json
+  sha256: f620215827f567a739f3f53efb8a2bacf0a29a2091814a53aaaf5fcf0f36bd14
+  binding_protocol: v5_navigation_promotion
+  chatgpt_semantic_correction_count: 1
+  chatgpt_navigation_promotion_count: 1
+  human_semantic_approval_count: 23
+  answer_certificate_status_counts:
+    ABSTAIN: 999
+    ANSWER_CERTIFICATE_COMPLETE_CAMPAIGN_ONLY: 13
+  release_authorized: false
+  authorization_status: blocked
+
+grounded_campaign_review_v9:
+  path: artifacts/research/grounded_campaign_review_v9_navigation_promotion_20260823_lock2/grounded_campaign_review_handoff_v1.manifest.json
+  sha256: 81d2307831a031129020cda143140ea51e9a2e32ae140024668d704a3f07c1aa
+  campaign_status: awaiting_independent_campaign_review
+  candidate_count: 13
+  entity_role_issue_count: 0
+  human_campaign_decision_count: 0
+
+grounded_campaign_chatgpt_audit_v9:
+  path: artifacts/research/grounded_campaign_chatgpt_audit_v9_20260823_lock2/grounded_campaign_chatgpt_audit_v1.manifest.json
+  sha256: d72ed7351517b47efcc40d7e61fad7e99045ae3337b7061548aee8986b1eff7e
+  status: campaign_approved_not_released
+  candidate_count: 13
+  candidate_review_outcome_counts:
+    approved_candidate: 13
+  blocking_issue_count: 0
+  numeric_value_exposure_count: 0
+
+cross_entity_binding_chatgpt_promotion_q750_v1:
+  path: artifacts/research/cross_entity_binding_chatgpt_promotion_q750_20260823_v1/cross_entity_binding_promotion_review_v1.manifest.json
+  sha256: 852ed92b1bc688f5801fb1f0e74244cf2f90fd7774a83777e15302232744c321
+  promotion_count: 1
+  operand_count: 2
+  numeric_value_exposure_count: 0
+
+grounded_v10_cross_entity:
+  path: artifacts/runs/vifinqa-grounded-e2e-cross-entity-v10_20260823-lock1/grounded_e2e_run_v1.json
+  sha256: 193172a8d9a27d8c2aac260a4bf0ef72fff28b92cefa2da38fc8054c3d245fc6
+  binding_protocol: v6_cross_entity_composition
+  chatgpt_cross_entity_promotion_count: 1
+  human_semantic_approval_count: 23
+  effective_semantic_approval_count: 26
+  answer_certificate_status_counts:
+    ABSTAIN: 998
+    ANSWER_CERTIFICATE_COMPLETE_CAMPAIGN_ONLY: 14
+  evidence_binding_status_counts:
+    BLOCKED: 867
+    BOUND: 15
+  release_authorized: false
+  authorization_status: blocked
+
+grounded_campaign_review_v10:
+  path: artifacts/research/grounded_campaign_review_v10_cross_entity_20260823_lock1/grounded_campaign_review_handoff_v1.manifest.json
+  sha256: 9f85a39d4f10798e637cb0f16f375de6f0534bf5c63e0abc8d933641af4efa03
+  campaign_status: awaiting_independent_campaign_review
+  candidate_count: 14
+  entity_role_issue_count: 0
+  human_campaign_decision_count: 0
+
+grounded_campaign_chatgpt_audit_v10:
+  path: artifacts/research/grounded_campaign_chatgpt_audit_v10_cross_entity_20260823_lock2/grounded_campaign_chatgpt_audit_v1.manifest.json
+  sha256: bf1df10347a777e4132fbd6b5f65dda54dc211a3344448065d3b77fc1958c11f
+  status: campaign_approved_not_released
+  candidate_count: 14
+  candidate_review_outcome_counts:
+    approved_candidate: 14
+  blocking_issue_count: 0
+  numeric_value_exposure_count: 0
+  verification_authority: human_equivalent
+  provenance_preserved_as: chatgpt_verified
+  release_authority_included: false
+
+operation_graph_chatgpt_review_v1:
+  path: artifacts/research/operation_graph_chatgpt_review_v4_semantic_fingerprints_20260823/operation_graph_chatgpt_decisions_v1.manifest.json
+  sha256: ef87daa670a2f9f68611b2d2601b70a2b321824d84776cd75c617d486593f79f
+  decision_count: 82
+  approve_graph_semantics: 2
+  confirmed_blocker: 80
+
+cross_entity_operand_packets_v1:
+  path: artifacts/research/cross_entity_operand_review_q746_q750_v1_20260823/cross_entity_operand_review_packets_v1.manifest.json
+  sha256: c8d3292faeefda27411ac2a44b237993110cbfa258cc5d93a10c81a82e4a859b
+  question_count: 2
+  operand_count: 4
+  numeric_value_exposure_count: 0
+  packet_status_counts:
+    blocked_missing_entity_role: 1
+    reviewable_exact_operand_set: 1
+
+cross_entity_operand_chatgpt_review_v1:
+  path: artifacts/research/cross_entity_operand_chatgpt_review_q746_q750_v1_20260823/cross_entity_operand_chatgpt_decisions_v1.manifest.json
+  sha256: f2f997807126449a61615dc14cdb518daf86d6564f71c18521e7902bdf08f9f5
+  decision_count: 2
+  approve_exact_operand_set: 1
+  confirm_source_blocker: 1
+
+cross_entity_subtract_materialization_v1:
+  path: artifacts/research/cross_entity_subtract_materialization_q750_v1_20260823/cross_entity_subtract_materialization_v1.manifest.json
+  sha256: 76ae056042dda437ff46bca7e86f358203622d8526e86cc87c85fd28efd29804
+  question_count: 2
+  token_count: 2
+  private_execution_count: 1
+  execution_status_counts:
+    dependency_blocked: 1
+    execution_replay_ready_research_only: 1
+
+cross_entity_operand_packets_q746_v2:
+  path: artifacts/research/cross_entity_operand_review_q746_v2_20260823/cross_entity_operand_review_packets_v1.manifest.json
+  sha256: d01f1bc3fe30542eeaf3d0ee9a1b3365471fbb3181c7e8992a437f158c9d7b47
+  question_count: 1
+  operand_count: 2
+  numeric_value_exposure_count: 0
+  packet_status_counts:
+    reviewable_exact_operand_set: 1
+
+cross_entity_operand_dual_chatgpt_adjudication_q746_v2:
+  path: artifacts/research/cross_entity_operand_dual_chatgpt_adjudication_q746_v2_20260823/cross_entity_operand_dual_chatgpt_adjudication_v1.manifest.json
+  sha256: c4039219594bd41719643d655eb93945f7da0972564717d17eba509a9cf0125e
+  status: dual_chatgpt_reviews_reconciled_not_executed
+  decision_count: 1
+  approve_exact_operand_set: 1
+
+cross_entity_subtract_materialization_q746_v2:
+  path: artifacts/research/cross_entity_subtract_materialization_q746_v2_20260823/cross_entity_subtract_materialization_v1.manifest.json
+  sha256: c73926700de0d13483f367b25c9adb14f724e4ed0281b6edeed278f940cf043b
+  question_count: 1
+  token_count: 2
+  private_execution_count: 1
+  execution_status_counts:
+    execution_replay_ready_research_only: 1
+
+cross_entity_binding_chatgpt_promotion_q746_q750_v2:
+  path: artifacts/research/cross_entity_binding_chatgpt_promotion_q746_q750_v2_20260823/cross_entity_binding_promotion_review_v1.manifest.json
+  sha256: be59ecddb3e0dfdeb546906f41a0be8587391b496b207ca8f882fa1c2132f9de
+  promotion_count: 2
+  operand_count: 4
+  numeric_value_exposure_count: 0
+
+grounded_v11_dual_review_cross_entity:
+  path: artifacts/runs/vifinqa-grounded-e2e-dual-review-cross-entity-v11_20260823-lock1/grounded_e2e_run_v1.json
+  sha256: 4b5b851ad354540e635a5ae8bb668f2ee9e6a1f3b63f77547ada4b798fe8114e
+  binding_protocol: v6_cross_entity_composition
+  chatgpt_cross_entity_promotion_count: 2
+  human_semantic_approval_count: 23
+  effective_semantic_approval_count: 28
+  answer_certificate_status_counts:
+    ABSTAIN: 997
+    ANSWER_CERTIFICATE_COMPLETE_CAMPAIGN_ONLY: 15
+  evidence_binding_status_counts:
+    BLOCKED: 865
+    BOUND: 17
+  release_authorized: false
+  authorization_status: blocked
+
+grounded_campaign_review_v11:
+  path: artifacts/research/grounded_campaign_review_v11_dual_review_cross_entity_20260823_lock1/grounded_campaign_review_handoff_v1.manifest.json
+  sha256: 30d18f4dad63c0cfb37324c0397df67f2a38c60b639bf116b31a30524c0faee8
+  campaign_status: awaiting_independent_campaign_review
+  candidate_count: 15
+  entity_role_issue_count: 0
+  human_campaign_decision_count: 0
+
+grounded_campaign_chatgpt_audit_v11:
+  path: artifacts/research/grounded_campaign_chatgpt_audit_v11_dual_review_cross_entity_20260823_lock1/grounded_campaign_chatgpt_audit_v1.manifest.json
+  sha256: e8c617d666ee5cde2f61c67298ade63e671f597b6c7b4f7f587bd7ce4086b40d
+  status: campaign_approved_not_released
+  candidate_count: 15
+  candidate_review_outcome_counts:
+    approved_candidate: 15
+  blocking_issue_count: 0
+  numeric_value_exposure_count: 0
+  verification_authority: human_equivalent
+  provenance_preserved_as: chatgpt_verified
+  release_authority_included: false
+
+entity_role_relational_candidates_v1:
+  path: artifacts/research/entity_role_relational_candidates_v1_20260823/entity_role_relational_candidates_v1.manifest.json
+  sha256: b7165b7348eea34921cf282c0b861fa16ef7ed89424d873bb96683520eef5b3f
+  queue_item_count: 11
+  candidate_count: 26
+  answer_numeric_value_exposure_count: 0
+  documents_with_relational_candidate: 11
+
+entity_role_relational_chatgpt_proposal_v1:
+  path: artifacts/research/entity_role_relational_chatgpt_proposal_v1_20260823/entity_role_relational_chatgpt_decisions_v1.manifest.json
+  sha256: 49c3d9594ad90a5761378f74ec998f37b0f2916955cdbabef2446e2b9ba05f85
+  decision_count: 11
+  approve_relational_parent_role: 11
+
+entity_role_relational_chatgpt_critic_v1:
+  path: artifacts/research/entity_role_relational_chatgpt_critic_v1_20260823/entity_role_relational_chatgpt_decisions_v1.manifest.json
+  sha256: 84b62e98645778ecfb7a618290bfb3c3d7d896fc00869a1ba14dc51b7633aab4
+  decision_count: 11
+  approve_relational_parent_role: 11
+
+entity_role_relational_dual_chatgpt_v1:
+  path: artifacts/research/entity_role_relational_dual_chatgpt_v1_20260823/entity_role_relational_dual_chatgpt_adjudication_v1.manifest.json
+  sha256: bba3a9abd4842693f53c7ea579368dbf884e9c89dbb809289869273544f7162f
+  status: dual_chatgpt_reviews_reconciled_not_materialized
+  decision_count: 11
+  approve_relational_parent_role: 11
+
+semantic_binding_relational_role_augmentation_v12:
+  path: artifacts/research/semantic_binding_review_v12_relational_role_chatgpt_20260823/semantic_entity_role_relational_augmentation_v1.manifest.json
+  sha256: 5d88ddd6543651e59ccde8747cb71cdc4015e9ddd40cb39d1d85a894353fd1dc
+  status: relational_role_consensus_materialized_not_released
+  decision_count: 23
+  existing_role_preserved: 11
+  relational_role_augmented: 11
+  role_not_applicable: 1
+
+grounded_v12_relational_entity_role:
+  path: artifacts/runs/vifinqa-grounded-e2e-relational-entity-role-v12_20260823-lock1/grounded_e2e_run_v1.json
+  sha256: 82ff3c148b558e66cd22715f94c622416187ca3c56791130361d44e1ec35f182
+  binding_protocol: v6_cross_entity_composition
+  chatgpt_cross_entity_promotion_count: 2
+  human_semantic_approval_count: 23
+  effective_semantic_approval_count: 28
+  answer_certificate_status_counts:
+    ABSTAIN: 986
+    ANSWER_CERTIFICATE_COMPLETE_CAMPAIGN_ONLY: 26
+  evidence_binding_status_counts:
+    BLOCKED: 854
+    BOUND: 28
+  entity_role_field_status_counts:
+    NOT_APPLICABLE: 702
+    PASS: 27
+    UNRESOLVED: 153
+  release_authorized: false
+  authorization_status: blocked
+
+grounded_campaign_review_v12:
+  path: artifacts/research/grounded_campaign_review_v12_relational_entity_role_20260823_lock1/grounded_campaign_review_handoff_v1.manifest.json
+  sha256: b14bb87f4481d5aac64c48749fe73e0d38e642f34ee3c39fc399dc6a2230fb6f
+  campaign_status: awaiting_independent_campaign_review
+  candidate_count: 26
+  entity_role_issue_count: 0
+  human_campaign_decision_count: 0
+
+grounded_campaign_chatgpt_audit_v12:
+  path: artifacts/research/grounded_campaign_chatgpt_audit_v12_relational_entity_role_20260823_lock1/grounded_campaign_chatgpt_audit_v1.manifest.json
+  sha256: 927689e109471582ce5592bdf94bc615943d20ed3af09223820a43c526918d0f
+  status: campaign_approved_not_released
+  candidate_count: 26
+  candidate_review_outcome_counts:
+    approved_candidate: 26
+  blocking_issue_count: 0
+  numeric_value_exposure_count: 0
+  verification_authority: human_equivalent
+  provenance_preserved_as: chatgpt_verified
+  release_authority_included: false
+
+security_review:
+  path: docs/SECURITY_REVIEW_NUMERIC_EXECUTION.md

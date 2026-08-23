@@ -66,6 +66,73 @@ class FinancialMetricFormulaTests(unittest.TestCase):
             ["Nợ ngắn hạn", "Vốn chủ sở hữu"],
         )
 
+    def test_literal_fraction_uses_only_question_stated_operands(self):
+        spec = infer_formula_spec(
+            "Tỷ trọng các khoản tương đương tiền trên tổng tài sản của CTCP "
+            "Viễn thông FPT cuối năm 2024 là bao nhiêu %?"
+        )
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        self.assertEqual(spec["formula_id"], "explicit_stated_fraction")
+        self.assertEqual(spec["expression"], "numerator / denominator × 100%")
+        self.assertEqual(
+            [operand["metric_hints"] for operand in spec["operands"]],
+            [["cac khoan tuong duong tien"], ["tong tai san"]],
+        )
+        self.assertEqual([operand["years"] for operand in spec["operands"]], [[2024], [2024]])
+
+    def test_literal_fraction_supports_trong_and_times_without_assuming_a_convention(self):
+        share = infer_formula_spec(
+            "Tỷ trọng tài sản ngắn hạn trong tổng nguồn vốn của công ty mẹ "
+            "CTCP Địa ốc Sài Gòn Thương Tín đến ngày 31/12/2025 là bao nhiêu %?"
+        )
+        self.assertIsNotNone(share)
+        assert share is not None
+        self.assertEqual(share["formula_id"], "explicit_stated_fraction")
+        self.assertEqual(
+            [operand["metric_hints"] for operand in share["operands"]],
+            [["tai san ngan han"], ["tong nguon von"]],
+        )
+
+        multiple = infer_formula_spec(
+            "Hệ số chi phí lãi vay trên dư nợ vay dài hạn của HDC năm 2023 là bao nhiêu lần?"
+        )
+        self.assertIsNotNone(multiple)
+        assert multiple is not None
+        self.assertEqual(multiple["output_unit"], "times")
+        self.assertEqual(multiple["expression"], "numerator / denominator")
+
+    def test_literal_fraction_does_not_invent_financial_shorthand_or_selection_operands(self):
+        self.assertIsNone(
+            infer_formula_spec("Tỷ suất lợi nhuận ròng của HBC năm 2016 là bao nhiêu %?")
+        )
+        selection = infer_formula_spec(
+            "Trong nhóm AAA và BBB, doanh nghiệp có tỷ lệ chi phí bán hàng trên "
+            "doanh thu thuần cao nhất năm 2023 là doanh nghiệp nào?"
+        )
+        self.assertIsNotNone(selection)
+        assert selection is not None
+        self.assertEqual(selection["formula_id"], "multi_stage_selection_unresolved")
+
+    def test_net_other_income_and_finance_synonyms_are_explicit_subtractions(self):
+        other = infer_formula_spec(
+            "Thu nhập khác thuần của công ty mẹ CEO năm 2018 là bao nhiêu tỷ đồng?"
+        )
+        self.assertIsNotNone(other)
+        assert other is not None
+        self.assertEqual(other["formula_id"], "net_other_income")
+        self.assertEqual(
+            [operand["operand_id"] for operand in other["operands"]],
+            ["other_income", "other_expense"],
+        )
+
+        finance = infer_formula_spec(
+            "Tính lãi ròng từ hoạt động tài chính của công ty mẹ KBC năm 2015."
+        )
+        self.assertIsNotNone(finance)
+        assert finance is not None
+        self.assertEqual(finance["formula_id"], "net_finance_result")
+
     def test_ambiguous_dividend_yield_is_not_silently_defined(self):
         spec = infer_formula_spec(
             "Tỷ suất sinh lời từ cổ tức đầu tư năm 2023 của công ty mẹ HHS là bao nhiêu %?"

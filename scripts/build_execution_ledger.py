@@ -35,6 +35,7 @@ from finance_query.evidence_context import (  # noqa: E402
     validate_evidence_context_sidecar,
 )
 from finance_query.schemas import DirectBinding  # noqa: E402
+from finance_query.typed_planner import TYPED_OPERAND_PLAN_PROTOCOL  # noqa: E402
 from finance_query.report_entities import (  # noqa: E402
     FORMULA_ENTITY_RESOLUTION_POLICY,
     REPORT_ENTITY_RESOLUTION_POLICY,
@@ -105,9 +106,10 @@ def validate_formula_evidence_sidecar(
 ) -> dict[str, Any]:
     """Accept only numeric-safe source-discovery Formula EvidenceSets.
 
-    V5/V6 additionally record source entity resolution. The resolver is
-    revalidated as navigation metadata and cannot supply numerical evidence or
-    a reporting scope.
+    V5+ records source entity resolution. The resolver is revalidated as
+    navigation metadata and cannot supply numerical evidence or a reporting
+    scope. V7 additionally binds the evidence set to a fail-closed typed
+    operand-plan sidecar.
     """
     if sidecar.parent != bundle:
         raise ValueError("Formula evidence sidecar must reside in the review bundle")
@@ -116,8 +118,8 @@ def validate_formula_evidence_sidecar(
         raise FileNotFoundError("Formula evidence sidecar or manifest is missing")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     version = int(manifest.get("schema_version") or 0)
-    if version not in {3, 5, 6}:
-        raise ValueError("Formula execution requires Formula EvidenceSet schema_version=3, 5, or 6")
+    if version not in {3, 5, 6, 7}:
+        raise ValueError("Formula execution requires Formula EvidenceSet schema_version=3, 5, 6, or 7")
     expected = {
         "bundle_review_items_sha256": bundle / "review_items.jsonl",
         "bundle_tables_sha256": bundle / "tables.jsonl",
@@ -154,7 +156,7 @@ def validate_formula_evidence_sidecar(
         if str(resolution.get("alias_manifest_sha256") or "") != sha256_file(aliases_manifest):
             raise ValueError("Formula V5 source entity alias manifest hash mismatch")
         validate_report_entity_alias_sidecar(bundle, aliases_path)
-    if version == 6:
+    if version >= 6:
         resolution = manifest.get("source_entity_resolution") or {}
         if not bool(resolution.get("enabled")):
             raise ValueError("Formula V6 execution requires source entity resolver provenance")
@@ -192,6 +194,23 @@ def validate_formula_evidence_sidecar(
             raise ValueError("Formula V6 exact-ticker resolution count cannot be negative")
         if aliases_path is None and ticker_resolution_count < 1:
             raise ValueError("Formula V6 needs title aliases or an exact ticker resolution")
+    if version >= 7:
+        typed = manifest.get("typed_operand_plans") or {}
+        if not bool(typed.get("enabled")):
+            raise ValueError("Formula V7 execution requires typed operand plans")
+        if str(typed.get("protocol") or "") != TYPED_OPERAND_PLAN_PROTOCOL:
+            raise ValueError("Formula V7 typed operand protocol is invalid")
+        typed_name = str(typed.get("file") or "")
+        if not typed_name or Path(typed_name).name != typed_name:
+            raise ValueError("Formula V7 typed operand plan must be bundle-local")
+        typed_path = bundle / typed_name
+        typed_manifest = typed_path.with_suffix(".manifest.json")
+        if not typed_path.is_file() or not typed_manifest.is_file():
+            raise FileNotFoundError("Formula V7 typed operand plan or manifest is missing")
+        if str(typed.get("sidecar_sha256") or "") != sha256_file(typed_path):
+            raise ValueError("Formula V7 typed operand sidecar hash mismatch")
+        if str(typed.get("manifest_sha256") or "") != sha256_file(typed_manifest):
+            raise ValueError("Formula V7 typed operand manifest hash mismatch")
     if str(manifest.get("sidecar_sha256") or "") != sha256_file(sidecar):
         raise ValueError("Formula evidence sidecar hash does not match its manifest")
     return manifest

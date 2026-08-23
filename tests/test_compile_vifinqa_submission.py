@@ -109,6 +109,91 @@ class CompileViFinQASubmissionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "cover every"):
                 mod.validate_production_audit(path, {1, 2})
 
+    def test_release_gate_requires_ready_empty_blocker_lineage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ledger = root / "ledger.jsonl"
+            ledger.write_text("{}\n", encoding="utf-8")
+            ledger_manifest = ledger.with_suffix(".manifest.json")
+            ledger_manifest.write_text("{}\n", encoding="utf-8")
+            lineage = {key: "a" * 64 for key in mod.REQUIRED_LINEAGE_KEYS}
+            gate = root / "release-gate.json"
+            gate.write_text(
+                json.dumps(
+                    {
+                        "protocol": mod.PRODUCTION_RELEASE_GATE_PROTOCOL,
+                        "release_status": "ready_for_submission_compiler",
+                        "production_eligible": True,
+                        "submission_compilation_allowed": True,
+                        "submission_eligible": False,
+                        "answer_materialization_allowed": False,
+                        "blockers": [],
+                        "source_contract": {
+                            "evidence_eligible": False,
+                            "training_eligible": False,
+                            "submission_eligible": False,
+                            "promotion_allowed": False,
+                        },
+                        "inputs": {
+                            "bundle_review_items": {"sha256": lineage["review_items_sha256"]},
+                            "typed_plans": {"artifact": {"sha256": lineage["typed_operand_plans_sha256"]}},
+                            "production_independent_audit": {"artifact": {"sha256": lineage["independent_audit_sha256"]}},
+                            "production_execution_ledger": {
+                                "artifact": {"sha256": hashlib.sha256(ledger.read_bytes()).hexdigest()},
+                                "manifest": {"sha256": hashlib.sha256(ledger_manifest.read_bytes()).hexdigest()},
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            mod.validate_production_release_gate(gate, lineage=lineage, execution_ledger=ledger)
+            blocked = json.loads(gate.read_text())
+            blocked["release_status"] = "blocked"
+            gate.write_text(json.dumps(blocked), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "not ready"):
+                mod.validate_production_release_gate(gate, lineage=lineage, execution_ledger=ledger)
+
+    def test_release_gate_rejects_ledger_hash_not_bound_to_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ledger = root / "ledger.jsonl"
+            ledger.write_text("{}\n", encoding="utf-8")
+            ledger.with_suffix(".manifest.json").write_text("{}\n", encoding="utf-8")
+            lineage = {key: "a" * 64 for key in mod.REQUIRED_LINEAGE_KEYS}
+            gate = root / "release-gate.json"
+            gate.write_text(
+                json.dumps(
+                    {
+                        "protocol": mod.PRODUCTION_RELEASE_GATE_PROTOCOL,
+                        "release_status": "ready_for_submission_compiler",
+                        "production_eligible": True,
+                        "submission_compilation_allowed": True,
+                        "submission_eligible": False,
+                        "answer_materialization_allowed": False,
+                        "blockers": [],
+                        "source_contract": {
+                            "evidence_eligible": False,
+                            "training_eligible": False,
+                            "submission_eligible": False,
+                            "promotion_allowed": False,
+                        },
+                        "inputs": {
+                            "bundle_review_items": {"sha256": lineage["review_items_sha256"]},
+                            "typed_plans": {"artifact": {"sha256": lineage["typed_operand_plans_sha256"]}},
+                            "production_independent_audit": {"artifact": {"sha256": lineage["independent_audit_sha256"]}},
+                            "production_execution_ledger": {
+                                "artifact": {"sha256": "b" * 64},
+                                "manifest": {"sha256": hashlib.sha256(ledger.with_suffix(".manifest.json").read_bytes()).hexdigest()},
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "does not bind"):
+                mod.validate_production_release_gate(gate, lineage=lineage, execution_ledger=ledger)
+
 
 if __name__ == "__main__":
     unittest.main()

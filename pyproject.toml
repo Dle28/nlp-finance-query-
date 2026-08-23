@@ -17,11 +17,24 @@ dependencies = [
   "numpy>=1.26",
   "pandas>=2.2",
   "pyyaml>=6.0",
+  "requests>=2.31",
   "scikit-learn>=1.5",
   "sentence-transformers>=3.0",
   "torch>=2.2",
   "tqdm>=4.66",
   "transformers>=4.43"
+]
+
+[project.optional-dependencies]
+# Local/Kaggle Qwen 4-bit inference (see requirements-llm.txt). CPU-only
+# review tooling does not need CUDA quantization packages.
+llm = [
+  "accelerate>=1.0",
+  "bitsandbytes>=0.45",
+]
+# Kaggle kernel artifact download scripts.
+kaggle = [
+  "kaggle>=1.6",
 ]
 
 [project.scripts]
@@ -32,3 +45,10 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+# Downloaded research artifacts can contain historical test snapshots.
+testpaths = ["tests"]
+markers = [
+  "local_artifacts: requires provenance-bound research artifacts excluded from Git",
+]
