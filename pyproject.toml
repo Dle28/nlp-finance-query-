@@ -37,6 +37,7 @@ kaggle = [
   "kaggle>=1.6",
 ]
 dev = [
+  "ipywidgets>=8.1",
   "pytest>=8.0",
 ]
 
