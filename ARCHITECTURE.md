@@ -1,5 +1,7 @@
 # ViFinQA architecture
 
+Visual overview: [docs/VIFINQA_E2E_ARCHITECTURE.html](docs/VIFINQA_E2E_ARCHITECTURE.html).
+
 ## Purpose
 
 The system answers a financial question only if it can prove the chain:
@@ -119,13 +121,20 @@ ChatGPT is excluded from training, competition inference, distillation and
 ensembles. It may only provide bounded external review under truthful
 `chatgpt_verified` and human-equivalent authority. The control plane
 clusters component proof-policy gaps, freezes an independent probability audit
-before information-gain sampling, and emits immutable review packets. ChatGPT
-proposal plus independent-critic agreement creates only a non-materializable
+before information-gain sampling, and emits immutable review packets. Open-source
+proposer plus different-family open-source critic agreement creates only a non-materializable
 `MACHINE_PROVISIONAL` policy. Training eligibility additionally requires a
 pinned authorized adjudicator; calibration uses independent correctness labels,
 never proposal accept rate. Exact cells, typed semantics, Decimal replay and the
 production ledger remain per-question gates. See
 [docs/ACTIVE_LEARNING_ARCHITECTURE_V1.md](docs/ACTIVE_LEARNING_ARCHITECTURE_V1.md).
+
+The GPU execution side is an immutable sidecar: V5 selects the review items,
+then a second manifest materializes 64 blind packets with typed, numeric-free
+closure projections. Qwen3-8B and Mistral-Nemo-Instruct-2407 receive the same
+packet independently. Their raw JSON is schema- and lineage-validated before
+reconciliation; agreement is still only `MACHINE_PROVISIONAL`, while any
+abstention, invalid response or disagreement enters a bounded escalation queue.
 
 ### V13 claim-requirement shadow audit
 

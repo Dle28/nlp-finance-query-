@@ -81,8 +81,8 @@ def _fixture(root: Path, decisions: Path | None = None) -> Path:
         "protocol": "vifinqa_open_source_model_policy_v1",
         "strict_parameter_cap_billions": 14.7,
         "routes": [
-            {"route_id": "fixture-proposer", "model_id": "open/proposer-8b", "parameter_count_billions": 8.0, "open_weights": True, "license": "Apache-2.0"},
-            {"route_id": "fixture-critic", "model_id": "open/critic-12b", "parameter_count_billions": 12.0, "open_weights": True, "license": "Apache-2.0"},
+            {"route_id": "fixture-proposer", "role": "open_source_model_proposer", "model_id": "open/proposer-8b", "revision": "a" * 40, "weight_shards": [{"filename": "model.safetensors", "sha256": "a" * 64}], "parameter_count_billions": 8.0, "open_weights": True, "license": "Apache-2.0"},
+            {"route_id": "fixture-critic", "role": "open_source_model_critic", "model_id": "other/critic-12b", "revision": "b" * 40, "weight_shards": [{"filename": "model.safetensors", "sha256": "b" * 64}], "parameter_count_billions": 12.0, "open_weights": True, "license": "Apache-2.0"},
         ],
     })
     _write_json(authority, {

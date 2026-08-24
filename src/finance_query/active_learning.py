@@ -13,6 +13,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import shutil
 import tempfile
 from typing import Any, Iterable, Mapping, Sequence
@@ -328,9 +329,22 @@ def _model_policy(path: Path) -> dict[str, dict[str, Any]]:
             or route_id in routes
             or not route.get("open_weights")
             or not str(route.get("license") or "")
+            or not re.fullmatch(r"[0-9a-f]{40}", str(route.get("revision") or ""))
             or not 0 < parameters < MAX_MODEL_PARAMETERS_BILLIONS
         ):
             raise ValueError("open-source model route violates the strict <14.7B policy")
+        shards = route.get("weight_shards")
+        if (
+            not isinstance(shards, list)
+            or not shards
+            or any(
+                not isinstance(shard, Mapping)
+                or not str(shard.get("filename") or "").endswith(".safetensors")
+                or not _is_sha256(shard.get("sha256"))
+                for shard in shards
+            )
+        ):
+            raise ValueError("open-source model route lacks pinned weight-shard hashes")
         routes[route_id] = dict(route)
     if not routes:
         raise ValueError("open-source model policy has no eligible route")

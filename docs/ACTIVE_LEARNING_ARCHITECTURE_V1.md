@@ -8,8 +8,8 @@ items. It learns proof-policy patterns, not answers. No learned policy can
 materialize a value, certify a claim, promote a model, or release a submission.
 
 The current frozen cycle is
-`artifacts/research/active_learning_cycle_v4_20260824`; its manifest SHA-256 is
-`0800631d99efabc362f2a0853ac48aabdd4fadfe486ebad14ce7fe3334deb8d3`.
+`artifacts/research/active_learning_cycle_v5_20260824`; its manifest SHA-256 is
+`7b4354143851e677f6dd83919ea517abd72410a691d7ba879d407eb300384339`.
 It is replay-verified, has zero adjudicated training records and zero promoted
 policies, and remains release-blocked.
 
@@ -31,9 +31,9 @@ policies, and remains release-blocked.
 Only open-weight models with a declared parameter count strictly below 14.7B
 may be fine-tuned or used for competition inference. The initial routes are
 Qwen3-8B (8.2B) as proposer and Mistral-Nemo-Instruct-2407 (12B) as critic.
-Their exact revisions and weight hashes must be pinned before decisions are
-accepted. Qwen2.5-14B is excluded because its published total is 14.7B, not
-strictly below the cap.
+Both routes are pinned to exact 40-character revisions and every safetensors
+shard SHA-256 in `configs/open_source_model_policy_v1.json`. Qwen2.5-14B is
+excluded because its published total is 14.7B, not strictly below the cap.
 
 ChatGPT is not a training model, inference model, teacher/distillation source,
 ensemble member or fallback answer generator. Under the owner's prior grant it
@@ -113,13 +113,17 @@ not prove a 90.5% reduction in total human minutes or any release readiness.
 ```bash
 .venv/bin/python scripts/build_active_learning_cycle_v1.py \
   --config configs/active_learning_cycle_v1.json \
-  --output-dir artifacts/research/active_learning_cycle_v4_20260824
+  --output-dir artifacts/research/active_learning_cycle_v5_20260824
 
 .venv/bin/python scripts/verify_active_learning_cycle_v1.py \
-  artifacts/research/active_learning_cycle_v4_20260824/active_learning_cycle.manifest.json
+  artifacts/research/active_learning_cycle_v5_20260824/active_learning_cycle.manifest.json
 
-.venv/bin/python -m pytest -q tests/test_active_learning.py
+.venv/bin/python -m pytest -q \
+  tests/test_active_learning.py tests/test_active_learning_models.py
 ```
+
+The prepared 64-packet dual-model job and Kaggle commands are documented in
+[ACTIVE_LEARNING_OPEN_SOURCE_GPU_V1.md](ACTIVE_LEARNING_OPEN_SOURCE_GPU_V1.md).
 
 `scripts/auto_review_bundle*.py` remain historical research entry points. New
 learning cycles should use this single manifest-bound facade; the old scripts

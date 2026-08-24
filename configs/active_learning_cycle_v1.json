@@ -10,7 +10,7 @@
   "locked_input_sha256": {
     "closure_manifest": "135c62ec07a01f632467d856a233d16a2d1dd9c34a52bc648dc1d44eb6f07ca8",
     "reviewer_authority_registry": "559a7f3b14315279d13df75aefd347f7e6ad8f148d3243cfaae4ad372c674803",
-    "open_source_model_policy": "be5a95ae4501fdeab171991a1d3dff3bc8b4f5c198922b67a2842f337da92280"
+    "open_source_model_policy": "cd3c6d95a78c0f93719047ee9bff333736c8472d4cfb8020552a73876f68d199"
   },
   "review_budget_by_queue": {
     "formula_definition": 16,
