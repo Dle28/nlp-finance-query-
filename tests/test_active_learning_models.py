@@ -175,3 +175,10 @@ def test_disagreement_or_forbidden_answer_escalates(tmp_path: Path) -> None:
     result = reconcile_validated_responses(packets_path=tmp_path / "job" / "open_source_model_review_packets_v1.jsonl", proposer_validated_path=proposer_valid, critic_validated_path=critic_valid, output_dir=tmp_path / "reconciled")
     assert result.agreement_count == 0
     assert result.escalation_count == 2
+
+
+def test_cuda_runner_requires_tokenizer_attention_mask() -> None:
+    runner = Path("scripts/run_active_learning_open_source_model_v1.py").read_text(encoding="utf-8")
+    assert '"return_dict": True' in runner
+    assert 'if "attention_mask" not in model_inputs' in runner
+    assert "model.generate(\n                            **model_inputs" in runner

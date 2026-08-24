@@ -107,12 +107,30 @@ def main() -> None:
             for index, request in enumerate(requests, start=1):
                 prompt = render_prompt(request)
                 try:
-                    kwargs: dict[str, Any] = {"add_generation_prompt": True, "tokenize": True, "return_tensors": "pt"}
+                    kwargs: dict[str, Any] = {
+                        "add_generation_prompt": True,
+                        "tokenize": True,
+                        "return_tensors": "pt",
+                        "return_dict": True,
+                    }
                     if str(route["model_id"]).startswith("Qwen/Qwen3-"):
                         kwargs["enable_thinking"] = False
-                    input_ids = tokenizer.apply_chat_template([{"role": "user", "content": prompt}], **kwargs).to(model.device)
+                    model_inputs = {
+                        key: value.to(model.device)
+                        for key, value in tokenizer.apply_chat_template(
+                            [{"role": "user", "content": prompt}], **kwargs
+                        ).items()
+                    }
+                    input_ids = model_inputs["input_ids"]
+                    if "attention_mask" not in model_inputs:
+                        raise RuntimeError("tokenizer did not return an attention_mask")
                     with torch.inference_mode():
-                        generated = model.generate(input_ids, do_sample=False, max_new_tokens=args.max_new_tokens, pad_token_id=tokenizer.eos_token_id)
+                        generated = model.generate(
+                            **model_inputs,
+                            do_sample=False,
+                            max_new_tokens=args.max_new_tokens,
+                            pad_token_id=tokenizer.eos_token_id,
+                        )
                     raw = tokenizer.decode(generated[0][input_ids.shape[-1] :], skip_special_tokens=True).strip()
                 except Exception as error:  # retain a reason-coded abstention per packet
                     runtime_errors += 1
