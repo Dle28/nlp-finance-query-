@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import time
 from typing import Any, Mapping
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +18,9 @@ if str(ROOT / "src") not in sys.path:
 
 from finance_query.active_learning_models import (  # noqa: E402
     MODEL_JOB_PROTOCOL,
+    MODEL_MAX_NEW_TOKENS,
+    MODEL_MAX_SECONDS_PER_REQUEST,
+    MODEL_PROGRESS_EVERY,
     RAW_RESPONSE_PROTOCOL,
     VALIDATED_RESPONSE_PROTOCOL,
     render_prompt,
@@ -50,13 +54,40 @@ def _fallback(request: Mapping[str, Any], error: Exception) -> str:
     }, ensure_ascii=False, sort_keys=True)
 
 
+def _generation_contract(requests: list[dict[str, Any]]) -> tuple[int, float, int]:
+    contracts = [row.get("generation_contract") for row in requests]
+    if any(not isinstance(contract, Mapping) for contract in contracts):
+        raise ValueError("request lacks generation_contract")
+    canonical = contracts[0]
+    if any(contract != canonical for contract in contracts[1:]):
+        raise ValueError("requests do not share one generation_contract")
+    max_new_tokens = canonical.get("max_new_tokens")
+    max_seconds = canonical.get("max_seconds_per_request")
+    progress_every = canonical.get("progress_every")
+    if max_new_tokens != MODEL_MAX_NEW_TOKENS:
+        raise ValueError("unexpected max_new_tokens contract")
+    if max_seconds != MODEL_MAX_SECONDS_PER_REQUEST:
+        raise ValueError("unexpected max_seconds_per_request contract")
+    if progress_every != MODEL_PROGRESS_EVERY:
+        raise ValueError("unexpected progress_every contract")
+    return int(max_new_tokens), float(max_seconds), int(progress_every)
+
+
+def _write_progress(path: Path, payload: Mapping[str, Any]) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    temporary.replace(path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--job-manifest", type=Path, required=True)
     parser.add_argument("--role", choices=["open_source_model_proposer", "open_source_model_critic"], required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--limit", type=int)
-    parser.add_argument("--max-new-tokens", type=int, default=512)
     args = parser.parse_args()
     job = load_json(args.job_manifest.resolve())
     if job.get("protocol") != MODEL_JOB_PROTOCOL or job.get("status") != "PREPARED_GPU_EXECUTION_NOT_RUN":
@@ -70,6 +101,7 @@ def main() -> None:
         requests = requests[: args.limit]
     if not requests or any(row.get("model_role") != args.role for row in requests):
         raise ValueError("request role mismatch")
+    max_new_tokens, max_seconds_per_request, progress_every = _generation_contract(requests)
     route = (job.get("model_routes") or {}).get(args.role)
     if not isinstance(route, Mapping) or route.get("model_id") != requests[0].get("model_id"):
         raise ValueError("model route mismatch")
@@ -102,10 +134,13 @@ def main() -> None:
     staging = Path(tempfile.mkdtemp(prefix=f".{args.output_dir.name}.tmp-", dir=args.output_dir.parent))
     try:
         raw_path = staging / "raw_model_responses_v1.jsonl"
+        progress_path = staging / "model_execution_progress.json"
         runtime_errors = 0
+        started_at = time.perf_counter()
         with raw_path.open("x", encoding="utf-8") as handle:
             for index, request in enumerate(requests, start=1):
                 prompt = render_prompt(request)
+                request_started_at = time.perf_counter()
                 try:
                     kwargs: dict[str, Any] = {
                         "add_generation_prompt": True,
@@ -128,7 +163,8 @@ def main() -> None:
                         generated = model.generate(
                             **model_inputs,
                             do_sample=False,
-                            max_new_tokens=args.max_new_tokens,
+                            max_new_tokens=max_new_tokens,
+                            max_time=max_seconds_per_request,
                             pad_token_id=tokenizer.eos_token_id,
                         )
                     raw = tokenizer.decode(generated[0][input_ids.shape[-1] :], skip_special_tokens=True).strip()
@@ -145,11 +181,29 @@ def main() -> None:
                     "model_revision": route["revision"],
                     "prompt_sha256": canonical_sha256(prompt),
                     "raw_response": raw,
+                    "elapsed_seconds": round(time.perf_counter() - request_started_at, 3),
                 }
                 handle.write(json.dumps(envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
-                if index == 1 or index == len(requests) or index % 8 == 0:
-                    print(json.dumps({"completed": index, "total": len(requests), "role": args.role}), flush=True)
-            handle.flush(); os.fsync(handle.fileno())
+                handle.flush()
+                os.fsync(handle.fileno())
+                progress = {
+                    "schema_version": 1,
+                    "protocol": RAW_RESPONSE_PROTOCOL,
+                    "status": "RAW_MODEL_EXECUTION_IN_PROGRESS",
+                    "model_role": args.role,
+                    "completed_requests": index,
+                    "total_requests": len(requests),
+                    "last_request_id": request["request_id"],
+                    "elapsed_seconds": round(time.perf_counter() - started_at, 3),
+                    "max_new_tokens": max_new_tokens,
+                    "max_seconds_per_request": max_seconds_per_request,
+                    "training_eligible": False,
+                    "certification_allowed": False,
+                    "submission_eligible": False,
+                }
+                _write_progress(progress_path, progress)
+                if index == 1 or index == len(requests) or index % progress_every == 0:
+                    print(json.dumps(progress, ensure_ascii=False, sort_keys=True), flush=True)
         runtime = {
             "schema_version": 1,
             "protocol": RAW_RESPONSE_PROTOCOL,
@@ -161,6 +215,9 @@ def main() -> None:
             "weight_shards_verified": True,
             "request_count": len(requests),
             "runtime_error_abstention_count": runtime_errors,
+            "max_new_tokens": max_new_tokens,
+            "max_seconds_per_request": max_seconds_per_request,
+            "elapsed_seconds": round(time.perf_counter() - started_at, 3),
             "gpu": torch.cuda.get_device_name(0),
             "torch_version": torch.__version__,
             "bitsandbytes_version": bitsandbytes.__version__,
@@ -173,7 +230,7 @@ def main() -> None:
         manifest = {
             **runtime,
             "inputs": {"job_manifest": {"path": str(args.job_manifest.resolve()), "sha256": sha256_file(args.job_manifest)}, "requests": {"path": str(requests_path.resolve()), "sha256": sha256_file(requests_path)}},
-            "outputs": {"raw_responses": {"path": str(args.output_dir / raw_path.name), "sha256": sha256_file(raw_path)}, "runtime_receipt": {"path": str(args.output_dir / runtime_path.name), "sha256": sha256_file(runtime_path)}},
+            "outputs": {"raw_responses": {"path": str(args.output_dir / raw_path.name), "sha256": sha256_file(raw_path)}, "runtime_receipt": {"path": str(args.output_dir / runtime_path.name), "sha256": sha256_file(runtime_path)}, "progress": {"path": str(args.output_dir / progress_path.name), "sha256": sha256_file(progress_path)}},
         }
         manifest_path = staging / "raw_model_execution.manifest.json"
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")

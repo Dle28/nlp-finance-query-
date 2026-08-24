@@ -5,6 +5,9 @@ import json
 from pathlib import Path
 
 from finance_query.active_learning_models import (
+    MODEL_MAX_NEW_TOKENS,
+    MODEL_MAX_SECONDS_PER_REQUEST,
+    MODEL_PROGRESS_EVERY,
     RAW_RESPONSE_PROTOCOL,
     VALIDATED_RESPONSE_PROTOCOL,
     build_model_job,
@@ -164,6 +167,10 @@ def test_model_job_is_blind_numeric_free_and_chatgpt_free(tmp_path: Path) -> Non
     text = (tmp_path / "job" / "active_learning_model_job.manifest.json").read_text(encoding="utf-8").casefold()
     assert '"chatgpt_in_model_graph": false' in text
     assert "answer_decimal" not in text
+    requests = load_jsonl(tmp_path / "job" / "qwen3_8b_proposer_requests_v1.jsonl")
+    assert all(row["generation_contract"]["max_new_tokens"] == MODEL_MAX_NEW_TOKENS for row in requests)
+    assert all(row["generation_contract"]["max_seconds_per_request"] == MODEL_MAX_SECONDS_PER_REQUEST for row in requests)
+    assert all(row["generation_contract"]["progress_every"] == MODEL_PROGRESS_EVERY for row in requests)
 
 
 def test_matching_blind_policies_reconcile_to_non_materializable_candidate(tmp_path: Path) -> None:
@@ -204,6 +211,9 @@ def test_cuda_runner_requires_tokenizer_attention_mask() -> None:
     assert '"return_dict": True' in runner
     assert 'if "attention_mask" not in model_inputs' in runner
     assert "model.generate(\n                            **model_inputs" in runner
+    assert "max_time=max_seconds_per_request" in runner
+    assert 'progress_path = staging / "model_execution_progress.json"' in runner
+    assert "handle.flush()" in runner and "os.fsync(handle.fileno())" in runner
 
 
 def test_minimal_abstention_is_valid_but_never_authorizing(tmp_path: Path) -> None:

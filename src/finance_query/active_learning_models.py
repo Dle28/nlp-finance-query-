@@ -28,6 +28,9 @@ VALIDATED_RESPONSE_PROTOCOL = "vifinqa_active_learning_validated_model_response_
 RECONCILIATION_PROTOCOL = "vifinqa_active_learning_model_reconciliation_v1"
 
 MODEL_ROLES = ("open_source_model_proposer", "open_source_model_critic")
+MODEL_MAX_NEW_TOKENS = 256
+MODEL_MAX_SECONDS_PER_REQUEST = 45.0
+MODEL_PROGRESS_EVERY = 1
 QUEUE_RULE_TYPES = {
     "formula_definition": "formula_definition_rule",
     "operand_compatibility": "operand_compatibility_rule",
@@ -305,7 +308,9 @@ def build_model_job(
                 },
                 "generation_contract": {
                     "do_sample": False,
-                    "max_new_tokens": 512,
+                    "max_new_tokens": MODEL_MAX_NEW_TOKENS,
+                    "max_seconds_per_request": MODEL_MAX_SECONDS_PER_REQUEST,
+                    "progress_every": MODEL_PROGRESS_EVERY,
                     "temperature": 0,
                     "qwen3_thinking_enabled": False if str(route["model_id"]).startswith("Qwen/Qwen3-") else None,
                 },
