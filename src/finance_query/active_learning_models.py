@@ -46,6 +46,31 @@ ALLOWED_REASON_CODES = {
     "SOURCE_REFERENCE_MISSING",
     "MODEL_RUNTIME_ERROR",
 }
+PROPOSAL_REASON_CODES = {"SUPPORTED_BY_PACKET"}
+ABSTENTION_REASON_CODES = ALLOWED_REASON_CODES - PROPOSAL_REASON_CODES
+PLACEHOLDER_POLICY_VALUES = {
+    "categorical string",
+    "specific categorical rule",
+    "string",
+    "rule",
+    "rule value",
+    "value",
+    "unknown",
+    "n/a",
+    "na",
+    "none",
+    "tbd",
+    "placeholder",
+}
+QUEUE_PROPOSAL_QUESTIONS = {
+    "formula_definition": "Nêu định nghĩa phép toán và điều kiện để nhận diện đúng formula family từ packet.",
+    "operand_compatibility": "Nêu quy tắc xác định đủ operand và các kiểm tra tương thích bắt buộc.",
+    "route_binding": "Nêu quy tắc gắn claim vào đúng table role và metric từ các trường packet.",
+    "route_operator": "Nêu quy tắc chọn operator còn thiếu từ operation plan và blocker đã ghi.",
+    "route_cause": "Nêu quy tắc phân loại nguyên nhân route; không biến thiếu bằng chứng thành table/metric miss.",
+    "temporal": "Nêu quy tắc đối chiếu kind, start, end và role giữa claim temporal object và source observation.",
+    "v12_recertification": "Nêu quy tắc xác định các obligation V13 phải recertify; V12 COMPLETE không tự tạo PASS.",
+}
 FORBIDDEN_KEYS = {
     "answer",
     "answer_decimal",
@@ -179,6 +204,7 @@ def _policy_contract(queue: str) -> dict[str, Any]:
         "expected_rule_type": rule_type,
         "policy_keys": ["rule_type", "rule_value", "applicability_conditions", "required_checks"],
         "value_contract": "categorical strings only; no financial value or answer",
+        "proposal_question": QUEUE_PROPOSAL_QUESTIONS[queue],
         "effect": "proposal_only_revalidate_every_question",
     }
 
@@ -350,29 +376,38 @@ def render_prompt(request: Mapping[str, Any]) -> str:
         if role == MODEL_ROLES[0]
         else "Đánh giá độc lập cùng packet; không được xem output proposer. Chỉ đề xuất rule nếu packet tự nó đủ."
     )
-    response_shape = {
+    proposal_shape = {
         "schema_version": 1,
         "protocol": VALIDATED_RESPONSE_PROTOCOL,
         "review_item_id": packet["review_item_id"],
         "model_role": role,
-        "verdict": "PROPOSE_RULE hoặc ABSTAIN",
+        "verdict": "PROPOSE_RULE",
         "policy": {
             "rule_type": packet["policy_contract"]["expected_rule_type"],
-            "rule_value": "categorical string",
-            "applicability_conditions": ["string"],
-            "required_checks": ["string"],
+            "rule_value": "<specific non-numeric rule derived from PACKET>",
+            "applicability_conditions": ["<specific condition derived from PACKET>"],
+            "required_checks": ["<specific check derived from PACKET>"],
         },
-        "reason_codes": ["một hoặc nhiều code được phép"],
+        "reason_codes": ["SUPPORTED_BY_PACKET"],
         "cited_source_ref_sha256": ["chỉ hash nằm trong allowed_source_ref_sha256"],
+    }
+    abstain_shape = {
+        "verdict": "ABSTAIN",
+        "reason_codes": ["một hoặc nhiều code khác SUPPORTED_BY_PACKET"],
     }
     return (
         "Bạn là worker open-source trong active-learning shadow; không phải certificate authority.\n"
         f"{role_instruction}\n"
         "Cấm suy đoán hoặc xuất đáp án, giá trị tài chính, exact numeric cell hay trạng thái human_verified.\n"
-        "Nếu thiếu bằng chứng: ABSTAIN. Chỉ trả về đúng một JSON object, không markdown.\n"
+        "PENDING_INDEPENDENT_REVIEW không tự buộc ABSTAIN: bạn có thể đề xuất một policy không cấp quyền nếu các trường packet đủ để mô tả rule tái kiểm tra.\n"
+        "Nếu thiếu bằng chứng để mô tả rule cụ thể: dùng đúng ABSTAIN_SHAPE. Không thêm policy hay identity fields vào ABSTAIN.\n"
+        "Nếu đề xuất: dùng đúng PROPOSE_RULE_SHAPE, cite source_packet_ref_sha256 và chỉ dùng reason SUPPORTED_BY_PACKET.\n"
+        "Không được sao chép các marker trong dấu <...>, từ 'string', 'categorical string', 'unknown', 'TBD' hoặc placeholder vào policy.\n"
+        "Chỉ trả về đúng một JSON object, không markdown.\n"
         f"ALLOWED_REASON_CODES={json.dumps(sorted(ALLOWED_REASON_CODES), ensure_ascii=False)}\n"
         f"PACKET={json.dumps(packet, ensure_ascii=False, sort_keys=True)}\n"
-        f"OUTPUT_SHAPE={json.dumps(response_shape, ensure_ascii=False, sort_keys=True)}"
+        f"PROPOSE_RULE_SHAPE={json.dumps(proposal_shape, ensure_ascii=False, sort_keys=True)}\n"
+        f"ABSTAIN_SHAPE={json.dumps(abstain_shape, ensure_ascii=False, sort_keys=True)}"
     )
 
 
@@ -394,6 +429,20 @@ def _validate_policy(policy: object, request: Mapping[str, Any]) -> dict[str, An
         "applicability_conditions": sorted(_strings(policy.get("applicability_conditions"), "applicability_conditions")),
         "required_checks": sorted(_strings(policy.get("required_checks"), "required_checks")),
     }
+    policy_strings = [
+        normalized["rule_value"],
+        *normalized["applicability_conditions"],
+        *normalized["required_checks"],
+    ]
+    for value in policy_strings:
+        folded = value.casefold().strip()
+        if (
+            folded in PLACEHOLDER_POLICY_VALUES
+            or "placeholder" in folded
+            or "<" in value
+            or ">" in value
+        ):
+            raise ValueError("policy contains a template placeholder")
     _scan_forbidden(normalized)
     return normalized
 
@@ -434,28 +483,29 @@ def validate_raw_responses(
         try:
             response = parse_json_object(str(envelope.get("raw_response") or ""))
             _scan_forbidden(response)
-            allowed_keys = {"schema_version", "protocol", "review_item_id", "model_role", "verdict", "policy", "reason_codes", "cited_source_ref_sha256"}
-            if set(response) != allowed_keys:
-                raise ValueError("response keys differ from closed schema")
-            if (
-                response.get("schema_version") != 1
-                or
-                response.get("protocol") != VALIDATED_RESPONSE_PROTOCOL
-                or response.get("review_item_id") != request.get("review_item_id")
-                or response.get("model_role") != request.get("model_role")
-            ):
-                raise ValueError("response identity differs from request")
             verdict = str(response.get("verdict") or "")
             if verdict not in {"PROPOSE_RULE", "ABSTAIN"}:
                 raise ValueError("invalid verdict")
             reasons = sorted(_strings(response.get("reason_codes"), "reason_codes"))
             if any(value not in ALLOWED_REASON_CODES for value in reasons):
                 raise ValueError("unknown reason code")
-            cited = sorted(_strings(response.get("cited_source_ref_sha256"), "cited_source_ref_sha256", allow_empty=True))
-            allowed_refs = set(request["packet"]["allowed_source_ref_sha256"])
-            if any(_HEX_64.fullmatch(value) is None or value not in allowed_refs for value in cited):
-                raise ValueError("response cites a source reference outside the packet")
             if verdict == "PROPOSE_RULE":
+                proposal_keys = {"schema_version", "protocol", "review_item_id", "model_role", "verdict", "policy", "reason_codes", "cited_source_ref_sha256"}
+                if set(response) != proposal_keys:
+                    raise ValueError("PROPOSE_RULE keys differ from closed schema")
+                if (
+                    response.get("schema_version") != 1
+                    or response.get("protocol") != VALIDATED_RESPONSE_PROTOCOL
+                    or response.get("review_item_id") != request.get("review_item_id")
+                    or response.get("model_role") != request.get("model_role")
+                ):
+                    raise ValueError("response identity differs from request")
+                if set(reasons) != PROPOSAL_REASON_CODES:
+                    raise ValueError("PROPOSE_RULE requires only SUPPORTED_BY_PACKET")
+                cited = sorted(_strings(response.get("cited_source_ref_sha256"), "cited_source_ref_sha256"))
+                allowed_refs = set(request["packet"]["allowed_source_ref_sha256"])
+                if any(_HEX_64.fullmatch(value) is None or value not in allowed_refs for value in cited):
+                    raise ValueError("response cites a source reference outside the packet")
                 if request["packet"]["source_packet_ref_sha256"] not in cited:
                     raise ValueError("proposal lacks its typed source-packet reference")
                 policy = _validate_policy(response.get("policy"), request)
@@ -463,8 +513,10 @@ def validate_raw_responses(
                 status = "VALID_PROPOSAL"
                 reason = None
             else:
-                if response.get("policy") is not None:
-                    raise ValueError("ABSTAIN response must not contain a policy")
+                if set(response) != {"verdict", "reason_codes"}:
+                    raise ValueError("ABSTAIN keys differ from closed schema")
+                if not set(reasons) <= ABSTENTION_REASON_CODES:
+                    raise ValueError("ABSTAIN cannot claim packet support")
                 status = "VALID_ABSTENTION"
                 reason = reasons[0]
         except (ValueError, TypeError, KeyError, json.JSONDecodeError) as error:

@@ -131,6 +131,28 @@ def _raw_rows(requests: list[dict], *, rule_value: str = "difference", forbidden
     return rows
 
 
+def _abstention_rows(requests: list[dict], *, extra_key: bool = False) -> list[dict[str, object]]:
+    rows = []
+    for request in requests:
+        response: dict[str, object] = {
+            "verdict": "ABSTAIN",
+            "reason_codes": ["INSUFFICIENT_PACKET_EVIDENCE"],
+        }
+        if extra_key:
+            response["policy"] = None
+        rows.append({
+            "protocol": RAW_RESPONSE_PROTOCOL,
+            "request_id": request["request_id"],
+            "review_item_id": request["review_item_id"],
+            "model_id": request["model_id"],
+            "model_revision": request["model_revision"],
+            "model_role": request["model_role"],
+            "prompt_sha256": canonical_sha256(render_prompt(request)),
+            "raw_response": json.dumps(response, ensure_ascii=False),
+        })
+    return rows
+
+
 def test_model_job_is_blind_numeric_free_and_chatgpt_free(tmp_path: Path) -> None:
     cycle, policy = _fixture(tmp_path)
     result = build_model_job(active_cycle_manifest_path=cycle, model_policy_path=policy, output_dir=tmp_path / "job")
@@ -182,3 +204,56 @@ def test_cuda_runner_requires_tokenizer_attention_mask() -> None:
     assert '"return_dict": True' in runner
     assert 'if "attention_mask" not in model_inputs' in runner
     assert "model.generate(\n                            **model_inputs" in runner
+
+
+def test_minimal_abstention_is_valid_but_never_authorizing(tmp_path: Path) -> None:
+    cycle, policy = _fixture(tmp_path)
+    build_model_job(active_cycle_manifest_path=cycle, model_policy_path=policy, output_dir=tmp_path / "job")
+    requests = load_jsonl(tmp_path / "job" / "mistral_nemo_12b_critic_requests_v1.jsonl")
+    raw = tmp_path / "abstain-raw.jsonl"
+    validated = tmp_path / "abstain-valid.jsonl"
+    _write_jsonl(raw, _abstention_rows(requests))
+    result = validate_raw_responses(
+        requests_path=tmp_path / "job" / "mistral_nemo_12b_critic_requests_v1.jsonl",
+        raw_responses_path=raw,
+        output_path=validated,
+    )
+    assert result.valid_count == 0
+    rows = load_jsonl(validated)
+    assert all(row["validation_status"] == "VALID_ABSTENTION" for row in rows)
+    assert all(row["training_eligible"] is False and row["certification_allowed"] is False for row in rows)
+
+
+def test_abstention_with_extra_fields_remains_invalid(tmp_path: Path) -> None:
+    cycle, policy = _fixture(tmp_path)
+    build_model_job(active_cycle_manifest_path=cycle, model_policy_path=policy, output_dir=tmp_path / "job")
+    requests = load_jsonl(tmp_path / "job" / "mistral_nemo_12b_critic_requests_v1.jsonl")
+    raw = tmp_path / "abstain-raw.jsonl"
+    validated = tmp_path / "abstain-valid.jsonl"
+    _write_jsonl(raw, _abstention_rows(requests, extra_key=True))
+    validate_raw_responses(
+        requests_path=tmp_path / "job" / "mistral_nemo_12b_critic_requests_v1.jsonl",
+        raw_responses_path=raw,
+        output_path=validated,
+    )
+    assert all(row["validation_status"] == "INVALID_MODEL_RESPONSE" for row in load_jsonl(validated))
+
+
+def test_template_echo_and_contradictory_proposal_reason_are_rejected(tmp_path: Path) -> None:
+    cycle, policy = _fixture(tmp_path)
+    build_model_job(active_cycle_manifest_path=cycle, model_policy_path=policy, output_dir=tmp_path / "job")
+    requests = load_jsonl(tmp_path / "job" / "qwen3_8b_proposer_requests_v1.jsonl")
+    raw_rows = _raw_rows(requests, rule_value="categorical string")
+    first = json.loads(str(raw_rows[0]["raw_response"]))
+    first["reason_codes"] = ["INSUFFICIENT_PACKET_EVIDENCE"]
+    raw_rows[0]["raw_response"] = json.dumps(first, ensure_ascii=False)
+    raw = tmp_path / "proposal-raw.jsonl"
+    validated = tmp_path / "proposal-valid.jsonl"
+    _write_jsonl(raw, raw_rows)
+    validate_raw_responses(
+        requests_path=tmp_path / "job" / "qwen3_8b_proposer_requests_v1.jsonl",
+        raw_responses_path=raw,
+        output_path=validated,
+    )
+    rows = load_jsonl(validated)
+    assert all(row["validation_status"] == "INVALID_MODEL_RESPONSE" for row in rows)
