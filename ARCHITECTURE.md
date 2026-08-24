@@ -135,6 +135,9 @@ closure projections. Qwen3-8B and Mistral-Nemo-Instruct-2407 receive the same
 packet independently. Their raw JSON is schema- and lineage-validated before
 reconciliation; agreement is still only `MACHINE_PROVISIONAL`, while any
 abstention, invalid response or disagreement enters a bounded escalation queue.
+The first private Kaggle shadow execution completed all 64 packets and produced
+0 exact agreements, so every packet entered that queue. This leaves training,
+promotion, certification and release blocked by design.
 
 ### V13 claim-requirement shadow audit
 

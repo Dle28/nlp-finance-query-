@@ -1,6 +1,6 @@
 # Open-source GPU cycle V1
 
-## Verified preparation state
+## Verified execution state
 
 This workflow runs no ChatGPT model. It uses two open-weight competition routes
 strictly below 14.7B parameters:
@@ -24,16 +24,27 @@ Current local evidence:
 - model job: `active_learning_model_job_v3_20260824`, manifest SHA-256
   `33a5e1faadbe15f091b4d6fb613f5c9f7c1449f6177c28d525e086d3cd4c2dfe`;
 - portable input: `active_learning_kaggle_bundle_v3_20260824`;
-- GPU execution: **not run**;
+- Kaggle execution: **completed successfully** in private notebook version 1,
+  pinned to source commit `362b0ed6d838df215deeb92a052993c52aae7347`;
+- Qwen validation: 15 `VALID_PROPOSAL`, 49 non-proposals;
+- Mistral validation: 0 `VALID_PROPOSAL`, 64 non-proposals;
+- reconciliation: 0 agreements, 64 escalations, 0 training-eligible records;
+- downloaded receipt archive: `vifinqa_active_learning_open_source_cycle_v1_362b0ed6.zip`,
+  59,576 bytes, SHA-256
+  `fbb79bdcb8bce931aeb002c009ea28d1a96c4bf12de080c85930fba3423df7eb`;
 - training, certification, promotion and release: **blocked**.
+
+The archive was downloaded to the workstation and passed both SHA-256 and ZIP
+integrity verification. The private execution remains available at
+[Kaggle notebook](https://www.kaggle.com/code/dungle2810/vifinqa-active-learning-open-source-cycle-v1/output),
+with input supplied through the private
+[Kaggle dataset](https://www.kaggle.com/datasets/dungle2810/vifinqa-active-learning-open-source-cycle-v1-input).
 
 ## Why Kaggle is needed
 
-The current workstation has no CUDA device. It also has no Kaggle CLI or
-`~/.kaggle/kaggle.json`, so this repository cannot silently create or execute a
-remote kernel. The prepared bundle and notebook make that last external step
-reproducible once the private Kaggle input is attached and GPU/Internet are
-enabled.
+The current workstation has no CUDA device, so Kaggle supplied the GPU runtime.
+The private input bundle and pinned notebook keep the external execution
+reproducible without adding Kaggle credentials to the repository.
 
 ## Local preparation and verification
 
@@ -72,3 +83,11 @@ An abstention, invalid response or disagreement is escalated. ChatGPT may later
 review a bounded escalation item with human-equivalent review authority, but it
 is outside this GPU graph and its receipt can never become competition training
 data.
+
+The first clean run produced no agreements: all 64 packets were escalated. This
+is a valid fail-closed outcome, not a failed execution. It proves the transport,
+model pinning, validation and reconciliation path works; it does not authorize
+fine-tuning. A preceding Qwen attempt was stopped after its first item when an
+attention-mask warning was detected. The runner was fixed to require and pass
+the tokenizer attention mask, pinned in the source commit above, and the clean
+run completed without that warning.
