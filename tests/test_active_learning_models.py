@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 from pathlib import Path
+
+import pytest
 
 from finance_query.active_learning_models import (
     MODEL_MAX_NEW_TOKENS,
@@ -214,6 +217,24 @@ def test_cuda_runner_requires_tokenizer_attention_mask() -> None:
     assert "max_time=max_seconds_per_request" in runner
     assert 'progress_path = staging / "model_execution_progress.json"' in runner
     assert "handle.flush()" in runner and "os.fsync(handle.fileno())" in runner
+
+
+def test_cuda_runner_hardens_only_the_exact_legacy_v4_contract() -> None:
+    path = Path("scripts/run_active_learning_open_source_model_v1.py")
+    spec = importlib.util.spec_from_file_location("active_learning_cuda_runner", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    legacy = {
+        "do_sample": False,
+        "max_new_tokens": 512,
+        "qwen3_thinking_enabled": False,
+        "temperature": 0,
+    }
+    resolved = module._generation_contract([{"generation_contract": legacy}])
+    assert resolved == (MODEL_MAX_NEW_TOKENS, MODEL_MAX_SECONDS_PER_REQUEST, MODEL_PROGRESS_EVERY, True)
+    with pytest.raises(ValueError, match="unsupported generation_contract"):
+        module._generation_contract([{"generation_contract": {**legacy, "max_new_tokens": 513}}])
 
 
 def test_minimal_abstention_is_valid_but_never_authorizing(tmp_path: Path) -> None:

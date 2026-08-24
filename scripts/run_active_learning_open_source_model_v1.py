@@ -54,7 +54,7 @@ def _fallback(request: Mapping[str, Any], error: Exception) -> str:
     }, ensure_ascii=False, sort_keys=True)
 
 
-def _generation_contract(requests: list[dict[str, Any]]) -> tuple[int, float, int]:
+def _generation_contract(requests: list[dict[str, Any]]) -> tuple[int, float, int, bool]:
     contracts = [row.get("generation_contract") for row in requests]
     if any(not isinstance(contract, Mapping) for contract in contracts):
         raise ValueError("request lacks generation_contract")
@@ -64,13 +64,21 @@ def _generation_contract(requests: list[dict[str, Any]]) -> tuple[int, float, in
     max_new_tokens = canonical.get("max_new_tokens")
     max_seconds = canonical.get("max_seconds_per_request")
     progress_every = canonical.get("progress_every")
-    if max_new_tokens != MODEL_MAX_NEW_TOKENS:
-        raise ValueError("unexpected max_new_tokens contract")
-    if max_seconds != MODEL_MAX_SECONDS_PER_REQUEST:
-        raise ValueError("unexpected max_seconds_per_request contract")
-    if progress_every != MODEL_PROGRESS_EVERY:
-        raise ValueError("unexpected progress_every contract")
-    return int(max_new_tokens), float(max_seconds), int(progress_every)
+    if (
+        max_new_tokens == MODEL_MAX_NEW_TOKENS
+        and max_seconds == MODEL_MAX_SECONDS_PER_REQUEST
+        and progress_every == MODEL_PROGRESS_EVERY
+    ):
+        return int(max_new_tokens), float(max_seconds), int(progress_every), False
+    legacy_contract = {
+        "do_sample": False,
+        "max_new_tokens": 512,
+        "qwen3_thinking_enabled": canonical.get("qwen3_thinking_enabled"),
+        "temperature": 0,
+    }
+    if canonical != legacy_contract or canonical.get("qwen3_thinking_enabled") not in {False, None}:
+        raise ValueError("unsupported generation_contract")
+    return MODEL_MAX_NEW_TOKENS, MODEL_MAX_SECONDS_PER_REQUEST, MODEL_PROGRESS_EVERY, True
 
 
 def _write_progress(path: Path, payload: Mapping[str, Any]) -> None:
@@ -101,7 +109,8 @@ def main() -> None:
         requests = requests[: args.limit]
     if not requests or any(row.get("model_role") != args.role for row in requests):
         raise ValueError("request role mismatch")
-    max_new_tokens, max_seconds_per_request, progress_every = _generation_contract(requests)
+    max_new_tokens, max_seconds_per_request, progress_every, legacy_contract_hardened = _generation_contract(requests)
+    request_generation_contract_sha256 = canonical_sha256(requests[0]["generation_contract"])
     route = (job.get("model_routes") or {}).get(args.role)
     if not isinstance(route, Mapping) or route.get("model_id") != requests[0].get("model_id"):
         raise ValueError("model route mismatch")
@@ -197,6 +206,8 @@ def main() -> None:
                     "elapsed_seconds": round(time.perf_counter() - started_at, 3),
                     "max_new_tokens": max_new_tokens,
                     "max_seconds_per_request": max_seconds_per_request,
+                    "legacy_generation_contract_hardened": legacy_contract_hardened,
+                    "request_generation_contract_sha256": request_generation_contract_sha256,
                     "training_eligible": False,
                     "certification_allowed": False,
                     "submission_eligible": False,
@@ -217,6 +228,8 @@ def main() -> None:
             "runtime_error_abstention_count": runtime_errors,
             "max_new_tokens": max_new_tokens,
             "max_seconds_per_request": max_seconds_per_request,
+            "legacy_generation_contract_hardened": legacy_contract_hardened,
+            "request_generation_contract_sha256": request_generation_contract_sha256,
             "elapsed_seconds": round(time.perf_counter() - started_at, 3),
             "gpu": torch.cuda.get_device_name(0),
             "torch_version": torch.__version__,
