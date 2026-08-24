@@ -110,6 +110,18 @@ exact evidence + independent audit + full production execution ledger
 All three upstream conditions are mandatory. The current release gate is
 blocked, so there is no production submission path to execute.
 
+### Fail-closed active-learning control plane
+
+The active learner is a sidecar to, not a replacement for, certification. It
+clusters component proof-policy gaps, freezes an independent probability audit
+before information-gain sampling, and emits immutable review packets. ChatGPT
+proposal plus independent-critic agreement creates only a non-materializable
+`MACHINE_PROVISIONAL` policy. Training eligibility additionally requires a
+pinned authorized adjudicator; calibration uses independent correctness labels,
+never proposal accept rate. Exact cells, typed semantics, Decimal replay and the
+production ledger remain per-question gates. See
+[docs/ACTIVE_LEARNING_ARCHITECTURE_V1.md](docs/ACTIVE_LEARNING_ARCHITECTURE_V1.md).
+
 ### V13 claim-requirement shadow audit
 
 V13 adds a versioned proof-obligation layer without mutating V12:
@@ -123,11 +135,12 @@ claim -> Claim Requirement Set -> proof obligations
 `INTERNALLY_COMPLETE` means only that every generated requirement passed.
 `CLAIM_COMPLETE` additionally requires an independent requirement universe;
 the current deterministic generator does not provide that independent basis.
-The first V13 shadow run therefore keeps all 1,012 records at
-`CLAIM_COMPLETENESS_UNESTABLISHED`. Of the 26 V12 certificate candidates, 16
-remain internally complete under the expanded schema and 10 expose an
-unresolved `accounting.basis` obligation. V12 artifacts and release state are
-unchanged.
+The hardened V13 shadow run therefore keeps all 1,012 records at both
+`INTERNAL_COVERAGE_INCOMPLETE` and `CLAIM_COMPLETENESS_UNESTABLISHED`. A generic
+V12 PASS cannot replace a typed proposition receipt; `NOT_CHECKED` dimensions
+also block internal completeness. Q211 exposes `metric.tax_treatment` as a
+separate unresolved proposition instead of conflating “before tax” with a
+general accounting basis. V12 artifacts and release state are unchanged.
 
 ### Full-corpus authorization replay
 

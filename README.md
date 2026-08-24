@@ -23,6 +23,7 @@ numeric evidence by themselves.
 | Review the next preprocessing/fine-tune architecture | [docs/CERTIFIED_CANONICAL_LAYER.md](docs/CERTIFIED_CANONICAL_LAYER.md) |
 | Inspect stage permissions | [docs/TECHNICAL_CONTRACTS.md](docs/TECHNICAL_CONTRACTS.md) |
 | Inspect V13 claim completeness | [docs/CLAIM_REQUIREMENT_V13.md](docs/CLAIM_REQUIREMENT_V13.md) |
+| Run the fail-closed active-learning loop | [docs/ACTIVE_LEARNING_ARCHITECTURE_V1.md](docs/ACTIVE_LEARNING_ARCHITECTURE_V1.md) |
 | Validate artifact lineage | [docs/ARTIFACT_REGISTRY.md](docs/ARTIFACT_REGISTRY.md) |
 | Run GPU benchmarks | [docs/KAGGLE_GPU_BENCHMARK.md](docs/KAGGLE_GPU_BENCHMARK.md) |
 
@@ -100,13 +101,15 @@ and 986 abstentions with all five reproducibility checks passing. Its campaign
 audit records 26/26 PASS, zero answer-value exposure and zero blockers;
 release, promotion, training and submission remain false.
 
-V13 adds a non-mutating claim-requirement shadow audit. It distinguishes
-internal completeness from semantic claim completeness, types the 38 temporal
-blockers, and separates the composed and routing blocker classes. The 26 V12
-certificate candidates remain immutable: 16 are internally complete under the
-expanded rules, while 10 expose an unresolved `accounting.basis` obligation.
-All 1,012 records remain `CLAIM_COMPLETENESS_UNESTABLISHED`, so release stays
-blocked.
+V13 adds a non-mutating, definition-hash-bound claim-requirement shadow audit.
+It distinguishes internal completeness from semantic claim completeness,
+types the 38 temporal blockers from claim text independently of source packets,
+and separates composed and routing blocker classes. None of the 26 immutable
+V12 candidates is internally complete under the hardened contract: generic
+V12 PASS does not satisfy typed metric, unit, formula, operand or compatibility
+obligations, and `NOT_CHECKED` is not N/A. Q211 carries a distinct unresolved
+`metric.tax_treatment=before_tax` proposition. All 1,012 remain
+`CLAIM_COMPLETENESS_UNESTABLISHED`, so release stays blocked.
 
 The local review UI exposes `/campaign` for V5 entity-role diagnosis, `/audit`
 for the V7→V8→V9→V10→V11→V12 whole-campaign audit, `/roles` for the 11

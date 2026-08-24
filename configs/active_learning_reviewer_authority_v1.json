@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_active_learning_reviewer_authority_registry_v1",
+  "reviewers": [
+    {
+      "reviewer_id": "chatgpt-proposer-shadow-v1",
+      "reviewer_type": "chatgpt_proposer",
+      "authority_receipt_sha256": "e19161056c90f9600dc23b8486c189959f2dad28684c49fecc4d703d1dfbb134",
+      "authority_scopes": ["shadow_proposal"],
+      "provenance_status": "chatgpt_verified",
+      "training_authority": false
+    },
+    {
+      "reviewer_id": "independent-critic-shadow-v1",
+      "reviewer_type": "independent_critic",
+      "authority_receipt_sha256": "9164d8082f53bb5fa481a88b088ab150ca111691b7a3160df2b93ae5933c8f0d",
+      "authority_scopes": ["shadow_critique"],
+      "provenance_status": "chatgpt_verified",
+      "training_authority": false
+    }
+  ],
+  "decision_policy": "No configured reviewer can adjudicate training correctness or population risk. Add a separately authorized, hash-bound registry entry before accepting those decisions."
+}

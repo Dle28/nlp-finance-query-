@@ -142,3 +142,6 @@ tmp/
 *.bak
 *.swp
 *~
+
+# Independent public-site repository; never stage it from the research parent.
+/public_pipeline_site/
