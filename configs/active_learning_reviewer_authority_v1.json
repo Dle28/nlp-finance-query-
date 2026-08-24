@@ -3,21 +3,39 @@
   "protocol": "vifinqa_active_learning_reviewer_authority_registry_v1",
   "reviewers": [
     {
-      "reviewer_id": "chatgpt-proposer-shadow-v1",
-      "reviewer_type": "chatgpt_proposer",
+      "reviewer_id": "qwen3-8b-proposer-unpinned-v1",
+      "reviewer_type": "open_source_model_proposer",
+      "model_route_id": "qwen3_8b_active_proposer",
       "authority_receipt_sha256": "e19161056c90f9600dc23b8486c189959f2dad28684c49fecc4d703d1dfbb134",
       "authority_scopes": ["shadow_proposal"],
-      "provenance_status": "chatgpt_verified",
+      "provenance_status": "machine_provisional",
+      "enabled_for_decisions": false,
+      "disabled_reason": "exact model revision and weights SHA-256 are not pinned yet",
       "training_authority": false
     },
     {
-      "reviewer_id": "independent-critic-shadow-v1",
-      "reviewer_type": "independent_critic",
+      "reviewer_id": "mistral-nemo-12b-critic-unpinned-v1",
+      "reviewer_type": "open_source_model_critic",
+      "model_route_id": "mistral_nemo_12b_active_critic",
       "authority_receipt_sha256": "9164d8082f53bb5fa481a88b088ab150ca111691b7a3160df2b93ae5933c8f0d",
       "authority_scopes": ["shadow_critique"],
+      "provenance_status": "machine_provisional",
+      "enabled_for_decisions": false,
+      "disabled_reason": "exact model revision and weights SHA-256 are not pinned yet",
+      "training_authority": false
+    },
+    {
+      "reviewer_id": "chatgpt-human-equivalent-review-v1",
+      "reviewer_type": "chatgpt_human_equivalent_reviewer",
+      "authority_receipt_sha256": "b0bd45b6112c1a9eeac263c9f84b38541cf7cbf6d9cabefdd83f936fad8bc481",
+      "authority_scopes": ["bounded_semantic_review", "independent_audit_human_equivalent"],
       "provenance_status": "chatgpt_verified",
+      "verification_authority": "human_equivalent",
+      "enabled_for_decisions": true,
+      "review_only": true,
+      "competition_model_eligible": false,
       "training_authority": false
     }
   ],
-  "decision_policy": "No configured reviewer can adjudicate training correctness or population risk. Add a separately authorized, hash-bound registry entry before accepting those decisions."
+  "decision_policy": "Open-source model agents may propose and critique only after exact weight pinning. ChatGPT is external review-only, preserves chatgpt_verified provenance, and is excluded from training, competition inference and ensembles."
 }

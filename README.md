@@ -111,6 +111,12 @@ obligations, and `NOT_CHECKED` is not N/A. Q211 carries a distinct unresolved
 `metric.tax_treatment=before_tax` proposition. All 1,012 remain
 `CLAIM_COMPLETENESS_UNESTABLISHED`, so release stays blocked.
 
+The active-learning sidecar uses only open-weight models strictly below 14.7B
+for fine-tuning and competition inference. ChatGPT is outside the model graph:
+it can only review bounded numeric-free packets under preserved
+`chatgpt_verified` human-equivalent provenance and cannot provide training
+examples, inference, distillation or ensemble votes.
+
 The local review UI exposes `/campaign` for V5 entity-role diagnosis, `/audit`
 for the V7→V8→V9→V10→V11→V12 whole-campaign audit, `/roles` for the 11
 relational parent-role proposer ↔ critic dialogues, `/graphs` for operation-graph

@@ -8,8 +8,8 @@ items. It learns proof-policy patterns, not answers. No learned policy can
 materialize a value, certify a claim, promote a model, or release a submission.
 
 The current frozen cycle is
-`artifacts/research/active_learning_cycle_v3_20260824`; its manifest SHA-256 is
-`dffe1e4b86fed72cb9b4b3f9689df5ce7cc80134ef3043bb563c5f9e2fe8735a`.
+`artifacts/research/active_learning_cycle_v4_20260824`; its manifest SHA-256 is
+`0800631d99efabc362f2a0853ac48aabdd4fadfe486ebad14ce7fe3334deb8d3`.
 It is replay-verified, has zero adjudicated training records and zero promoted
 policies, and remains release-blocked.
 
@@ -21,9 +21,26 @@ policies, and remains release-blocked.
 3. **Certification** — typed claim requirements, exact-cell evidence, Decimal
    replay and independent receipts. Model confidence cannot create `PASS`.
 4. **Learning control** — versioned sampling, reviewer authority, append-only
-   decisions, same-item proposer/critic consensus, adjudication and calibration.
+   decisions, same-item open-source proposer/critic consensus, adjudication and
+   calibration.
 5. **Release** — the existing full-corpus proof, production ledger and submission
    compiler gates. Active learning never bypasses them.
+
+## Competition model boundary
+
+Only open-weight models with a declared parameter count strictly below 14.7B
+may be fine-tuned or used for competition inference. The initial routes are
+Qwen3-8B (8.2B) as proposer and Mistral-Nemo-Instruct-2407 (12B) as critic.
+Their exact revisions and weight hashes must be pinned before decisions are
+accepted. Qwen2.5-14B is excluded because its published total is 14.7B, not
+strictly below the cap.
+
+ChatGPT is not a training model, inference model, teacher/distillation source,
+ensemble member or fallback answer generator. Under the owner's prior grant it
+may review a bounded number of blind, numeric-free packets with
+`provenance_status=chatgpt_verified` and
+`verification_authority=human_equivalent`. Those receipts remain external
+review evidence; they cannot enter the training registry.
 
 ## What can learn
 
@@ -56,7 +73,7 @@ the new inclusion probability is recorded, and duplicate IDs fail closed.
 
 ```text
 PENDING packet
-  -> ChatGPT proposal + independent critic on the same immutable packet
+  -> open-source <14.7B proposer + different-family open-source critic
   -> agreement: MACHINE_PROVISIONAL policy candidate
   -> authorized adjudication: proposal-training record only
   -> independent probability audit + source-group holdout + risk bound
@@ -64,7 +81,7 @@ PENDING packet
   -> explicit promotion process (not implemented here)
 ```
 
-Reviewer identities and scopes come from a pinned authority registry. A
+Model routes and reviewer identities come from separately pinned policies. A
 decision must bind the immutable packet hash and resolve every source reference
 to a hash already present in that packet. Reviewers cannot supply their own
 issuer/document group. A single decision is never training-eligible; agent
@@ -78,9 +95,11 @@ count unless an independent audit labels them correct. Unknown groups abstain.
 ## Human-minimization plan
 
 1. Review the 64 active items as component policies, not full answers.
-2. Run proposer and blind critic on the identical hash-bound packet.
-3. Escalate disagreements, missing evidence and novel clusters to an authorized
-   adjudicator; do not adjudicate easy agreements by default.
+2. Run the open-source proposer and different-family blind critic on the
+   identical hash-bound packet.
+3. Escalate disagreements, missing evidence and novel clusters to a human, or
+   use ChatGPT only for bounded human-equivalent review under preserved
+   `chatgpt_verified` provenance. ChatGPT review never becomes training data.
 4. Keep the 32 probability-audit items blind and separate from training.
 5. Rerun accepted rules over their clusters; mutation failures return only the
    affected items to review.
@@ -94,10 +113,10 @@ not prove a 90.5% reduction in total human minutes or any release readiness.
 ```bash
 .venv/bin/python scripts/build_active_learning_cycle_v1.py \
   --config configs/active_learning_cycle_v1.json \
-  --output-dir artifacts/research/active_learning_cycle_v3_20260824
+  --output-dir artifacts/research/active_learning_cycle_v4_20260824
 
 .venv/bin/python scripts/verify_active_learning_cycle_v1.py \
-  artifacts/research/active_learning_cycle_v3_20260824/active_learning_cycle.manifest.json
+  artifacts/research/active_learning_cycle_v4_20260824/active_learning_cycle.manifest.json
 
 .venv/bin/python -m pytest -q tests/test_active_learning.py
 ```

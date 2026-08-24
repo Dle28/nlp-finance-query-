@@ -4,11 +4,13 @@
   "mode": "offline_shadow_active_learning",
   "input_paths": {
     "closure_manifest": "artifacts/research/v13_evidence_closure_workbench_v2_20260824/v13_evidence_closure_workbench.manifest.json",
-    "reviewer_authority_registry": "configs/active_learning_reviewer_authority_v1.json"
+    "reviewer_authority_registry": "configs/active_learning_reviewer_authority_v1.json",
+    "open_source_model_policy": "configs/open_source_model_policy_v1.json"
   },
   "locked_input_sha256": {
     "closure_manifest": "135c62ec07a01f632467d856a233d16a2d1dd9c34a52bc648dc1d44eb6f07ca8",
-    "reviewer_authority_registry": "210b80ad328fd7eec82a1e4e32de33c184cf1b55c11b01f2e1af98ae2f492f77"
+    "reviewer_authority_registry": "559a7f3b14315279d13df75aefd347f7e6ad8f148d3243cfaae4ad372c674803",
+    "open_source_model_policy": "be5a95ae4501fdeab171991a1d3dff3bc8b4f5c198922b67a2842f337da92280"
   },
   "review_budget_by_queue": {
     "formula_definition": 16,

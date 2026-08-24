@@ -76,16 +76,26 @@ def _fixture(root: Path, decisions: Path | None = None) -> Path:
         "outputs": outputs,
     })
     authority = data / "reviewer-authority.json"
+    model_policy = data / "model-policy.json"
+    _write_json(model_policy, {
+        "protocol": "vifinqa_open_source_model_policy_v1",
+        "strict_parameter_cap_billions": 14.7,
+        "routes": [
+            {"route_id": "fixture-proposer", "model_id": "open/proposer-8b", "parameter_count_billions": 8.0, "open_weights": True, "license": "Apache-2.0"},
+            {"route_id": "fixture-critic", "model_id": "open/critic-12b", "parameter_count_billions": 12.0, "open_weights": True, "license": "Apache-2.0"},
+        ],
+    })
     _write_json(authority, {
         "protocol": "vifinqa_active_learning_reviewer_authority_registry_v1",
         "reviewers": [
-            {"reviewer_id": "proposer", "reviewer_type": "chatgpt_proposer", "authority_receipt_sha256": "1" * 64, "authority_scopes": ["shadow_proposal"]},
-            {"reviewer_id": "critic", "reviewer_type": "independent_critic", "authority_receipt_sha256": "2" * 64, "authority_scopes": ["shadow_critique"]},
-            {"reviewer_id": "auditor", "reviewer_type": "independent_auditor", "authority_receipt_sha256": "3" * 64, "authority_scopes": ["population_audit"]},
-            {"reviewer_id": "adjudicator", "reviewer_type": "authorized_adjudicator", "authority_receipt_sha256": "4" * 64, "authority_scopes": ["proposal_training_adjudication"]},
+            {"reviewer_id": "proposer", "reviewer_type": "open_source_model_proposer", "model_route_id": "fixture-proposer", "authority_receipt_sha256": "1" * 64, "authority_scopes": ["shadow_proposal"], "enabled_for_decisions": True},
+            {"reviewer_id": "critic", "reviewer_type": "open_source_model_critic", "model_route_id": "fixture-critic", "authority_receipt_sha256": "2" * 64, "authority_scopes": ["shadow_critique"], "enabled_for_decisions": True},
+            {"reviewer_id": "auditor", "reviewer_type": "independent_auditor", "authority_receipt_sha256": "3" * 64, "authority_scopes": ["population_audit"], "enabled_for_decisions": True},
+            {"reviewer_id": "adjudicator", "reviewer_type": "human_adjudicator", "authority_receipt_sha256": "4" * 64, "authority_scopes": ["proposal_training_adjudication"], "enabled_for_decisions": True},
+            {"reviewer_id": "chatgpt-reviewer", "reviewer_type": "chatgpt_human_equivalent_reviewer", "authority_receipt_sha256": "5" * 64, "authority_scopes": ["bounded_semantic_review"], "enabled_for_decisions": True, "review_only": True, "competition_model_eligible": False, "training_authority": False},
         ],
     })
-    paths = {"closure_manifest": closure, "reviewer_authority_registry": authority}
+    paths = {"closure_manifest": closure, "reviewer_authority_registry": authority, "open_source_model_policy": model_policy}
     if decisions is not None:
         paths["review_decisions"] = decisions
     config = root / "configs" / ("cycle-with-decisions.json" if decisions else "cycle.json")
@@ -120,6 +130,9 @@ def test_cycle_selects_disjoint_active_and_probability_audit_lanes(tmp_path: Pat
     assert audit[0]["inclusion_probability"] == 32 / 1012
     assert result["calibration_gate"]["promotion_status"] == "BLOCKED"
     assert result["learning_contract"]["online_self_training"] is False
+    assert result["learning_contract"]["competition_model_policy"] == "open_source_weights_strictly_below_14.7B_parameters"
+    assert result["learning_contract"]["chatgpt_training_or_inference_allowed"] is False
+    assert all("chatgpt_proposer" not in row["required_reviewer_types"] for row in batch)
 
 
 def test_three_same_item_proposer_critic_consensuses_create_provisional_policy_only(tmp_path: Path) -> None:
@@ -137,8 +150,8 @@ def test_three_same_item_proposer_critic_consensuses_create_provisional_policy_o
     review_decisions = []
     for row in chosen:
         for reviewer_id, reviewer_type, receipt in (
-            ("proposer", "chatgpt_proposer", "1" * 64),
-            ("critic", "independent_critic", "2" * 64),
+            ("proposer", "open_source_model_proposer", "1" * 64),
+            ("critic", "open_source_model_critic", "2" * 64),
         ):
             review_decisions.append({
                 "protocol": DECISION_PROTOCOL,
@@ -176,7 +189,7 @@ def test_single_or_spoofed_review_cannot_enter_training(tmp_path: Path) -> None:
         "packet_payload_sha256": row["packet_payload_sha256"],
         "question_id": row["question_id"],
         "reviewer_id": "proposer",
-        "reviewer_type": "chatgpt_proposer",
+        "reviewer_type": "open_source_model_proposer",
         "reviewer_authority_receipt_sha256": "1" * 64,
         "verdict": "ACCEPT_PROPOSAL",
         "correctness_label": "UNESTABLISHED",
@@ -217,3 +230,45 @@ def test_single_or_spoofed_review_cannot_enter_training(tmp_path: Path) -> None:
 def test_wilson_gate_needs_about_125_independently_correct_audits() -> None:
     assert wilson_lower_bound(124, 124) < 0.97
     assert wilson_lower_bound(125, 125) >= 0.97
+
+
+def test_model_at_14_7b_is_rejected_by_strict_competition_cap(tmp_path: Path) -> None:
+    config_path = _fixture(tmp_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    policy_path = tmp_path / config["input_paths"]["open_source_model_policy"]
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["routes"][0]["parameter_count_billions"] = 14.7
+    _write_json(policy_path, policy)
+    config["locked_input_sha256"]["open_source_model_policy"] = sha256_file(policy_path)
+    _write_json(config_path, config)
+    try:
+        build_active_learning_cycle(config_path=config_path, output_dir=tmp_path / "invalid-model-cycle")
+    except ValueError as error:
+        assert "strict <14.7B" in str(error)
+    else:
+        raise AssertionError("14.7B model was accepted despite strict competition cap")
+
+
+def test_chatgpt_human_equivalent_review_stays_outside_training_and_model_consensus(tmp_path: Path) -> None:
+    config = _fixture(tmp_path)
+    initial = tmp_path / "initial"
+    build_active_learning_cycle(config_path=config, output_dir=initial)
+    row = next(item for item in load_jsonl(initial / "active_learning_review_batch_v1.jsonl") if item["evaluation_role"] == "active_learning")
+    decisions = tmp_path / "data" / "chatgpt-review.jsonl"
+    _write_jsonl(decisions, [{
+        "protocol": DECISION_PROTOCOL,
+        "review_item_id": row["review_item_id"],
+        "packet_payload_sha256": row["packet_payload_sha256"],
+        "question_id": row["question_id"],
+        "reviewer_id": "chatgpt-reviewer",
+        "reviewer_type": "chatgpt_human_equivalent_reviewer",
+        "reviewer_authority_receipt_sha256": "5" * 64,
+        "verdict": "ACCEPT_PROPOSAL",
+        "correctness_label": "CORRECT",
+        "approved_policy": {"operation": "difference", "version": 1},
+        "source_refs": [row["allowed_source_ref_sha256"][0]],
+    }])
+    scored_config = _fixture(tmp_path / "scored", decisions=decisions)
+    result = build_active_learning_cycle(config_path=scored_config, output_dir=tmp_path / "scored-cycle")
+    assert result["counts"]["trusted_training_record_count"] == 0
+    assert result["counts"]["machine_provisional_policy_count"] == 0

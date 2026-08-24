@@ -48,6 +48,13 @@ def verify(manifest_path: Path) -> dict[str, Any]:
     contract = manifest.get("learning_contract") or {}
     if contract.get("online_self_training") is not False or contract.get("numeric_answer_learning") is not False:
         raise ValueError("active-learning contract permits unsafe self-training")
+    if (
+        contract.get("competition_model_policy") != "open_source_weights_strictly_below_14.7B_parameters"
+        or contract.get("chatgpt_competition_model_eligible") is not False
+        or contract.get("chatgpt_training_or_inference_allowed") is not False
+        or contract.get("chatgpt_role") != "external_human_equivalent_review_only"
+    ):
+        raise ValueError("competition model boundary is not open-source-only and ChatGPT-excluded")
     for name, record in (manifest.get("inputs") or {}).items():
         if not isinstance(record, Mapping):
             raise ValueError(f"invalid input record {name}")
@@ -91,6 +98,8 @@ def verify(manifest_path: Path) -> dict[str, Any]:
     if len(question_ids) != len(set(question_ids)):
         raise ValueError("active-learning and population-audit lanes overlap")
     audit = [row for row in review_rows if row.get("evaluation_role") == "independent_population_audit"]
+    if any("chatgpt_proposer" in (row.get("required_reviewer_types") or []) for row in review_rows):
+        raise ValueError("ChatGPT appears in the competition proposal model graph")
     if len(audit) != counts.get("population_audit_review_count"):
         raise ValueError("population-audit count mismatch")
     if any(not isinstance(row.get("inclusion_probability"), float) or not 0 < row["inclusion_probability"] <= 1 for row in audit):

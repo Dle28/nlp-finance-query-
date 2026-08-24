@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_open_source_model_policy_v1",
+  "strict_parameter_cap_billions": 14.7,
+  "routes": [
+    {
+      "route_id": "qwen3_8b_active_proposer",
+      "role": "open_source_model_proposer",
+      "model_id": "Qwen/Qwen3-8B",
+      "parameter_count_billions": 8.2,
+      "open_weights": true,
+      "license": "Apache-2.0",
+      "enabled_for_fine_tuning": true,
+      "revision_policy": "pin_exact_revision_and_weights_sha256_before_execution"
+    },
+    {
+      "route_id": "mistral_nemo_12b_active_critic",
+      "role": "open_source_model_critic",
+      "model_id": "mistralai/Mistral-Nemo-Instruct-2407",
+      "parameter_count_billions": 12.0,
+      "open_weights": true,
+      "license": "Apache-2.0",
+      "enabled_for_fine_tuning": true,
+      "revision_policy": "pin_exact_revision_and_weights_sha256_before_execution"
+    }
+  ],
+  "forbidden_roles": [
+    "closed_api_competition_model",
+    "chatgpt_training_model",
+    "chatgpt_inference_model",
+    "chatgpt_ensemble_member"
+  ],
+  "decision_policy": "Only open-weight routes strictly below 14.7B may be fine-tuned or used for competition inference. ChatGPT is outside the model graph."
+}

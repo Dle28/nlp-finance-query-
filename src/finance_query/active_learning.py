@@ -28,6 +28,8 @@ TRAINING_PROTOCOL = "vifinqa_trusted_training_registry_v1"
 DECISION_PROTOCOL = "vifinqa_active_learning_review_decision_v1"
 AUDIT_LEDGER_PROTOCOL = "vifinqa_active_learning_audit_ledger_v1"
 AUTHORITY_REGISTRY_PROTOCOL = "vifinqa_active_learning_reviewer_authority_registry_v1"
+MODEL_POLICY_PROTOCOL = "vifinqa_open_source_model_policy_v1"
+MAX_MODEL_PARAMETERS_BILLIONS = 14.7
 
 QUEUE_OUTPUTS = {
     "formula_definition": "formula_definition_receipt_intake",
@@ -153,13 +155,19 @@ def _candidate_priority(row: Mapping[str, Any]) -> tuple[int, int]:
 
 
 def _review_assignment(role_index: int) -> tuple[str, list[str]]:
+    reviewers = [
+        "open_source_model_proposer",
+        "open_source_model_critic",
+        "human_adjudicator",
+        "chatgpt_human_equivalent_reviewer",
+    ]
     if role_index == 0:
-        return "learn_seed", ["chatgpt_proposer", "independent_critic", "authorized_adjudicator"]
+        return "learn_seed", reviewers
     if role_index == 1:
-        return "learn_seed", ["chatgpt_proposer", "independent_critic", "authorized_adjudicator"]
+        return "learn_seed", reviewers
     if role_index == 2:
-        return "learn_validation", ["chatgpt_proposer", "independent_critic", "authorized_adjudicator"]
-    return "learn_validation", ["chatgpt_proposer", "independent_critic", "authorized_adjudicator"]
+        return "learn_validation", reviewers
+    return "learn_validation", reviewers
 
 
 def _is_sha256(value: object) -> bool:
@@ -233,7 +241,7 @@ def _select_queue(
                 "evaluation_role": "active_learning",
                 "inclusion_probability": None,
                 "required_reviewer_types": reviewers,
-                "consensus_reviewer_types": ["chatgpt_proposer", "independent_critic"],
+                "consensus_reviewer_types": ["open_source_model_proposer", "open_source_model_critic"],
                 "review_status": "PENDING",
                 "decision_protocol": DECISION_PROTOCOL,
                 "source_contract": source_contract(),
@@ -287,7 +295,7 @@ def _select_population_audit(
             "evaluation_role": "independent_population_audit",
             "inclusion_probability": inclusion_probability,
             "sampling_seed_sha256": canonical_sha256(seed),
-            "required_reviewer_types": ["independent_auditor"],
+            "required_reviewer_types": ["independent_auditor", "chatgpt_human_equivalent_reviewer"],
             "consensus_reviewer_types": ["independent_auditor"],
             "review_status": "PENDING",
             "decision_protocol": DECISION_PROTOCOL,
@@ -307,7 +315,29 @@ def wilson_lower_bound(successes: int, total: int, *, z: float = 1.96) -> float:
     return (centre - adjustment) / denominator
 
 
-def _authority_index(path: Path) -> dict[str, dict[str, Any]]:
+def _model_policy(path: Path) -> dict[str, dict[str, Any]]:
+    policy = load_json(path)
+    if policy.get("protocol") != MODEL_POLICY_PROTOCOL or float(policy.get("strict_parameter_cap_billions") or 0) != MAX_MODEL_PARAMETERS_BILLIONS:
+        raise ValueError("invalid open-source model policy")
+    routes: dict[str, dict[str, Any]] = {}
+    for route in policy.get("routes") or []:
+        route_id = str(route.get("route_id") or "")
+        parameters = float(route.get("parameter_count_billions") or 0)
+        if (
+            not route_id
+            or route_id in routes
+            or not route.get("open_weights")
+            or not str(route.get("license") or "")
+            or not 0 < parameters < MAX_MODEL_PARAMETERS_BILLIONS
+        ):
+            raise ValueError("open-source model route violates the strict <14.7B policy")
+        routes[route_id] = dict(route)
+    if not routes:
+        raise ValueError("open-source model policy has no eligible route")
+    return routes
+
+
+def _authority_index(path: Path, model_routes: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     registry = load_json(path)
     if registry.get("protocol") != AUTHORITY_REGISTRY_PROTOCOL:
         raise ValueError("invalid reviewer authority registry")
@@ -318,6 +348,18 @@ def _authority_index(path: Path) -> dict[str, dict[str, Any]]:
         receipt = reviewer.get("authority_receipt_sha256")
         if not reviewer_id or not reviewer_type or not _is_sha256(receipt) or reviewer_id in result:
             raise ValueError("invalid or duplicate reviewer authority")
+        if reviewer_type in {"open_source_model_proposer", "open_source_model_critic"}:
+            route_id = str(reviewer.get("model_route_id") or "")
+            if route_id not in model_routes:
+                raise ValueError("model reviewer is not bound to an eligible open-source <14.7B route")
+        elif reviewer.get("model_route_id") is not None:
+            raise ValueError("non-model reviewer cannot be bound to a competition model route")
+        if reviewer_type == "chatgpt_human_equivalent_reviewer" and (
+            reviewer.get("training_authority") is not False
+            or reviewer.get("competition_model_eligible") is not False
+            or reviewer.get("review_only") is not True
+        ):
+            raise ValueError("ChatGPT authority must remain review-only and outside the competition model")
         result[reviewer_id] = dict(reviewer)
     return result
 
@@ -367,6 +409,7 @@ def _decision_registry(
             or authority.get("reviewer_type") != reviewer_type
             or authority.get("authority_receipt_sha256") != decision.get("reviewer_authority_receipt_sha256")
             or reviewer_type not in (source_item.get("required_reviewer_types") or [])
+            or authority.get("enabled_for_decisions") is not True
         ):
             raise ValueError("reviewer type or authority is not permitted for this review item")
         if decision.get("packet_payload_sha256") != source_item.get("packet_payload_sha256"):
@@ -388,7 +431,7 @@ def _decision_registry(
         if source_item.get("evaluation_role") == "independent_population_audit":
             if correctness not in {"CORRECT", "INCORRECT"}:
                 raise ValueError("population audit requires an independent correctness label")
-        elif correctness != "UNESTABLISHED" and reviewer_type != "authorized_adjudicator":
+        elif correctness != "UNESTABLISHED" and reviewer_type not in {"human_adjudicator", "chatgpt_human_equivalent_reviewer"}:
             raise ValueError("proposer or critic cannot establish correctness")
         normalized = {
             **decision,
@@ -407,9 +450,9 @@ def _decision_registry(
         decisions_by_review[str(decision["review_item_id"])].append(decision)
     for review_id, item_decisions in decisions_by_review.items():
         lanes = {str(item["reviewer_type"]): item for item in item_decisions}
-        proposer = lanes.get("chatgpt_proposer")
-        critic = lanes.get("independent_critic")
-        adjudicator = lanes.get("authorized_adjudicator")
+        proposer = lanes.get("open_source_model_proposer")
+        critic = lanes.get("open_source_model_critic")
+        adjudicator = lanes.get("human_adjudicator")
         if proposer is None or critic is None or adjudicator is None:
             continue
         policies_match = (
@@ -456,8 +499,8 @@ def _decision_registry(
         disagreements = 0
         for item_values in by_item.values():
             lane = {str(item["reviewer_type"]): item for item in item_values}
-            proposer = lane.get("chatgpt_proposer")
-            critic = lane.get("independent_critic")
+            proposer = lane.get("open_source_model_proposer")
+            critic = lane.get("open_source_model_critic")
             if proposer is None or critic is None:
                 continue
             same_verdict = proposer.get("verdict") == critic.get("verdict") == "ACCEPT_PROPOSAL"
@@ -581,9 +624,10 @@ def build_active_learning_cycle(*, config_path: Path, output_dir: Path) -> dict[
     if output_dir.exists():
         raise FileExistsError(f"Refusing to overwrite active-learning cycle: {output_dir}")
     config, inputs = _load_config(config_path)
-    if "reviewer_authority_registry" not in inputs:
-        raise ValueError("active learning requires a pinned reviewer authority registry")
-    authority_registry = _authority_index(inputs["reviewer_authority_registry"])
+    if "reviewer_authority_registry" not in inputs or "open_source_model_policy" not in inputs:
+        raise ValueError("active learning requires pinned reviewer authority and open-source model policies")
+    model_routes = _model_policy(inputs["open_source_model_policy"])
+    authority_registry = _authority_index(inputs["reviewer_authority_registry"], model_routes)
     prior_audit = _load_prior_audit(inputs.get("prior_audit_ledger"))
     closure = load_json(inputs["closure_manifest"])
     if closure.get("protocol") != "vifinqa_v13_evidence_closure_workbench_v1":
@@ -697,6 +741,11 @@ def build_active_learning_cycle(*, config_path: Path, output_dir: Path) -> dict[
         "learning_contract": {
             "learning_mode": "offline_versioned_active_learning",
             "learned_target": "proof_policy_component",
+            "competition_model_policy": "open_source_weights_strictly_below_14.7B_parameters",
+            "competition_model_route_count": len(model_routes),
+            "chatgpt_competition_model_eligible": False,
+            "chatgpt_training_or_inference_allowed": False,
+            "chatgpt_role": "external_human_equivalent_review_only",
             "numeric_answer_learning": False,
             "online_self_training": False,
             "self_label_feedback": False,

@@ -112,7 +112,12 @@ blocked, so there is no production submission path to execute.
 
 ### Fail-closed active-learning control plane
 
-The active learner is a sidecar to, not a replacement for, certification. It
+The active learner is a sidecar to, not a replacement for, certification. Its
+trainable and inference models must have open weights and stay strictly below
+14.7B parameters; the initial policy routes Qwen3-8B and Mistral-Nemo-12B.
+ChatGPT is excluded from training, competition inference, distillation and
+ensembles. It may only provide bounded external review under truthful
+`chatgpt_verified` and human-equivalent authority. The control plane
 clusters component proof-policy gaps, freezes an independent probability audit
 before information-gain sampling, and emits immutable review packets. ChatGPT
 proposal plus independent-critic agreement creates only a non-materializable
