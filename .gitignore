@@ -38,6 +38,11 @@ htmlcov/
 .pyright/
 .ipynb_checkpoints/
 
+# JavaScript dependencies and framework build outputs
+node_modules/
+.next/
+.vinext/
+
 # Hugging Face and application caches
 .cache/
 huggingface/
@@ -46,6 +51,14 @@ transformers_cache/
 datasets_cache/
 *.arrow
 *.lock
+!uv.lock
+
+# Local, provenance-sensitive review outputs. Publish only an explicitly
+# validated/hash-bound release with `git add -f`, never the working directory.
+/data/labels/
+
+# Independent nested Git repository used for the local review application.
+/review_ui/
 
 # Local ViFinQA downloads
 /data/ViFinQA/
@@ -120,6 +133,7 @@ submission_*.zip
 *.rar
 
 # Logs and temporary files
+tmp/
 *.log
 *.out
 *.err
@@ -128,3 +142,6 @@ submission_*.zip
 *.bak
 *.swp
 *~
+
+# Independent public-site repository; never stage it from the research parent.
+/public_pipeline_site/

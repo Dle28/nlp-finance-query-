@@ -1,0 +1,38 @@
+name: quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-and-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install project
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+      - name: Portable unit and contract tests
+        run: python -m pytest -q
+      - name: Canonical E2E boundary
+        run: |
+          python -m finance_query.cli --help
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from finance_query.cli import build_parser
+
+          subcommands = next(action for action in build_parser()._actions if action.dest == "command")
+          assert set(subcommands.choices) == {"run-e2e"}
+          policy = json.loads(Path("configs/research/proof_policy/open_source_model_policy_v1.json").read_text())
+          assert len(policy["routes"]) == 1
+          route = policy["routes"][0]
+          assert route["model_id"] == "Qwen/Qwen3-8B"
+          assert route["parameter_count_billions"] < 14.7
+          PY
+      - name: Whitespace integrity
+        run: git diff --check

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_llm_lane_control_v1",
+  "mode": "paused_except_bounded_diagnostic",
+  "default_operational_llm_enabled": false,
+  "diagnostic": {
+    "proposer_only": true,
+    "selection_policy": "queue_cluster_round_robin",
+    "review_protocol": "independent_counterbalanced_v1",
+    "max_packets": 30,
+    "min_human_reviewed": 20,
+    "min_human_reviewed_proposals": 5,
+    "min_human_reviewed_for_keep": 125,
+    "min_human_reviewed_proposals_for_keep": 25
+  },
+  "decision_thresholds": {
+    "min_schema_valid_rate": 0.90,
+    "min_valid_proposal_rate": 0.10,
+    "min_proposal_precision": 0.80,
+    "min_source_reference_exact_rate": 0.90,
+    "min_reviewer_time_reduction": 0.25,
+    "max_missed_blocker_rate": 0.0,
+    "max_missed_blocker_wilson_upper_95": 0.03
+  },
+  "keep_decision": "KEEP_LIMITED_PROPOSER_ONLY",
+  "remove_decision": "REMOVE_FROM_OPERATIONAL_PIPELINE",
+  "production_statistical_gate_is_separate": true,
+  "training_eligible": false,
+  "certification_allowed": false,
+  "release_authorized": false
+}
