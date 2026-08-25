@@ -17,7 +17,9 @@ from .e2e import (
 )
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
+    """Build the one-command public CLI for contract checks and operators."""
+
     parser = argparse.ArgumentParser(prog="finance-query")
     subparsers = parser.add_subparsers(dest="command", required=True)
     replay = subparsers.add_parser(
@@ -31,7 +33,11 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="A new output directory; completed artefacts are immutable.",
     )
-    return parser.parse_args()
+    return parser
+
+
+def parse_args() -> argparse.Namespace:
+    return build_parser().parse_args()
 
 
 def main() -> None:
