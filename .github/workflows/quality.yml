@@ -18,7 +18,21 @@ jobs:
         run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
       - name: Portable unit and contract tests
         run: python -m pytest -q
-      - name: Static fail-closed integration policy
-        run: python scripts/validate_integration_quality_gate.py --policy configs/integration_quality_gate_v1.yaml --policy-only
+      - name: Canonical E2E boundary
+        run: |
+          python -m finance_query.cli --help
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from finance_query.cli import build_parser
+
+          subcommands = next(action for action in build_parser()._actions if action.dest == "command")
+          assert set(subcommands.choices) == {"run-e2e"}
+          policy = json.loads(Path("configs/research/proof_policy/open_source_model_policy_v1.json").read_text())
+          assert len(policy["routes"]) == 1
+          route = policy["routes"][0]
+          assert route["model_id"] == "Qwen/Qwen3-8B"
+          assert route["parameter_count_billions"] < 14.7
+          PY
       - name: Whitespace integrity
         run: git diff --check

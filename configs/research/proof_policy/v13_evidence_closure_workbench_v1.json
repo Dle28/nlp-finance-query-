@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_v13_evidence_closure_workbench_v1",
+  "mode": "additive_receipt_intake",
+  "input_paths": {
+    "v13_manifest": "artifacts/research/claim_requirement_coverage_v13_20260824_v7/claim_requirement_coverage_v13.manifest.json",
+    "typed_plans": "artifacts/kaggle_runs/notebook5554bd790d_v10_20260811/vifinqa_review_bundle/typed_operand_plans_v1.jsonl",
+    "typed_plans_manifest": "artifacts/kaggle_runs/notebook5554bd790d_v10_20260811/vifinqa_review_bundle/typed_operand_plans_v1.manifest.json",
+    "formula_evidence": "artifacts/kaggle_runs/notebook5554bd790d_v10_20260811/vifinqa_review_bundle/formula_evidence_sets_typed_v1.jsonl",
+    "formula_evidence_manifest": "artifacts/kaggle_runs/notebook5554bd790d_v10_20260811/vifinqa_review_bundle/formula_evidence_sets_typed_v1.manifest.json"
+  },
+  "locked_input_sha256": {
+    "v13_manifest": "761d9714a03fc7d38162ddbe0063e7a6965ce64c7d6bdd411d30c4d31c65da7b",
+    "typed_plans": "212097bf0a892d9cf7ab703b9f690b854c9fbb36ce3cc07ebd73c390c22c0319",
+    "typed_plans_manifest": "53bb873d1bc6a346b9094f4e48d1b993a9fcd5d78c848e076a55d29b631abcfa",
+    "formula_evidence": "7fdc680f3fba224b72161c6dec768b45d0d77064a6020abfd66d6c81bd9188d2",
+    "formula_evidence_manifest": "d3da7384c16d154a137b21c0d9370e313b157ce47e539bfa2096aa63feadef9f"
+  },
+  "release_effect": "none_keep_blocked"
+}

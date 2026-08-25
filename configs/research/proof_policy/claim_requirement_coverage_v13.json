@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_claim_requirement_coverage_v13",
+  "mode": "additive_shadow_audit",
+  "input_lineage": "vifinqa-grounded-e2e-relational-entity-role-v12_20260823-lock1",
+  "definition_version": "claim_requirement_rules_v3_proposition_bound",
+  "definition_sources": [
+    "configs/research/proof_policy/claim_requirement_coverage_v13.json",
+    "src/finance_query/research/proof_policy/claim_requirements.py",
+    "scripts/research/proof_policy/build_claim_requirement_coverage_v13.py",
+    "scripts/research/proof_policy/verify_claim_requirement_coverage_v13.py"
+  ],
+  "locked_input_sha256": {
+    "routes": "775f980d49702fe0898568235cc08012c4eebcc2d35d7addd751b48e6e8ceba4",
+    "routes_manifest": "15393143172bdf0b495c80297a670134f9316dda91cbc0e4e82f24175d466526",
+    "periods": "0b6fae5723a1d3604b4e2c3f24d36d0d63a1ba8cdd770d4987815cb8c6f441fb",
+    "periods_manifest": "f59faba9f3fea965adcfd41008725204e7cafb7bf5a867c0ee96cd5c8acf8a69",
+    "bindings": "d48bf0e7388f75e79c6282c2408b7fe03aa824d20a78dd9d8eab2a50831bf83e",
+    "bindings_manifest": "45b716b929a996db59ed8025e4431e9d00055d039586711c3ff50051102d107e",
+    "certificates": "21d0328caa51d95a31825780afacd0b7c44c6ca5fa2e934a42b90e95cac6119c",
+    "certificates_manifest": "cfa4045212fecb3ba5a67d210449f60e5cac53451a4d0ea530f195ef72ed7739"
+  },
+  "claim_completeness_policy": {
+    "self_generated_requirements_can_prove_claim_completeness": false,
+    "independent_requirement_basis_required": true,
+    "missing_dimension_status": "NOT_CHECKED",
+    "unproven_required_dimension_status": "UNRESOLVED"
+  },
+  "proof_statuses": ["PASS", "FAIL", "UNRESOLVED", "NOT_APPLICABLE", "NOT_CHECKED"],
+  "source_truth_tiers": ["ocr_derived", "visual_source_verified", "source_native"],
+  "release_effect": "none_keep_blocked"
+}
