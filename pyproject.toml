@@ -5,36 +5,24 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "finance-query"
 version = "0.1.0"
-description = "Adaptive hierarchical RAG baseline for Vietnamese financial QA"
+description = "Fail-closed deterministic verification pipeline for ViFinQA"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "beautifulsoup4>=4.12",
-  "faiss-cpu>=1.8",
-  "huggingface_hub>=0.24",
-  "joblib>=1.4",
   "lxml>=5.2",
-  "numpy>=1.26",
-  "pandas>=2.2",
   "pyyaml>=6.0",
-  "requests>=2.31",
-  "scikit-learn>=1.5",
-  "sentence-transformers>=3.0",
-  "torch>=2.2",
   "tqdm>=4.66",
-  "transformers>=4.43"
 ]
 
 [project.optional-dependencies]
-# Local/Kaggle Qwen 4-bit inference (see requirements-llm.txt). CPU-only
-# review tooling does not need CUDA quantization packages.
+# Open-weight diagnostic lane only; it never answers or authorizes release.
 llm = [
+  "torch>=2.2",
+  "transformers>=4.43",
+  "huggingface_hub>=0.24",
   "accelerate>=1.0",
   "bitsandbytes>=0.45",
-]
-# Kaggle kernel artifact download scripts.
-kaggle = [
-  "kaggle>=1.6",
 ]
 dev = [
   "ipywidgets>=8.1",
@@ -54,5 +42,6 @@ where = ["src"]
 # Downloaded research artifacts can contain historical test snapshots.
 testpaths = ["tests"]
 markers = [
+  "e2e: deterministic end-to-end replay contract tests",
   "local_artifacts: requires provenance-bound research artifacts excluded from Git",
 ]

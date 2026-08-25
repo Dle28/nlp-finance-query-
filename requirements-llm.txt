@@ -1,5 +1,7 @@
-# Optional dependencies for local/Kaggle Qwen2.5-14B 4-bit inference.
-# Keep them separate from requirements.txt: CPU-only review tooling does not
-# need CUDA quantization packages.
+# Optional dependencies for the open-weight (<14.7B) diagnostic lane.
+# They are intentionally outside the deterministic E2E environment.
+torch>=2.2
+transformers>=4.43
+huggingface_hub>=0.24
 accelerate>=1.0
 bitsandbytes>=0.45
