@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_multi_operand_review_v1",
+  "question_ids": [819, 749, 745],
+  "review": {
+    "max_tables_per_operand": 3,
+    "max_rows_per_table": 5
+  },
+  "candidate_overrides": {
+    "819": {
+      "x1": {
+        "prepend_table_uids": [
+          "e4e693cf813956e492140430547ab445047c5e08d0eaf5926803fd7c9720bb34"
+        ]
+      }
+    }
+  },
+  "authorization": {
+    "research_only": true,
+    "human_verified": false,
+    "may_authorize_evidence": false,
+    "may_authorize_answer": false,
+    "training_eligible": false,
+    "submission_eligible": false
+  }
+}

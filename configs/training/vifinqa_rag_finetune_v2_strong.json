@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "protocol": "vifinqa_rag_finetune_and_dense_expansion_v2",
+  "curriculum": {
+    "source": "artifacts/training/vifinqa_self_supervised_curriculum_v1_20260828_r1",
+    "use_all_splits": true,
+    "competition_questions_read": 0,
+    "hard_negative_scope": "same_document_then_same_ticker_year",
+    "synthetic_rows": {
+      "retrieval_triplets_train": 63381,
+      "reranker_pairs_train": 126762,
+      "program_sft_train": 76441
+    }
+  },
+  "retrieval": {
+    "full_dense_index": "artifacts/kaggle_runs/vifinqa_full_dense_index_gpu_v1_20260826/vifinqa_full_dense_v1",
+    "dense_candidate_limit": 50,
+    "cross_encoder_candidate_limit": 40,
+    "query_encode_batch_size": 128,
+    "navigation_only": true
+  },
+  "models": {
+    "retriever": "intfloat/multilingual-e5-small",
+    "reranker": "BAAI/bge-reranker-v2-m3",
+    "generator": "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+  },
+  "training": {
+    "fast_dev_run": false,
+    "retriever_epochs": 2,
+    "retriever_batch_size": 64,
+    "reranker_epochs": 2,
+    "reranker_batch_size": 16,
+    "generator_epochs": 1,
+    "generator_gradient_accumulation": 16
+  },
+  "promotion": {
+    "require_held_out_ticker_recall_at_5_non_decrease": true,
+    "require_held_out_ticker_mrr_at_5_non_decrease": true,
+    "require_full_run": true,
+    "smoke_checkpoint_promotion_allowed": false,
+    "numeric_authority": "deterministic_source_executor_only"
+  }
+}

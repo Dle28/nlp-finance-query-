@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI GURU — canonical resolve → E2E → compile</title>
+  <style>
+    :root {
+      --paper: #f5f5f5; --paper-2: #ececec; --white: #fff;
+      --ink: #2d3142; --muted: #4f5d75; --soft: #7a8399;
+      --rule: rgba(45,49,66,.14); --solid: #bfc0c0;
+      --accent: #eb6c36; --accent-tint: rgba(235,108,54,.08);
+      --link: #2e5aa8; --sans: Arial, sans-serif;
+      --mono: "Courier New", monospace; --serif: Georgia, serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); }
+    main { max-width: 1880px; margin: auto; padding: 46px 30px 70px; }
+    .eyebrow, .kicker { margin: 0 0 10px; color: var(--soft); font: 600 10px/1.4 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+    h1 { max-width: 1250px; margin: 0; font: 400 48px/1.04 var(--serif); letter-spacing: -.02em; }
+    h2 { margin: 0; font: 400 32px/1.08 var(--serif); }
+    .lead, .note { max-width: 1300px; color: var(--muted); line-height: 1.6; }
+    .lead { margin: 16px 0 0; font-size: 16px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 0; }
+    .tag { border: 1px solid var(--solid); border-radius: 4px; padding: 8px 11px; background: var(--white); color: var(--muted); font: 600 9px/1 var(--mono); letter-spacing: .05em; }
+    .tag.focal { border-color: var(--accent); background: var(--accent-tint); color: var(--accent); }
+    section { margin-top: 48px; }
+    .note { margin: 12px 0 20px; }
+    .diagram { overflow-x: auto; }
+    svg { display: block; width: 100%; min-width: 1700px; height: auto; }
+    .zone { fill: rgba(45,49,66,.018); stroke: rgba(45,49,66,.22); stroke-width: 1; }
+    .zone.dashed { stroke-dasharray: 5 4; }
+    .zone-label-mask, .arrow-mask { fill: var(--paper); }
+    .zone-label, .arrow-label, .slot-label, .control-label { fill: var(--soft); font: 600 9px var(--mono); letter-spacing: .09em; }
+    .arrow-label { font-size: 8px; }
+    .connector { fill: none; stroke: var(--muted); stroke-width: 1.25; }
+    .connector.dashed { stroke: var(--soft); stroke-width: 1.05; stroke-dasharray: 5 4; }
+    .connector.accent { stroke: var(--accent); stroke-width: 1.45; }
+    .node-underlay { fill: var(--paper); }
+    .node-frame { fill: var(--white); stroke: rgba(45,49,66,.30); stroke-width: 1; }
+    .node.focal .node-frame { fill: var(--accent-tint); stroke: var(--accent); stroke-width: 1.35; }
+    .node-no { fill: rgba(45,49,66,.11); }
+    .node.focal .node-no { fill: rgba(235,108,54,.20); }
+    .node-no-text { fill: var(--ink); font: 700 11px var(--mono); }
+    .node.focal .node-no-text { fill: var(--accent); }
+    .node-title { fill: var(--ink); font: 700 12px var(--sans); }
+    .node.focal .node-title { fill: var(--accent); }
+    .node-kicker, .slot-label { fill: var(--soft); font: 600 8px var(--mono); letter-spacing: .08em; }
+    .slot-text { fill: var(--muted); font: 400 10px var(--sans); }
+    .node-rule, .control-rule { stroke: var(--solid); stroke-width: .8; }
+    .artifact { fill: rgba(45,49,66,.055); stroke: rgba(45,49,66,.16); stroke-width: .8; }
+    .artifact-text { fill: var(--muted); font: 600 9px var(--mono); letter-spacing: .04em; }
+    .card { border: 1px solid var(--rule); border-radius: 6px; background: var(--white); padding: 19px; }
+    .cards { display: grid; grid-template-columns: 1.15fr .95fr .9fr; gap: 16px; margin-top: 22px; }
+    .card.focal { border-color: var(--accent); background: var(--accent-tint); }
+    .card h3 { margin: 0; font-size: 17px; line-height: 1.2; }
+    .card p { margin: 10px 0 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+    .two-col { display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; align-items: start; }
+    table { width: 100%; border-collapse: collapse; background: var(--white); border: 1px solid var(--rule); font-size: 13px; }
+    th, td { padding: 11px 13px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; line-height: 1.45; }
+    th { color: var(--soft); font: 600 9px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child { width: 22%; font-weight: 700; }
+    code { color: var(--ink); font: 400 12px var(--mono); }
+    .rule-list { margin: 12px 0 0; padding-left: 20px; color: var(--muted); font-size: 14px; line-height: 1.55; }
+    .rule-list li + li { margin-top: 7px; }
+    .callout { margin-top: 16px; padding: 14px 16px; border-left: 3px solid var(--accent); background: var(--accent-tint); color: var(--muted); font-size: 14px; line-height: 1.55; }
+    footer { margin-top: 34px; padding-top: 15px; border-top: 1px solid var(--rule); color: var(--soft); font: 9px/1.5 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    @media (max-width: 900px) { h1 { font-size: 38px; } .cards, .two-col { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">AI GURU / CANONICAL PIPELINE V2</p>
+    <h1>Một đường từ data/question đến submission: Resolve trước, E2E trước compiler.</h1>
+    <p class="lead">Proposal chỉ đề xuất. Deterministic Resolver mới tạo <code>ResolvedPrediction</code>; E2E chỉ kiểm tra resolved prediction với source hashes và tạo <code>E2EReceipt</code>; Submission Compiler là nơi duy nhất tạo ledger/JSON/CSV/ZIP. Feedback đi sau run để nuôi version kế tiếp, không sửa output hiện tại.</p>
+    <div class="tags"><span class="tag focal">PROPOSAL → RESOLVE → E2E → COMPILE</span><span class="tag">VI SEMANTIC SURFACE + EN/VI MODEL PROMPT</span><span class="tag">RAG / RERANK = NAVIGATION ONLY</span><span class="tag">MODEL FEEDBACK ≠ AUTHORITY</span></div>
+  </header>
+
+  <section aria-labelledby="flow-heading">
+    <p class="kicker">PRIMARY RUN / SOLID HANDOFFS</p>
+    <h2 id="flow-heading">Luồng canonical đang được code hóa</h2>
+    <p class="note">Các stage 01–10 nằm trên một trục duy nhất. RAG và fine-tune chỉ mở rộng candidate/navigation hoặc tạo proposal; không được đưa số vào planner. E2E không tìm câu trả lời mới và không có quyền tự promote.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1800 910" role="img" aria-labelledby="canonical-title canonical-desc">
+        <title id="canonical-title">AI GURU canonical data to submission pipeline</title>
+        <desc id="canonical-desc">Mười bước từ intake đến submission package. Resolver đứng trước E2E và compiler. E2E receipt chạy vào feedback rail cho version kế tiếp.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4f5d75"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#eb6c36"/></marker>
+        </defs>
+        <rect width="1800" height="910" fill="var(--paper)"/>
+        <rect x="20" y="112" width="1760" height="330" rx="8" class="zone"/>
+        <rect x="20" y="510" width="1760" height="220" rx="8" class="zone dashed"/>
+        <rect x="38" y="120" width="248" height="17" rx="2" class="zone-label-mask"/><text x="162" y="133" text-anchor="middle" class="zone-label">PRIMARY RUN / DELIVERY PATH</text>
+        <rect x="38" y="518" width="285" height="17" rx="2" class="zone-label-mask"/><text x="180" y="531" text-anchor="middle" class="zone-label">OFFLINE FEEDBACK / NEXT VERSION</text>
+
+        <!-- All connectors precede node boxes. -->
+        <line x1="190" y1="270" x2="205" y2="270" class="connector" marker-end="url(#arrow)"/>
+        <line x1="365" y1="270" x2="380" y2="270" class="connector" marker-end="url(#arrow)"/>
+        <line x1="540" y1="270" x2="555" y2="270" class="connector" marker-end="url(#arrow)"/>
+        <line x1="715" y1="270" x2="730" y2="270" class="connector" marker-end="url(#arrow)"/>
+        <line x1="890" y1="270" x2="905" y2="270" class="connector accent" marker-end="url(#arrow-accent)"/>
+        <line x1="1065" y1="270" x2="1080" y2="270" class="connector accent" marker-end="url(#arrow-accent)"/>
+        <line x1="1240" y1="270" x2="1255" y2="270" class="connector accent" marker-end="url(#arrow-accent)"/>
+        <line x1="1415" y1="270" x2="1430" y2="270" class="connector" marker-end="url(#arrow)"/>
+        <line x1="1590" y1="270" x2="1605" y2="270" class="connector accent" marker-end="url(#arrow-accent)"/>
+
+        <!-- E2E receipt is both a same-run input and a later feedback signal. -->
+        <path d="M1327,376 V472 Q1327,480 1319,480 H174 Q166,480 166,488 V600" class="connector dashed" marker-end="url(#arrow)"/>
+        <rect x="690" y="465" width="290" height="17" rx="2" class="arrow-mask"/><text x="835" y="478" text-anchor="middle" class="arrow-label">E2E RECEIPT → BLOCKED FEEDBACK</text>
+        <path d="M1692,376 V468 Q1692,480 1680,480 H1680 V600" class="connector dashed" marker-end="url(#arrow)"/>
+        <rect x="1510" y="465" width="270" height="17" rx="2" class="arrow-mask"/><text x="1645" y="478" text-anchor="middle" class="arrow-label">PACKAGE → OBSERVATION CONTEXT</text>
+        <line x1="394" y1="634" x2="414" y2="634" class="connector dashed" marker-end="url(#arrow)"/>
+        <line x1="642" y1="634" x2="662" y2="634" class="connector dashed" marker-end="url(#arrow)"/>
+        <line x1="890" y1="634" x2="910" y2="634" class="connector dashed" marker-end="url(#arrow)"/>
+        <line x1="1138" y1="634" x2="1158" y2="634" class="connector dashed" marker-end="url(#arrow)"/>
+        <path d="M1440,690 V758 Q1440,770 1428,770 H82 Q70,770 70,758 V430 Q70,418 82,418 H1000 Q1012,418 1012,406 V376" class="connector dashed" marker-end="url(#arrow)"/>
+        <rect x="740" y="752" width="215" height="17" rx="2" class="arrow-mask"/><text x="847" y="765" text-anchor="middle" class="arrow-label">PROMOTED VERSION → NEXT RUN</text>
+
+        <!-- Main nodes. -->
+        <g class="node" transform="translate(30 160)"><rect width="160" height="220" rx="6" class="node-underlay"/><rect width="160" height="220" rx="6" class="node-frame"/><rect x="14" y="14" width="34" height="23" rx="4" class="node-no"/><text x="31" y="30" text-anchor="middle" class="node-no-text">01</text><text x="14" y="64" class="node-title">INTAKE</text><text x="14" y="80" class="node-title">DATA + QUESTION</text><text x="14" y="108" class="node-kicker">INPUT</text><line x1="14" y1="120" x2="146" y2="120" class="node-rule"/><text x="14" y="144" class="slot-label">RECEIVE</text><text x="14" y="161" class="slot-text">reports · tables</text><text x="14" y="177" class="slot-text">question_id · VI</text><text x="14" y="202" class="slot-label">OUTPUT</text><text x="14" y="216" class="slot-text">QuestionEnvelope</text></g>
+        <g class="node" transform="translate(205 160)"><rect width="160" height="220" rx="6" class="node-underlay"/><rect width="160" height="220" rx="6" class="node-frame"/><rect x="14" y="14" width="34" height="23" rx="4" class="node-no"/><text x="31" y="30" text-anchor="middle" class="node-no-text">02</text><text x="14" y="64" class="node-title">SOURCE</text><text x="14" y="80" class="node-title">CLOSURE</text><text x="14" y="108" class="node-kicker">HASH-BOUND</text><line x1="14" y1="120" x2="146" y2="120" class="node-rule"/><text x="14" y="144" class="slot-label">LOCK</text><text x="14" y="161" class="slot-text">V2 / V3 manifests</text><text x="14" y="177" class="slot-text">source_scope · hashes</text><text x="14" y="202" class="slot-label">OUTPUT</text><text x="14" y="216" class="slot-text">SourceClosure</text></g>
+        <g class="node" transform="translate(380 160)"><rect width="160" height="220" rx="6" class="node-underlay"/><rect width="160" height="220" rx="6" class="node-frame"/><rect x="14" y="14" width="34" height="23" rx="4" class="node-no"/><text x="31" y="30" text-anchor="middle" class="node-no-text">03</text><text x="14" y="64" class="node-title">TYPED</text><text x="14" y="80" class="node-title">QUESTION</text><text x="14" y="108" class="node-kicker">VI + CANONICAL</text><line x1="14" y1="120" x2="146" y2="120" class="node-rule"/><text x="14" y="144" class="slot-label">PARSE</text><text x="14" y="161" class="slot-text">metric · period</text><text x="14" y="177" class="slot-text">reporting_scope</text><text x="14" y="202" class="slot-label">OUTPUT</text><text x="14" y="216" class="slot-text">TypedQuestion</text></g>
+        <g class="node" transform="translate(555 160)"><rect width="160" height="220" rx="6" class="node-underlay"/><rect width="160" height="220" rx="6" class="node-frame"/><rect x="14" y="14" width="34" height="23" rx="4" class="node-no"/><text x="31" y="30" text-anchor="middle" class="node-no-text">04</text><text x="14" y="64" class="node-title">RETRIEVAL</text><text x="14" y="80" class="node-title">+ RERANK</text><text x="14" y="108" class="node-kicker">NAVIGATION ONLY</text><line x1="14" y1="120" x2="146" y2="120" class="node-rule"/><text x="14" y="144" class="slot-label">TOP-K</text><text x="14" y="161" class="slot-text">lexical · dense RAG</text><text x="14" y="177" class="slot-text">candidate labels/coords</text><text x="14" y="202" class="slot-label">OUTPUT</text><text x="14" y="216" class="slot-text">CandidateSet</text></g>
+        <g class="node" transform="translate(730 160)"><rect width="160" height="220" rx="6" class="node-underlay"/><rect width="160" height="220" rx="6" class="node-frame"/><rect x="14" y="14" width="34" height="23" rx="4" class="node-no"/><text x="31" y="30" text-anchor="middle" class="node-no-text">05</text><text x="14" y="64" class="node-title">CONTEXT</text><text x="14" y="80" class="node-title">COMPILER</text><text x="14" y="108" class="node-kicker">PROMPT POLICY</text><line x1="14" y1="120" x2="146" y2="120" class="node-rule"/><text x="14" y="144" class="slot-label">COMPOSE</text><text x="14" y="161" class="slot-text">VI labels + EN aliases</text><text x="14" y="177" class="slot-text">source ≠ reporting scope</text><text x="14" y="202" class="slot-label">OUTPUT</text><text x="14" y="216" class="slot-text">ContextPacket</text></g>
+        <g class="node" transform="translate(905 160)"><rect width="160" height="220" rx="6" class="node-underlay"/><rect width="160" height="220" rx="6" class="node-frame"/><rect x="14" y="14" width="34" height="23" rx="4" class="node-no"/><text x="31" y="30" text-anchor="middle" class="node-no-text">06</text><text x="14" y="64" class="node-title">PROPOSAL</text><text x="14" y="80" class="node-title">MODEL</text><text x="14" y="108" class="node-kicker">REAL MODEL / JSON</text><line x1="14" y1="120" x2="146" y2="120" class="node-rule"/><text x="14" y="144" class="slot-label">GENERATE</text><text x="14" y="161" class="slot-text">AST · operands · refs</text><text x="14" y="177" class="slot-text">Qwen / role prompt</text><text x="14" y="202" class="slot-label">OUTPUT</text><text x="14" y="216" class="slot-text">ProposalAST</text></g>
+        <g class="node" transform="translate(1080 160)"><rect width="160" height="220" rx="6" class="node-underlay"/><rect width="160" height="220" rx="6" class="node-frame"/><rect x="14" y="14" width="34" height="23" rx="4" class="node-no"/><text x="31" y="30" text-anchor="middle" class="node-no-text">07</text><text x="14" y="64" class="node-title">DETERMINISTIC</text><text x="14" y="80" class="node-title">RESOLVER</text><text x="14" y="108" class="node-kicker">NO MODEL AUTHORITY</text><line x1="14" y1="120" x2="146" y2="120" class="node-rule"/><text x="14" y="144" class="slot-label">RESOLVE</text><text x="14" y="161" class="slot-text">cell · formula · Decimal</text><text x="14" y="177" class="slot-text">operand receipts</text><text x="14" y="202" class="slot-label">OUTPUT</text><text x="14" y="216" class="slot-text">ResolvedPrediction</text></g>
+        <g class="node focal" transform="translate(1255 160)"><rect width="160" height="220" rx="6" class="node-underlay"/><rect width="160" height="220" rx="6" class="node-frame"/><rect x="14" y="14" width="34" height="23" rx="4" class="node-no"/><text x="31" y="30" text-anchor="middle" class="node-no-text">08</text><text x="14" y="64" class="node-title">E2E</text><text x="14" y="80" class="node-title">VERIFICATION</text><text x="14" y="108" class="node-kicker">AUTHORITY CHECK</text><line x1="14" y1="120" x2="146" y2="120" class="node-rule"/><text x="14" y="144" class="slot-label">CHECK</text><text x="14" y="161" class="slot-text">resolved + source hash</text><text x="14" y="177" class="slot-text">certificate / ABSTAIN</text><text x="14" y="202" class="slot-label">OUTPUT</text><text x="14" y="216" class="slot-text">E2EReceipt</text></g>
+        <g class="node" transform="translate(1430 160)"><rect width="160" height="220" rx="6" class="node-underlay"/><rect width="160" height="220" rx="6" class="node-frame"/><rect x="14" y="14" width="34" height="23" rx="4" class="node-no"/><text x="31" y="30" text-anchor="middle" class="node-no-text">09</text><text x="14" y="64" class="node-title">SUBMISSION</text><text x="14" y="80" class="node-title">COMPILER</text><text x="14" y="108" class="node-kicker">DELIVERY POLICY</text><line x1="14" y1="120" x2="146" y2="120" class="node-rule"/><text x="14" y="144" class="slot-label">COMPILE</text><text x="14" y="161" class="slot-text">prediction + receipt</text><text x="14" y="177" class="slot-text">best-effort / strict</text><text x="14" y="202" class="slot-label">OUTPUT</text><text x="14" y="216" class="slot-text">SubmissionLedger</text></g>
+        <g class="node focal" transform="translate(1605 160)"><rect width="160" height="220" rx="6" class="node-underlay"/><rect width="160" height="220" rx="6" class="node-frame"/><rect x="14" y="14" width="34" height="23" rx="4" class="node-no"/><text x="31" y="30" text-anchor="middle" class="node-no-text">10</text><text x="14" y="64" class="node-title">SUBMISSION</text><text x="14" y="80" class="node-title">PACKAGE</text><text x="14" y="108" class="node-kicker">PRIMARY ARTIFACT</text><line x1="14" y1="120" x2="146" y2="120" class="node-rule"/><text x="14" y="144" class="slot-label">DELIVER</text><text x="14" y="161" class="slot-text">JSON · CSV · ZIP</text><text x="14" y="177" class="slot-text">status + lineage</text><text x="14" y="202" class="slot-label">GATE</text><text x="14" y="216" class="slot-text">release still separate</text></g>
+
+        <!-- Feedback rail. -->
+        <g class="node" transform="translate(166 570)"><rect width="228" height="130" rx="6" class="node-underlay"/><rect width="228" height="130" rx="6" class="node-frame"/><text x="16" y="28" class="node-title">BLOCKED FEEDBACK</text><text x="16" y="47" class="node-title">CONTEXT COMPILER</text><text x="16" y="72" class="node-kicker">NUMERIC-FREE / VI PRESERVED</text><line x1="16" y1="82" x2="212" y2="82" class="node-rule"/><text x="16" y="101" class="slot-text">top-k labels · hashes · failures</text><text x="16" y="118" class="slot-text">source_scope / reporting_scope</text></g>
+        <g class="node" transform="translate(414 570)"><rect width="228" height="130" rx="6" class="node-underlay"/><rect width="228" height="130" rx="6" class="node-frame"/><text x="16" y="28" class="node-title">REAL MODEL</text><text x="16" y="47" class="node-title">FEEDBACK CRITIC</text><text x="16" y="72" class="node-kicker">QWEN ON KAGGLE GPU</text><line x1="16" y1="82" x2="212" y2="82" class="node-rule"/><text x="16" y="101" class="slot-text">failure class + next action</text><text x="16" y="118" class="slot-text">ABSTAIN if schema invalid</text></g>
+        <g class="node" transform="translate(662 570)"><rect width="228" height="130" rx="6" class="node-underlay"/><rect width="228" height="130" rx="6" class="node-frame"/><text x="16" y="28" class="node-title">IMPROVEMENT</text><text x="16" y="47" class="node-title">SPEC / DATASET</text><text x="16" y="72" class="node-kicker">CURATION REQUIRED</text><line x1="16" y1="82" x2="212" y2="82" class="node-rule"/><text x="16" y="101" class="slot-text">prompt · hard negative · AST</text><text x="16" y="118" class="slot-text">not a gold label yet</text></g>
+        <g class="node" transform="translate(910 570)"><rect width="228" height="130" rx="6" class="node-underlay"/><rect width="228" height="130" rx="6" class="node-frame"/><text x="16" y="28" class="node-title">KAGGLE WORKER</text><text x="16" y="47" class="node-title">TRAIN / RE-INDEX</text><text x="16" y="72" class="node-kicker">COMPUTE, NOT AUTHORITY</text><line x1="16" y1="82" x2="212" y2="82" class="node-rule"/><text x="16" y="101" class="slot-text">retriever · reranker · Qwen</text><text x="16" y="118" class="slot-text">ModelBundle + metrics</text></g>
+        <g class="node" transform="translate(1158 570)"><rect width="282" height="130" rx="6" class="node-underlay"/><rect width="282" height="130" rx="6" class="node-frame"/><text x="16" y="28" class="node-title">HELD-OUT EVALUATION</text><text x="16" y="47" class="node-title">+ HUMAN PROMOTION</text><text x="16" y="72" class="node-kicker">VERSION CONTROL</text><line x1="16" y1="82" x2="266" y2="82" class="node-rule"/><text x="16" y="101" class="slot-text">R@k · MRR · AST · E2E outcome</text><text x="16" y="118" class="slot-text">approve / hold / reject → next run</text></g>
+
+        <rect x="40" y="806" width="1720" height="54" rx="5" class="artifact"/>
+        <text x="58" y="828" class="artifact-text">CONTRACTS</text><text x="180" y="828" class="artifact-text">QuestionEnvelope · SourceClosure · TypedQuestion · CandidateSet · ContextPacket</text>
+        <text x="58" y="848" class="artifact-text">AUTHORITY</text><text x="180" y="848" class="artifact-text">ProposalAST → ResolvedPrediction → E2EReceipt → SubmissionLedger · model feedback never authorizes</text>
+      </svg>
+    </div>
+    <div class="cards">
+      <article class="card focal"><p class="kicker">SAME-RUN AUTHORITY</p><h3>E2E đứng trước Submission Compiler</h3><p>Compiler nhận resolved prediction và E2E receipt. Nếu receipt là `ABSTAIN`, package best-effort vẫn có thể giữ coverage, nhưng ledger ghi rõ trạng thái và strict release bị block.</p></article>
+      <article class="card"><p class="kicker">LANGUAGE CONTRACT</p><h3>Tiếng Việt giữ semantics</h3><p>Raw question, table header, row label và source label được giữ nguyên. System instruction/model output có thể dùng English + canonical enum nếu benchmark A/B chứng minh tốt hơn.</p></article>
+      <article class="card"><p class="kicker">MIGRATION FACT</p><h3>Legacy duplicate execution còn được ghi nhận</h3><p>Compatibility producer hiện vẫn tạo proposal artifacts và có replay nội bộ. Resolver manifest đánh dấu phần này; chỉ khi backend chuyển hẳn Decimal execution sang resolver mới được bỏ cờ legacy.</p></article>
+    </div>
+  </section>
+
+  <section aria-labelledby="module-heading">
+    <p class="kicker">MODULE CONTRACTS / SINGLE PURPOSE</p>
+    <h2 id="module-heading">Các module và artifact trao đổi</h2>
+    <p class="note">Orchestrator chỉ nối các module. Feedback không quay ngược để sửa output của run đang chạy; nó tạo một version candidate mới, phải qua held-out và quyết định promote.</p>
+    <div class="two-col">
+      <table>
+        <thead><tr><th>Module</th><th>Input → output</th><th>Ranh giới</th></tr></thead>
+        <tbody>
+          <tr><td><code>context/compiler.py</code></td><td>candidate + VI labels + hashes → <code>ContextPacket</code></td><td>Numeric-free khi đưa vào model feedback; phân biệt <code>source_scope</code> với <code>reporting_scope</code>.</td></tr>
+          <tr><td><code>resolver.py</code></td><td><code>ProposalAST</code> + source claims → <code>ResolvedPrediction</code></td><td>Exact cell, formula, operand compatibility, Decimal candidate; chưa phải authority.</td></tr>
+          <tr><td><code>e2e_observer.py</code></td><td><code>ResolvedPrediction</code> + source closure → <code>E2EReceipt</code></td><td>Independent check; không tìm answer mới; certificate/ABSTAIN và operand-level failure.</td></tr>
+          <tr><td><code>submission_compiler.py</code></td><td>resolved + receipt + policy → ledger + JSON/CSV/ZIP</td><td>Best-effort giữ coverage; strict block nếu row chưa `VERIFIED`; release gate vẫn riêng.</td></tr>
+          <tr><td><code>feedback/blocked.py</code></td><td>blocked rows + receipt metadata → improvement records</td><td>Model chỉ phân loại lỗi/đề xuất experiment; không answer, evidence, train, promote.</td></tr>
+        </tbody>
+      </table>
+      <div class="card">
+        <p class="kicker">PROMPT CONTRACT</p>
+        <h3>English instruction, Vietnamese context</h3>
+        <ul class="rule-list">
+          <li><strong>Giữ nguyên:</strong> <code>question_raw_vi</code>, ticker, period, source labels, coordinates, hashes.</li>
+          <li><strong>Canonical:</strong> dùng JSON keys/enums English ổn định để parser và evaluator không phụ thuộc ngôn ngữ.</li>
+          <li><strong>Top-k:</strong> chỉ là navigation metadata; model không được copy numeric value từ candidate.</li>
+          <li><strong>Thiếu context:</strong> model trả <code>ABSTAIN</code>, không đoán period/scope/unit/operand.</li>
+          <li><strong>Model thật:</strong> worker Kaggle dùng Qwen checkpoint/revision cố định; lỗi output trở thành record invalid/ABSTAIN.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout"><strong>Điểm cần nhớ:</strong> `ResolvedPrediction` là kết quả resolver, chưa đồng nghĩa `VERIFIED`. `E2EReceipt` là proof/blocked receipt. `SubmissionLedger` là delivery accounting. `ImprovementRecord` là tín hiệu cho version kế tiếp. Bốn artifact này không được gộp thành một nhãn “model đúng”.</div>
+  </section>
+  <footer>AI GURU · data/question → context → proposal → resolver → E2E receipt → submission compiler · canonical architecture v2</footer>
+</main>
+</body>
+</html>

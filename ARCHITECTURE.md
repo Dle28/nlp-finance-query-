@@ -1,39 +1,50 @@
-# Architecture
+# AI GURU architecture
 
-The repository has one answer-capable architecture. Its operating contract is
-maintained in [docs/PIPELINE.md](docs/PIPELINE.md).
+AI GURU có một product pipeline cho ViFinQA. Hợp đồng vận hành chi tiết nằm ở
+[docs/PIPELINE.md](docs/PIPELINE.md); sơ đồ trực quan canonical nằm ở
+[docs/diagrams/aiguru_pipeline_canonical_resolve_e2e_compile_v2.html](docs/diagrams/aiguru_pipeline_canonical_resolve_e2e_compile_v2.html).
 
-```text
-immutable source
-  → typed question compiler
-  → candidate discovery
-  → exact-cell binding
-  → Decimal executor
-  → semantic authorization
-  → certificate / ABSTAIN
-  → independent audit + full ledger
-  → release gate → submission compiler
-```
+    data/question
+      → intake → source closure → typed question
+      → retrieval + rerank → bilingual context compiler
+      → proposal model → deterministic resolver
+      → independent E2E verification → submission compiler
+      → submission package → blocked feedback / next-version experiment
 
-`src/finance_query/e2e/` owns this flow. It is deterministic, hash-bound and
-does not import any model client.
+The one prediction path is `propose → resolve → verify → compile → deliver`.
+The model and retrieval stages may propose claims and navigation metadata; the
+resolver owns exact-cell hydration and Decimal execution; E2E produces proof;
+the compiler only applies delivery policy and serializes the package.
 
-`src/finance_query/research/` contains two isolated sidecars:
+build-submission là proposal/coverage role. run-e2e là authority role:
+deterministic, hash-bound và không dùng model để sinh một answer thay thế.
+Khi dùng --verification-config, hai role này được chạy tuần tự trong cùng
+workflow, nên không tạo ra hai nguồn answer cạnh tranh.
 
-- `proof_policy/`: V13 proof obligations, coverage queues and active-learning
-  experiments; it produces candidate policies only.
-- `llm/`: open-source model diagnostics only; its outputs are non-promotable.
+Feedback sau submission chỉ tạo candidate cho prompt/RAG/AST experiment kế
+tiếp; nó không tự cập nhật weight hoặc cấp quyền promote.
 
-The sidecars may propose or prioritize work, but every affected question still
-must travel through its own exact source binding, semantic authorization and
-Decimal replay. They cannot create an answer, release, training record or
-submission candidate.
+## Authority boundary
 
-## Invariants
+1. Raw source và source closure là nền tảng numeric truth.
+2. Typed plan, retrieval, research packet, reranker, validity model và model
+   output chỉ là candidate hoặc claim.
+3. Numeric value phải được hydrate từ bảng V2 hiện hành; unit, period, scope,
+   entity role và formula phải có binding/semantic receipt.
+4. Decimal chỉ thực thi AST hữu hạn, allow-listed và hash-bound với plan.
+5. Thiếu, stale hoặc xung đột semantics thì ABSTAIN; không đoán để cấp
+   authority.
+6. VERIFIED chỉ xuất hiện khi complete canonical Answer Certificate khớp
+   cùng question và answer. Full release còn cần audit/ledger population-wide.
 
-1. Raw source remains the only source of numeric truth.
-2. Retrieval rank and model output are candidates, never evidence.
-3. Decimal executes only a declared, allow-listed AST.
-4. Missing, conflicting or unproven semantics yield `ABSTAIN`.
-5. Release requires independently audited, hash-bound lineage for the full
-   population; no component score can waive a per-question proof.
+ABSTAIN không nhất thiết làm mất prediction coverage: một candidate sống sót
+có thể được phát ở kênh PREDICTED_CANDIDATE, nhưng
+answer_authorized=false, training_eligible=false và
+promotion_allowed=false.
+
+## Boundary của sidecar
+
+src/finance_query/research/, scripts/research/ và các index/reranker chỉ
+giúp discovery, ranking hoặc phân tích lỗi. Chúng không được tạo certificate,
+release decision, training record hoặc promotion eligibility. E2E canonical
+không import LLM/research authority.

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_section_hierarchical_rag_evaluation_v1",
+  "expected_route_count": 1234,
+  "section_chunking": {
+    "max_tables_per_chunk": 8,
+    "boundary_policy": "contiguous_explicit_parent_then_primary_statement_then_notes_or_other",
+    "table_heading_policy": "semantic_content_not_primary_section_boundary"
+  },
+  "dense": {
+    "model": "intfloat/multilingual-e5-small",
+    "cpu_batch_size": 16,
+    "cuda_batch_size": 128,
+    "checkpoint_every_batches": 25
+  },
+  "retrieval": {
+    "parent_top_k": 5,
+    "output_table_top_k": 10,
+    "rrf_constant": 60,
+    "encode_batch_size": 128,
+    "scope_policy": "explicit_first_then_unscoped_supplement",
+    "period_neighbor": {
+      "enabled": true,
+      "report_year_offset": 1,
+      "parent_top_k": 5,
+      "table_selection_policy": "round_robin_child_depth_then_parent_rank_then_period",
+      "purpose": "research_only_comparative_column_navigation"
+    }
+  },
+  "authorization": {
+    "research_only": true,
+    "navigation_metadata_only": true,
+    "may_authorize_answer": false,
+    "submission_eligible": false
+  }
+}

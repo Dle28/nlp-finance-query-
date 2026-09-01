@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
+
+from .json_output import parse_one_json_object
 
 
 class QwenGenerator:
@@ -117,15 +118,6 @@ class QwenGenerator:
 
 
 def parse_json_object(text: str) -> dict[str, Any]:
-    """Extract first valid JSON object without greedily joining two objects."""
-    decoder = json.JSONDecoder()
-    for start, character in enumerate(text):
-        if character != "{":
-            continue
-        try:
-            value, _ = decoder.raw_decode(text[start:])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            return value
-    raise ValueError("LLM did not return a JSON object")
+    """Parse exactly one JSON object from a generated response."""
+
+    return parse_one_json_object(text)

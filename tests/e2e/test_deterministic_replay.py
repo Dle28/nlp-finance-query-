@@ -30,9 +30,6 @@ class GroundedE2ETests(unittest.TestCase):
             "structured_tables",
             "evidence_context",
             "evidence_context_manifest",
-            "semantic_review_queue",
-            "semantic_review_manifest",
-            "semantic_human_decisions",
             "metric_registry",
         ):
             path = root / f"{name}.json"
@@ -115,7 +112,7 @@ class GroundedE2ETests(unittest.TestCase):
             },
         }
 
-    def test_run_creates_new_hash_bound_research_receipt(self) -> None:
+    def test_run_creates_new_hash_bound_answer_capable_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             inputs = load_inputs(self._config(root, references=True))
@@ -132,7 +129,7 @@ class GroundedE2ETests(unittest.TestCase):
             ):
                 result = run_grounded_e2e(inputs, output_dir=root / "run")
 
-            self.assertEqual(result["run_status"], "complete_research_only")
+            self.assertEqual(result["run_status"], "complete_answer_capable")
             self.assertEqual(result["run_name"], "vifinqa-grounded-e2e-replay-v1")
             self.assertEqual(len(result["run_id"]), 64)
             self.assertEqual(
@@ -147,6 +144,19 @@ class GroundedE2ETests(unittest.TestCase):
             )
             receipt = json.loads((root / "run" / "grounded_e2e_run_v1.json").read_text(encoding="utf-8"))
             self.assertEqual(receipt["source_contract"]["submission_eligible"], False)
+            self.assertNotIn("research_only", receipt["source_contract"])
+            self.assertTrue(receipt["source_contract"]["answer_output_allowed"])
+            self.assertEqual(receipt["technical_readiness"]["execution_replay_ready_count"], 1)
+            self.assertEqual(receipt["technical_readiness"]["answer_authority"], False)
+            self.assertEqual(receipt["technical_readiness"]["strict_answer_authority"], False)
+            self.assertEqual(receipt["technical_readiness"]["strict_answer_authorized_count"], 0)
+            self.assertEqual(
+                receipt["technical_readiness"]["best_effort_candidate_authority"],
+                False,
+            )
+            self.assertEqual(receipt["technical_readiness"]["answer_output_allowed"], True)
+            self.assertEqual(receipt["technical_readiness"]["answer_count"], 0)
+            self.assertEqual(receipt["technical_readiness"]["abstain_count"], 1)
             self.assertEqual(receipt["outputs"]["authorization"]["counts"]["answer_certificate_status_counts"], {"ABSTAIN": 1})
             after = {
                 path: hashlib.sha256(path.read_bytes()).hexdigest()

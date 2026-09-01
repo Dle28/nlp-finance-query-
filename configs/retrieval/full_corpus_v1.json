@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_full_corpus_retrieval_v1",
+  "asset_contract": {
+    "expected_asset_sha256": "617ae044499907cf302519b7ff6fb96fb86ab70ff08e6fdcb0e6a3f8df5251f7",
+    "expected_source_closure_sha256": "59f27c643bd1c4a640e7670dd94789e3222c27a6022be3f7319947b65b6dd9fd",
+    "expected_table_count": 146246,
+    "expected_document_count": 1965,
+    "expected_source_report_count": 1973,
+    "expected_zero_table_report_count": 8,
+    "expected_ticker_count": 100
+  },
+  "lexical": {
+    "representation": "table_only_headers_and_row_paths",
+    "required_filters": ["ticker", "report_year"],
+    "scope_filter": "optional_explicit_only",
+    "context_in_index": false,
+    "top_k_default": 10
+  },
+  "dense": {
+    "model": "intfloat/multilingual-e5-small",
+    "model_release_gate": "open_weight_released_before_2026_06_01",
+    "representation": "table_only_headers_and_row_paths",
+    "normalize_embeddings": true,
+    "cpu_batch_size": 16,
+    "cuda_batch_size": 128,
+    "checkpoint_every_batches": 25
+  },
+  "authorization": {
+    "navigation_metadata_only": true,
+    "may_authorize_answer": false,
+    "may_authorize_evidence": false,
+    "submission_eligible": false
+  }
+}

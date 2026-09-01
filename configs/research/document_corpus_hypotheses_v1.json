@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_document_corpus_hypothesis_freeze_v1",
+  "frozen_before_full_table_scan": true,
+  "seed": "vifinqa-document-corpus-study-v1-20260825",
+  "split": {
+    "basis": "sha256(seed + ticker), never question ID or document order",
+    "discovery_tickers": 20,
+    "development_tickers": 30,
+    "untouched_tickers": 50,
+    "offset_verification_tables_per_stage": 100
+  },
+  "source_contract": {
+    "research_only": true,
+    "may_materialize_answer": false,
+    "submission_eligible": false,
+    "question_id_role": "tracking_only"
+  },
+  "hypotheses": [
+    {
+      "id": "H01_METADATA_KEYS",
+      "plain_question": "Tên file và đường dẫn có đủ ổn định để xác định công ty, năm và loại báo cáo không?",
+      "prediction": "Ticker và năm phải khớp đường dẫn ở 100% tài liệu; document_id không được trùng.",
+      "decision_rule": "KEEP nếu path consistency = 100% và document_id uniqueness = 100%."
+    },
+    {
+      "id": "H02_SCOPE_IS_NOT_BINARY",
+      "plain_question": "Có thể coi mọi tài liệu chỉ là hợp nhất hoặc riêng lẻ không?",
+      "prediction": "Sẽ tồn tại tài liệu tổng hợp, phân mảnh hoặc không ghi scope; hệ thống hai nhãn là chưa đủ.",
+      "decision_rule": "KEEP nếu unknown/fragment scope > 0; bắt buộc không tự đoán scope."
+    },
+    {
+      "id": "H03_SCOPE_PAIR_GAPS",
+      "plain_question": "Mỗi công ty-năm có luôn đủ cả báo cáo hợp nhất và riêng lẻ không?",
+      "prediction": "Có các ô công ty-năm chỉ có một scope hoặc tài liệu đặc biệt.",
+      "decision_rule": "KEEP nếu có ít nhất một slot thiếu một scope."
+    },
+    {
+      "id": "H04_QUESTION_DOCUMENT_ROUTE",
+      "plain_question": "Chỉ từ công ty, năm và scope trong câu hỏi có tìm được đúng nhóm tài liệu không?",
+      "prediction": "Đa số yêu cầu có ít nhất một tài liệu phù hợp, nhưng một phần vẫn thiếu hoặc nhiều lựa chọn.",
+      "decision_rule": "KEEP_AS_ROUTING_GATE nếu coverage >= 90%; không coi đây là bằng chứng số."
+    },
+    {
+      "id": "H05_EXACT_SOURCE_OFFSETS",
+      "plain_question": "Vị trí ký tự lưu trong table asset có quay lại đúng nguyên văn bảng nguồn không?",
+      "prediction": "300 bảng giữ lại theo split phải khớp hash 100%.",
+      "decision_rule": "KEEP nếu match = 100%, nếu thấp hơn phải dừng dùng offset làm nguồn."
+    },
+    {
+      "id": "H06_ASSET_COMPLETENESS",
+      "plain_question": "Kho table asset có bao phủ đầy đủ các bảng HTML đã kiểm kê không?",
+      "prediction": "Số asset phải bằng số bảng kiểm kê và UID phải duy nhất.",
+      "decision_rule": "KEEP nếu count match và UID uniqueness = 100%."
+    },
+    {
+      "id": "H07_NUMERIC_PREFILTER",
+      "plain_question": "Có nên tìm kiếm trên mọi bảng, hay lọc trước các bảng có số liệu?",
+      "prediction": "Một phần đáng kể là mục lục hoặc bảng chữ; lọc nhẹ theo mật độ số sẽ giảm nhiễu.",
+      "decision_rule": "KEEP nếu non-numeric table share >= 5%, nhưng chỉ dùng làm xếp hạng chứ không xóa cứng."
+    },
+    {
+      "id": "H08_CONTEXT_FOR_UNIT",
+      "plain_question": "Thông tin đơn vị thường nằm trong bảng hay ở phần chữ ngay trước bảng?",
+      "prediction": "Thêm context_before sẽ tăng khả năng nhìn thấy đơn vị ít nhất 10 điểm phần trăm.",
+      "decision_rule": "KEEP nếu context lift >= 0.10 trên development và không đảo chiều ở untouched."
+    },
+    {
+      "id": "H09_COMPARATIVE_YEAR_COLUMNS",
+      "plain_question": "Một báo cáo năm Y có thường chứa cả cột năm Y-1 không?",
+      "prediction": "Ít nhất 40% bảng số có cả năm hiện tại và năm trước.",
+      "decision_rule": "KEEP nếu rate >= 40% ở development và untouched."
+    },
+    {
+      "id": "H10_DUPLICATE_TABLES",
+      "plain_question": "Bảng giống hệt nhau có xuất hiện ở nhiều tài liệu không?",
+      "prediction": "Có duplicate xuyên tài liệu, nên hash bảng không đủ để xác định provenance.",
+      "decision_rule": "KEEP nếu có duplicate cross-document; luôn giữ document_id và offset."
+    },
+    {
+      "id": "H11_OCR_QUALITY_GATE",
+      "plain_question": "Chất lượng OCR và hình dạng dòng có đồng đều không?",
+      "prediction": "Sẽ có ký tự lỗi hoặc dòng lệch số cột; cần cờ chất lượng thay vì coi mọi bảng như nhau.",
+      "decision_rule": "KEEP nếu ít nhất một rủi ro được quan sát ở development và untouched."
+    },
+    {
+      "id": "H12_TABLE_SIZE_HETEROGENEITY",
+      "plain_question": "Một kích thước chunk cố định có phù hợp cho mọi bảng không?",
+      "prediction": "P95 số dòng ít nhất gấp 3 lần median.",
+      "decision_rule": "KEEP nếu P95/median >= 3 ở development và untouched."
+    },
+    {
+      "id": "H13_PAGE_PRIOR",
+      "plain_question": "Các bảng báo cáo chính có tập trung ở phần đầu tài liệu không?",
+      "prediction": "Ít nhất 70% bảng nhận diện là báo cáo chính nằm trong 20 trang đầu.",
+      "decision_rule": "KEEP_AS_SOFT_PRIOR nếu đạt ngưỡng; không loại thuyết minh ở trang sau."
+    },
+    {
+      "id": "H14_LATE_YEAR_DRIFT",
+      "plain_question": "Cấu trúc tài liệu 2022-2025 có khác rõ so với 2015-2021 không?",
+      "prediction": "Số bảng/trang và tỉ lệ bảng lỗi thay đổi, nên cần theo dõi drift theo năm.",
+      "decision_rule": "KEEP_MONITORING nếu một chỉ số chính lệch tương đối >= 20%."
+    }
+  ]
+}

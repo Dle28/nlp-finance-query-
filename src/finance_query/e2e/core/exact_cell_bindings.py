@@ -97,6 +97,42 @@ def _index(rows: Sequence[Mapping[str, Any]], field: str, label: str) -> dict[st
     return index
 
 
+def _candidate_source_cell(
+    *,
+    candidate: Mapping[str, Any],
+    rows: Sequence[Sequence[Any]],
+    provenance: Sequence[Sequence[Any]],
+    row_index: int,
+    column_index: int,
+) -> tuple[str, dict[str, Any]]:
+    """Resolve a candidate-only coordinate against the immutable V2 table.
+
+    Research materializers intentionally omit raw values from their packets.
+    The exact binding stage may rehydrate the cell only when the packet
+    explicitly carries the candidate-only contract. Legacy packets that
+    already carry raw fields continue to require an exact byte-for-byte match.
+    """
+    if not (
+        0 <= row_index < len(rows)
+        and 0 <= column_index < len(rows[row_index])
+        and 0 <= row_index < len(provenance)
+        and 0 <= column_index < len(provenance[row_index])
+        and isinstance(provenance[row_index][column_index], Mapping)
+    ):
+        raise ValueError("Period candidate source coordinates out of bounds")
+    raw_source_cell = str(rows[row_index][column_index])
+    cell_provenance = dict(provenance[row_index][column_index])
+    raw_present = "raw_source_cell" in candidate or "cell_provenance" in candidate
+    if raw_present:
+        if str(candidate.get("raw_source_cell") or "") != raw_source_cell or candidate.get("cell_provenance") != cell_provenance:
+            raise ValueError("Period candidate V2 cell provenance mismatch")
+        return raw_source_cell, cell_provenance
+    contract = candidate.get("source_contract")
+    if not isinstance(contract, Mapping) or contract.get("candidate_only") is not True or contract.get("may_select_value") is not False:
+        raise ValueError("Value-free period candidate lacks an explicit candidate-only contract")
+    return raw_source_cell, cell_provenance
+
+
 def build_exact_cell_unit_bindings(
     *, period_packets_path: Path, period_manifest_path: Path, metric_registry_path: Path,
     structured_tables_path: Path, evidence_context_path: Path, output_dir: Path,
@@ -141,15 +177,18 @@ def build_exact_cell_unit_bindings(
                 rows = v2[uid].get("rows") or []
                 provenance = v2[uid].get("cell_provenance") or []
                 profiles = v3[uid].get("row_profiles") or []
-                if row_index >= len(rows) or column_index >= len(rows[row_index]) or row_index >= len(provenance):
-                    raise ValueError("Period candidate source coordinates out of bounds")
-                if str(rows[row_index][column_index]) != str(candidate.get("raw_source_cell") or "") or provenance[row_index][column_index] != candidate.get("cell_provenance"):
-                    raise ValueError("Period candidate V2 cell provenance mismatch")
+                raw_source_cell, cell_provenance = _candidate_source_cell(
+                    candidate=candidate,
+                    rows=rows,
+                    provenance=provenance,
+                    row_index=row_index,
+                    column_index=column_index,
+                )
                 profile = next((row for row in profiles if int(row.get("row_index") or -1) == row_index), None)
                 if not profile or column_index in set(profile.get("unreliable_numeric_columns") or []):
                     status, parsed, reason = "source_cell_unreliable", None, "V3_UNRELIABLE_NUMERIC_VETO"
                 else:
-                    parse_status, parsed, reason = parse_vietnamese_numeric_candidate(candidate.get("raw_source_cell"))
+                    parse_status, parsed, reason = parse_vietnamese_numeric_candidate(raw_source_cell)
                     units = list(dict.fromkeys(str(value) for value in candidate.get("unit_labels") or [] if str(value)))
                     if parse_status != "parsed_decimal_candidate":
                         status = "numeric_parse_failure"
@@ -161,7 +200,7 @@ def build_exact_cell_unit_bindings(
                         status = "binding_candidate_ready"
                 units = list(dict.fromkeys(str(value) for value in candidate.get("unit_labels") or [] if str(value)))
                 scale_candidates = [{"unit_label": unit, "multiplier_candidate": format(_UNIT_MULTIPLIERS[unit.casefold()], "f")} for unit in units if unit.casefold() in _UNIT_MULTIPLIERS]
-                binding = {"question_id": packet["question_id"], "stage_id": stage.get("stage_id"), "role": operand.get("role"), "concept_id": operand.get("concept_id"), "period_type": operand.get("period_type"), "binding_status": status, "document_id": v2[uid].get("document_id"), "internal_table_uid": uid, "row_index": row_index, "column_index": column_index, "raw_source_row": list(rows[row_index]), "raw_source_cell": str(rows[row_index][column_index]), "cell_provenance": dict(provenance[row_index][column_index]), "header_source_cells": list(candidate.get("header_source_cells") or []), "period_labels": list(candidate.get("period_labels") or []), "unit_labels": units, "table_unit_anchors": list(candidate.get("header_source_cells") or []), "document_unit_anchors": [], "requested_output_unit": requested_unit, "numeric_parse_candidate": parsed, "numeric_parse_policy": reason, "scale_candidates": scale_candidates, "reason_codes": [] if status == "binding_candidate_ready" else [str(reason or status).upper()], "source_contract": _contract()}
+                binding = {"question_id": packet["question_id"], "stage_id": stage.get("stage_id"), "role": operand.get("role"), "concept_id": operand.get("concept_id"), "period_type": operand.get("period_type"), "binding_status": status, "document_id": v2[uid].get("document_id"), "internal_table_uid": uid, "row_index": row_index, "column_index": column_index, "raw_source_row": list(rows[row_index]), "raw_source_cell": raw_source_cell, "cell_provenance": cell_provenance, "header_source_cells": list(candidate.get("header_source_cells") or []), "period_labels": list(candidate.get("period_labels") or []), "unit_labels": units, "table_unit_anchors": list(candidate.get("header_source_cells") or []), "document_unit_anchors": [], "requested_output_unit": requested_unit, "numeric_parse_candidate": parsed, "numeric_parse_policy": reason, "scale_candidates": scale_candidates, "reason_codes": [] if status == "binding_candidate_ready" else [str(reason or status).upper()], "source_contract": _contract()}
                 bindings.append(binding)
                 operands.append({"role": operand.get("role"), "concept_id": operand.get("concept_id"), "period_type": operand.get("period_type"), "binding_status": status, "binding_candidates": [binding], "reason_codes": binding["reason_codes"], "requested_output_unit": requested_unit})
             stages.append({"stage_id": stage.get("stage_id"), "metric_id": stage.get("metric_id"), "required_operands": operands})

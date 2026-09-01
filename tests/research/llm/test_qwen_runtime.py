@@ -63,11 +63,9 @@ def _fake_modules(*, cuda_available: bool) -> tuple[ModuleType, ModuleType, dict
 
 
 class QwenInferenceTests(unittest.TestCase):
-    def test_parse_json_object_uses_first_valid_object(self):
-        self.assertEqual(
-            parse_json_object('noise {bad} {"first": 1} {"second": 2}'),
-            {"first": 1},
-        )
+    def test_parse_json_object_rejects_multiple_objects(self):
+        with self.assertRaisesRegex(ValueError, "exactly one JSON object"):
+            parse_json_object('noise {bad} {"first": 1} {"second": 2}')
 
     def test_parse_json_object_rejects_non_object_output(self):
         with self.assertRaisesRegex(ValueError, "did not return a JSON object"):

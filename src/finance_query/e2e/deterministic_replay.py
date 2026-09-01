@@ -53,6 +53,22 @@ def summarize_deterministic_replay(
             "execution_status_counts", {}
         ),
         "authorization_counts": receipt["outputs"]["authorization"]["counts"],
+        "technical_readiness": receipt.get(
+            "technical_readiness",
+            {
+                "execution_replay_ready_count": receipt["outputs"]["execution"]
+                ["counts"]
+                .get("execution_status_counts", {})
+                .get("execution_replay_ready", 0),
+                "answer_authority": False,
+                "legacy_receipt": True,
+            },
+        ),
+        "answer_output_allowed": receipt.get("technical_readiness", {}).get(
+            "answer_output_allowed", False
+        ),
+        "answer_count": receipt.get("technical_readiness", {}).get("answer_count", 0),
+        "abstain_count": receipt.get("technical_readiness", {}).get("abstain_count", 0),
         "reproducibility": receipt["reproducibility"],
         "release_authorized": False,
     }

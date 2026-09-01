@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 760" role="img" aria-labelledby="data-normalization-v2-title data-normalization-v2-desc">
+  <title id="data-normalization-v2-title">Từ dữ liệu thô đến dữ liệu sẵn sàng kiểm chứng</title>
+  <desc id="data-normalization-v2-desc">Sơ đồ năm chặng cho thấy dữ liệu báo cáo được giữ nguyên, trích xuất, chuẩn hóa, kiểm tra và đóng gói thành exact cell có provenance.</desc>
+  <defs>
+    <marker id="data-normalization-v2-arrow" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#52657A"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="760" fill="#FAF9F5"/>
+  <text x="48" y="52" fill="#1F8A89" font-size="12" font-weight="600" letter-spacing="0.18em" font-family="'Geist','Noto Sans',Arial,sans-serif">DATA / NORMALIZATION</text>
+  <text x="48" y="92" fill="#0B2545" font-size="28" font-weight="600" font-family="'Instrument Serif','Noto Serif',Georgia,serif">Chuẩn hóa để máy hiểu, giữ nguyên để người kiểm tra</text>
+  <text x="48" y="128" fill="#52657A" font-size="16" font-family="'Geist','Noto Sans',Arial,sans-serif">Mỗi bước làm dữ liệu dễ dùng hơn đều phải để lại đường quay về bản gốc.</text>
+
+  <!-- connectors first -->
+  <line x1="288" y1="332" x2="352" y2="332" stroke="#52657A" stroke-width="2" marker-end="url(#data-normalization-v2-arrow)"/>
+  <line x1="592" y1="332" x2="656" y2="332" stroke="#52657A" stroke-width="2" marker-end="url(#data-normalization-v2-arrow)"/>
+  <line x1="896" y1="332" x2="960" y2="332" stroke="#52657A" stroke-width="2" marker-end="url(#data-normalization-v2-arrow)"/>
+  <line x1="1200" y1="332" x2="1264" y2="332" stroke="#1F8A89" stroke-width="2.2" marker-end="url(#data-normalization-v2-arrow)"/>
+
+  <rect x="296" y="296" width="56" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="324" y="308" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">GIỮ GỐC</text>
+  <rect x="600" y="296" width="56" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="628" y="308" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">TÁCH</text>
+  <rect x="904" y="296" width="56" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="932" y="308" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">SOÁT</text>
+  <rect x="1208" y="296" width="56" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="1236" y="308" text-anchor="middle" fill="#1F8A89" font-size="12" font-family="'Geist Mono',monospace">GẮN DẤU</text>
+
+  <!-- card 01 -->
+  <rect x="48" y="200" width="240" height="264" rx="8" fill="#F0F3F5" stroke="#9AAABA" stroke-width="1.2"/>
+  <rect x="68" y="220" width="40" height="24" rx="4" fill="#D8E1E8"/>
+  <text x="88" y="237" text-anchor="middle" fill="#52657A" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">01</text>
+  <text x="168" y="272" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Dữ liệu thô</text>
+  <text x="168" y="300" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">báo cáo + bảng + metadata</text>
+  <rect x="72" y="340" width="192" height="88" rx="6" fill="#FFFFFF" stroke="#D6DFE2" stroke-width="1"/>
+  <text x="88" y="364" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">BẢNG GỐC</text>
+  <text x="88" y="388" fill="#0B2545" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Doanh thu</text>
+  <text x="88" y="412" fill="#0B2545" font-size="12" font-family="'Geist Mono',monospace">1.234.567.890</text>
+
+  <!-- card 02 -->
+  <rect x="352" y="200" width="240" height="264" rx="8" fill="#FFFFFF" stroke="#9AAABA" stroke-width="1.2"/>
+  <rect x="372" y="220" width="40" height="24" rx="4" fill="#E7EBEF"/>
+  <text x="392" y="237" text-anchor="middle" fill="#52657A" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">02</text>
+  <text x="472" y="272" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Trích xuất</text>
+  <text x="472" y="300" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">khôi phục hàng và cột</text>
+  <rect x="376" y="340" width="192" height="88" rx="6" fill="#F7F9FA" stroke="#D6DFE2" stroke-width="1"/>
+  <text x="392" y="364" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">HEADER</text>
+  <text x="392" y="388" fill="#0B2545" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">2023 | 2022 | Đơn vị</text>
+  <text x="392" y="412" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Doanh thu → hai ô số</text>
+
+  <!-- card 03 focal -->
+  <rect x="656" y="200" width="240" height="264" rx="8" fill="#E5F2EF" stroke="#1F8A89" stroke-width="1.6"/>
+  <rect x="676" y="220" width="40" height="24" rx="4" fill="#C5E4DE"/>
+  <text x="696" y="237" text-anchor="middle" fill="#1F8A89" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">03</text>
+  <text x="776" y="272" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Chuẩn hóa</text>
+  <text x="776" y="300" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">nhãn, kỳ, số và đơn vị</text>
+  <rect x="680" y="340" width="192" height="88" rx="6" fill="#FFFFFF" stroke="#B7DCD5" stroke-width="1"/>
+  <text x="696" y="364" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">RAW → PARSED</text>
+  <text x="696" y="388" fill="#0B2545" font-size="12" font-family="'Geist Mono',monospace">1.234.567.890</text>
+  <text x="696" y="412" fill="#1F8A89" font-size="12" font-family="'Geist Mono',monospace">1234567890 VND</text>
+
+  <!-- card 04 -->
+  <rect x="960" y="200" width="240" height="264" rx="8" fill="#FFFFFF" stroke="#9AAABA" stroke-width="1.2"/>
+  <rect x="980" y="220" width="40" height="24" rx="4" fill="#E7EBEF"/>
+  <text x="1000" y="237" text-anchor="middle" fill="#52657A" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">04</text>
+  <text x="1080" y="272" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Kiểm tra</text>
+  <text x="1080" y="300" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">không đoán phần còn thiếu</text>
+  <rect x="984" y="340" width="192" height="88" rx="6" fill="#F7F9FA" stroke="#D6DFE2" stroke-width="1"/>
+  <text x="1000" y="364" fill="#52657A" font-size="12" font-family="'Geist Mono',monospace">✓ TICKER</text>
+  <text x="1000" y="388" fill="#52657A" font-size="12" font-family="'Geist Mono',monospace">✓ PERIOD + UNIT</text>
+  <text x="1000" y="412" fill="#52657A" font-size="12" font-family="'Geist Mono',monospace">✓ SOURCE MAP</text>
+
+  <!-- card 05 -->
+  <rect x="1264" y="200" width="240" height="264" rx="8" fill="#0B2545" stroke="#0B2545" stroke-width="1.2"/>
+  <rect x="1284" y="220" width="40" height="24" rx="4" fill="#244A6D"/>
+  <text x="1304" y="237" text-anchor="middle" fill="#D9ECEA" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">05</text>
+  <text x="1384" y="272" text-anchor="middle" fill="#FFFFFF" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Sẵn sàng</text>
+  <text x="1384" y="300" text-anchor="middle" fill="#C6D5DF" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">exact cell + provenance</text>
+  <rect x="1288" y="340" width="192" height="88" rx="6" fill="#163653" stroke="#2E5A77" stroke-width="1"/>
+  <text x="1304" y="364" fill="#8ACDC3" font-size="12" font-family="'Geist Mono',monospace">table_uid</text>
+  <text x="1304" y="388" fill="#FFFFFF" font-size="12" font-family="'Geist Mono',monospace">row_path + column</text>
+  <text x="1304" y="412" fill="#C6D5DF" font-size="12" font-family="'Geist Mono',monospace">source_hash</text>
+
+  <rect x="48" y="536" width="1456" height="64" rx="8" fill="#FFF7F0" stroke="#F1CDB5" stroke-width="1"/>
+  <text x="76" y="574" fill="#0B2545" font-size="16" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Ví dụ:</text>
+  <text x="152" y="574" fill="#52657A" font-size="16" font-family="'Geist','Noto Sans',Arial,sans-serif">dấu “-” chưa chắc là số 0; nếu chưa chứng minh được ý nghĩa, hệ thống giữ giá trị là chưa rõ.</text>
+  <line x1="48" y1="668" x2="1504" y2="668" stroke="#D6DFE2" stroke-width="1"/>
+  <text x="48" y="696" fill="#7A8A99" font-size="12" font-weight="600" letter-spacing="0.14em" font-family="'Geist Mono',monospace">NGUYÊN TẮC</text>
+  <text x="176" y="696" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Giữ bản gốc · Chuẩn hóa ở lớp riêng · Gắn provenance · Fail-closed khi mơ hồ</text>
+</svg>

@@ -5,9 +5,10 @@ consumer for the hand-off below:
 
 ``route/period packets -> exact V2 cells -> Decimal replay``.
 
-It deliberately has no promotion, training, submission, or LLM authority.  A
-successful run proves that the supplied hash-bound inputs can be replayed
-together; it does *not* turn the resulting rows into answers.
+It emits a numeric answer from a complete Answer Certificate or, when an
+explicit selector ledger is supplied, from the best candidate that survived
+filtering.  The latter remains an uncertain prediction and never receives
+automatic promotion, training, submission, or LLM-checkpoint authority.
 """
 
 from __future__ import annotations
@@ -22,15 +23,14 @@ from typing import Any, Mapping
 import yaml
 
 from .core import answer_certificates
+from .core import currency_units
 from .core import evidence_binding
 from .core import exact_cell_bindings
 from .core import exact_cell_bindings_v2
 from .core import financial_taxonomy
 from .core import grounded_authorization
-from .core import grounded_execution
 from .core import grounded_execution_v2
 from .core import numeric_cell_tokens
-from .core import semantic_approvals
 from .core.exact_cell_bindings_v2 import build as build_exact_cell_bindings
 from .core.grounded_authorization import materialize_authorization_replay
 from .core.grounded_execution_v2 import run as run_grounded_execution
@@ -42,12 +42,14 @@ from . import decimal_sandbox
 GROUNDED_E2E_PROTOCOL = "vifinqa_grounded_e2e_v1"
 GROUNDED_E2E_SCHEMA_VERSION = 1
 SOURCE_CONTRACT = {
-    "research_only": True,
-    "evidence_eligible": False,
+    "answer_output_allowed": True,
+    "answer_requires_complete_certificate": False,
+    "authoritative_answer_requires_complete_certificate": True,
+    "answer_requires_surviving_candidate": True,
+    "may_materialize_answer": True,
     "training_eligible": False,
     "submission_eligible": False,
     "promotion_allowed": False,
-    "may_materialize_answer": False,
 }
 REQUIRED_PATHS = (
     "period_packets",
@@ -57,12 +59,10 @@ REQUIRED_PATHS = (
     "structured_tables",
     "evidence_context",
     "evidence_context_manifest",
-    "semantic_review_queue",
-    "semantic_review_manifest",
-    "semantic_human_decisions",
     "metric_registry",
 )
 OPTIONAL_REFERENCE_PATHS = (
+    "best_candidate_predictions",
     "expected_bindings",
     "expected_execution",
     "expected_evidence_bindings",
@@ -88,10 +88,8 @@ class GroundedE2EInputs:
     structured_tables: Path
     evidence_context: Path
     evidence_context_manifest: Path
-    semantic_review_queue: Path
-    semantic_review_manifest: Path
-    semantic_human_decisions: Path
     metric_registry: Path
+    best_candidate_predictions: Path | None = None
     expected_bindings: Path | None = None
     expected_execution: Path | None = None
     expected_evidence_bindings: Path | None = None
@@ -107,9 +105,6 @@ class GroundedE2EInputs:
             "structured_tables": self.structured_tables,
             "evidence_context": self.evidence_context,
             "evidence_context_manifest": self.evidence_context_manifest,
-            "semantic_review_queue": self.semantic_review_queue,
-            "semantic_review_manifest": self.semantic_review_manifest,
-            "semantic_human_decisions": self.semantic_human_decisions,
             "metric_registry": self.metric_registry,
         }
         return paths
@@ -123,6 +118,7 @@ class GroundedE2EInputs:
                 "expected_evidence_bindings": self.expected_evidence_bindings,
                 "expected_answer_certificates": self.expected_answer_certificates,
                 "expected_authorization_readiness": self.expected_authorization_readiness,
+                "best_candidate_predictions": self.best_candidate_predictions,
             }.items()
             if path is not None
         }
@@ -134,12 +130,11 @@ class GroundedE2EInputs:
             "canonical_pipeline": Path(__file__),
             "evidence_binding": Path(evidence_binding.__file__ or ""),
             "answer_certificates": Path(answer_certificates.__file__ or ""),
+            "currency_units": Path(currency_units.__file__ or ""),
             "exact_cell_bindings_v2": Path(exact_cell_bindings_v2.__file__ or ""),
             "exact_cell_bindings": Path(exact_cell_bindings.__file__ or ""),
             "grounded_authorization": Path(grounded_authorization.__file__ or ""),
-            "semantic_approvals": Path(semantic_approvals.__file__ or ""),
             "grounded_execution_v2": Path(grounded_execution_v2.__file__ or ""),
-            "grounded_execution": Path(grounded_execution.__file__ or ""),
             "decimal_executor": Path(decimal_executor.__file__ or ""),
             "decimal_sandbox": Path(decimal_sandbox.__file__ or ""),
             "numeric_cell_tokens": Path(numeric_cell_tokens.__file__ or ""),
@@ -308,12 +303,10 @@ def run_grounded_e2e(inputs: GroundedE2EInputs, *, output_dir: Path) -> dict[str
         structured_tables=inputs.structured_tables,
         evidence_context=inputs.evidence_context,
         evidence_context_manifest=inputs.evidence_context_manifest,
-        semantic_review_queue=inputs.semantic_review_queue,
-        semantic_review_manifest=inputs.semantic_review_manifest,
-        semantic_human_decisions=inputs.semantic_human_decisions,
         metric_registry=inputs.metric_registry,
         evidence_bindings_output=evidence_bindings_path,
         answer_certificates_output=answer_certificates_path,
+        best_candidate_predictions=inputs.best_candidate_predictions,
     )
 
     after = _hashes(input_paths)
@@ -352,12 +345,28 @@ def run_grounded_e2e(inputs: GroundedE2EInputs, *, output_dir: Path) -> dict[str
             "Grounded E2E replay diverged from the declared reference artifact"
         )
 
+    authorization_counts = authorization_result["counts"]
+    certificate_status_counts = authorization_counts.get(
+        "answer_certificate_status_counts", {}
+    )
+    answer_count = int(certificate_status_counts.get(
+        "ANSWER_CERTIFICATE_COMPLETE_CAMPAIGN_ONLY", 0
+    ))
+    abstain_count = int(certificate_status_counts.get("ABSTAIN", 0))
+    candidate_prediction_count = int(
+        authorization_counts.get("candidate_prediction_count", 0)
+    )
+    answer_available_count = int(
+        authorization_counts.get("answer_available_count", answer_count)
+    )
+    strict_answer_authority = answer_count > 0
+
     receipt = {
         "schema_version": GROUNDED_E2E_SCHEMA_VERSION,
         "protocol": GROUNDED_E2E_PROTOCOL,
         "run_name": inputs.run_name,
         "run_id": run_id,
-        "run_status": "complete_research_only",
+        "run_status": "complete_answer_capable",
         "config": {
             "path": str(inputs.config_path),
             "sha256": inputs.config_sha256,
@@ -407,6 +416,33 @@ def run_grounded_e2e(inputs: GroundedE2EInputs, *, output_dir: Path) -> dict[str
                 "manifest_sha256": sha256_file(Path(authorization_result["manifest_path"])),
                 "counts": authorization_result["counts"],
             },
+        },
+        "technical_readiness": {
+            "question_count": execution_result["counts"].get("question_count", 0),
+            "execution_replay_ready_count": execution_result["counts"]
+            .get("execution_status_counts", {})
+            .get("execution_replay_ready", 0),
+            # This is strict-answer authority, not the ability to emit a
+            # best-effort candidate.  A candidate may be materialized while
+            # every certificate remains ABSTAIN; in that case this must stay
+            # false so the operator receipt cannot imply verification.
+            "answer_authority": strict_answer_authority,
+            "strict_answer_authority": strict_answer_authority,
+            "strict_answer_authorized_count": answer_count,
+            "best_effort_candidate_authority": False,
+            "answer_output_allowed": True,
+            "answer_count": answer_count,
+            "abstain_count": abstain_count,
+            "candidate_prediction_count": candidate_prediction_count,
+            "answer_available_count": answer_available_count,
+            "meaning": (
+                "answer_authority reflects only complete, strict Answer "
+                "Certificates present in this run. ABSTAIN with a surviving "
+                "candidate may emit a separately labelled best-effort "
+                "candidate using answer_status=PREDICTED_CANDIDATE, but that "
+                "does not authorize an answer, training, promotion or release. "
+                "Submission still requires a separate release gate."
+            ),
         },
         "reproducibility": reproducibility,
         "source_code": source_code,

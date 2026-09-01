@@ -1,0 +1,50 @@
+{
+  "protocol": "vifinqa_staged_formula_metric_phrase_probe_v1",
+  "rules": [
+    {
+      "forbidden_compact_fragments": ["quykhacthuoc"],
+      "metric_hint": "vốn chủ sở hữu",
+      "primary_statement_only": true,
+      "required_account_codes": ["400"],
+      "required_compact_fragments": ["vonchusohuu"],
+      "rule_id": "equity_phrase_v1"
+    },
+    {
+      "forbidden_compact_fragments": ["saumuoihai", "truocmuoihai", "nganhan", "daihan", "bophan"],
+      "metric_hint": "nợ phải trả",
+      "primary_statement_only": true,
+      "required_account_codes": ["300"],
+      "required_compact_fragments": ["nophaitra"],
+      "rule_id": "total_liabilities_phrase_v1"
+    },
+    {
+      "forbidden_compact_fragments": [],
+      "metric_hint": "lợi nhuận kế toán trước thuế",
+      "primary_statement_only": true,
+      "required_compact_fragments": ["loinhuanketoantruocthue"],
+      "rule_id": "profit_before_tax_phrase_v1"
+    },
+    {
+      "forbidden_compact_fragments": ["cuacodong"],
+      "metric_hint": "lợi nhuận sau thuế",
+      "primary_statement_only": true,
+      "required_compact_fragments": ["loinhuansauthue"],
+      "rule_id": "net_profit_phrase_v1"
+    },
+    {
+      "forbidden_compact_fragments": [],
+      "metric_hint": "lưu chuyển tiền thuần từ hoạt động kinh doanh",
+      "primary_statement_only": true,
+      "required_compact_fragments": ["luuchuyentienthuantuhoatdongkinhdoanh"],
+      "rule_id": "operating_cash_flow_phrase_v1"
+    },
+    {
+      "forbidden_compact_fragments": ["doanhthukhac"],
+      "metric_hint": "doanh thu thuần",
+      "primary_statement_only": true,
+      "required_compact_fragments": ["doanhthuthuan"],
+      "rule_id": "net_revenue_phrase_v1"
+    }
+  ],
+  "schema_version": 1
+}

@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_generalization_hypothesis_v1",
+  "experiment_id": "dimensionless_scalar_multiply_v1",
+  "research_question": "Can one typed dimensionless-scalar multiplication contract improve safe financial-program coverage across unseen issuers, wording, metric families, and operation compositions without enabling arbitrary dimensional multiplication?",
+  "observation": {
+    "phenomenon": "The frozen FinQA kernel baseline executes every supported program correctly, but grounded shadow eligibility is lower because every multiply operator is marked dimensionally unsafe.",
+    "discovery": {
+      "records": 6251,
+      "pass": 6122,
+      "unsupported": 129,
+      "kernel_accuracy_on_supported": 1.0,
+      "shadow_eligibility_rate": 0.8976163813789794,
+      "summary": "artifacts/research/finqa_dsl_kernel_baseline_v1_discovery_20260825/summary_v1.json",
+      "summary_sha256": "ff7132cde9071b3961a2c6fc752d564c5020db4430b7f8385b795844a8b193fe"
+    },
+    "development": {
+      "records": 883,
+      "pass": 872,
+      "unsupported": 11,
+      "kernel_accuracy_on_supported": 1.0,
+      "shadow_eligibility_rate": 0.9026047565118913,
+      "summary": "artifacts/research/finqa_dsl_kernel_baseline_v1_development_20260825/summary_v1.json",
+      "summary_sha256": "e404b5f0d980ef8ff6b359713a2dcdd5628228264565acedb97dec102c63cb9f"
+    }
+  },
+  "hypothesis": {
+    "observed_phenomenon": "Programs containing multiply are numerically executable but all remain shadow-blocked because the operator contract does not distinguish a dimensionless scalar from a second dimensional amount.",
+    "possible_cause": "The operator registry has only an unrestricted multiply shape and no typed scalar operand contract.",
+    "expected_improvement": "Recognizing only named constants or percent literals as dimensionless scalars should increase shadow-eligible correct programs on development and untouched evaluation while preserving 100 percent execution accuracy on newly eligible programs.",
+    "possible_side_effect": "Treating a unit conversion constant or an arbitrary extracted number as dimensionless could silently change units and create false confidence.",
+    "questions_that_should_improve": "Programs whose multiply step has exactly one explicit const_* or percent-literal scalar and whose other operand is a prior result or extracted amount.",
+    "questions_that_should_remain_unchanged": "Programs without multiply, multiply steps with two untyped numeric amounts, exp/greater programs, invalid programs, and any program whose scalar semantics are ambiguous."
+  },
+  "change_tested": {
+    "primary_change_count": 1,
+    "primary_change": "typed_dimensionless_scalar_multiply_contract_only",
+    "forbidden_concurrent_changes": [
+      "retrieval",
+      "question_parsing",
+      "entity_resolution",
+      "table_binding",
+      "thresholds",
+      "other_arithmetic_operators"
+    ]
+  },
+  "expected_result_frozen_before_run": true,
+  "split_design": {
+    "seed": "dimensionless-scalar-multiply-v1-freeze-20260825",
+    "source_dataset": "finqa",
+    "discovery_source_split": "train",
+    "development_source_split": "dev",
+    "untouched_evaluation_source_split": "test",
+    "discovery_size": 10,
+    "development_size": 30,
+    "untouched_evaluation_size": 30,
+    "selection_key": "sha256(seed + source filename + question text + program + source table); question ID excluded",
+    "question_id_role": "tracking_only",
+    "company_holdout": "FinQA source reports must be pairwise disjoint across source splits.",
+    "wording_holdout": "Untouched normalized wording templates must be absent from development.",
+    "metric_holdout": "At least one intrinsic metric family must have six or more untouched records and zero development records.",
+    "composition_holdout": "At least one multiply operation signature must have six or more untouched records and zero development records."
+  },
+  "contamination_register": {
+    "status": "PRE_FREEZE_TEST_EXAMPLES_OBSERVED_AND_EXCLUDED",
+    "excluded_from_untouched_if_program_contains": [
+      "exp(",
+      "greater("
+    ],
+    "reason": "Specific FinQA test examples containing exp were inspected before this hypothesis freeze; they cannot provide unseen evidence.",
+    "aggregate_operator_counts_seen_before_freeze": true,
+    "individual_non_exp_non_greater_test_records_seen_before_freeze": false
+  },
+  "ablation_arms": [
+    "A_current_locked_kernel_contract",
+    "B_A_plus_named_constant_or_percent_scalar",
+    "C_B_without_percent_literal_scalars",
+    "D_B_without_named_constant_scalars"
+  ],
+  "decision_thresholds": {
+    "minimum_newly_eligible_development": 5,
+    "minimum_newly_eligible_untouched": 5,
+    "minimum_execution_accuracy_on_newly_eligible": 1.0,
+    "maximum_false_confident_newly_eligible": 0,
+    "maximum_regressed_previously_eligible": 0,
+    "minimum_metric_holdout_improved": 5,
+    "minimum_composition_holdout_improved": 5
+  },
+  "evaluator": {
+    "status": "HASH_BOUND_EXTERNAL_GOLD_AVAILABLE",
+    "kind": "FinQA official gold program and execution answer",
+    "external_reference_manifest": "artifacts/research/external_financial_reference_v1_20260825/manifest.json",
+    "external_reference_manifest_sha256": "6bb2e79e64a69d13a588a2e7cf51515c006890793fef42de1a2017a0589e26ce",
+    "unavailable_to_vifinqa_prediction_pipeline": true,
+    "model_change_allowed": true,
+    "vifinqa_answer_authority": false
+  },
+  "human_role": {
+    "per_question_review": false,
+    "allowed_after_round_verdicts": [
+      "KEEP",
+      "REJECT",
+      "INVESTIGATE FURTHER"
+    ]
+  },
+  "source_contract": {
+    "research_only": true,
+    "evidence_eligible": false,
+    "may_materialize_answer": false,
+    "training_eligible": false,
+    "submission_eligible": false,
+    "promotion_allowed": false
+  }
+}

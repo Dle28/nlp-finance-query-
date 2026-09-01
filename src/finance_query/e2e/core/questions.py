@@ -110,7 +110,7 @@ MULTI_SUBJECT_RE = re.compile(
     r"\b(?:ctcp|công\s+ty|tổng\s+công\s+ty)\b.{0,90}\b(?:và|,\s*(?:ctcp|công\s+ty|tổng\s+công\s+ty))\b",
     re.IGNORECASE,
 )
-TICKER_TOKEN_RE = re.compile(r"\(([A-Z]{2,6})\)|\b([A-Z]{2,6})\b")
+TICKER_TOKEN_RE = re.compile(r"\(([A-Z]{2,6}\d?)\)|\b([A-Z]{2,6}\d?)\b")
 NON_TICKER_TOKENS = {"CP", "CTCP", "TMCP", "TNDN", "VND", "HĐQT", "BTC"}
 LEGAL_SUFFIX_RE = re.compile(
     r"\s*[-–—]\s*(?:ctcp|tmcp|công\s+ty\s+cổ\s+phần|"
@@ -143,7 +143,12 @@ def load_ticker_aliases(code_stock_path: Path) -> dict[str, str]:
                 (
                     value.upper()
                     for value in values
-                    if re.fullmatch(r"[A-Z]{2,6}", value.upper())
+                    # A small number of Vietnamese tickers contain one
+                    # trailing digit (for example ``PC1`` and ``HT1``).  The
+                    # registry parser must preserve these as tickers; using
+                    # letters-only here silently drops their company aliases
+                    # and makes multi-issuer routing incomplete.
+                    if re.fullmatch(r"[A-Z]{2,6}\d?", value.upper())
                 ),
                 None,
             )
@@ -164,6 +169,18 @@ def load_ticker_aliases(code_stock_path: Path) -> dict[str, str]:
             for value in values:
                 if len(value) >= 2:
                     add_alias(value)
+                    normalized_value = normalize_text(value)
+                    # Public questions alternate between the Vietnamese legal
+                    # abbreviation and its expanded form.  Treating these as
+                    # separate aliases leaves a real issuer unbound and lets
+                    # a higher-ranked table from another issuer survive later
+                    # semantic selection.
+                    if normalized_value.casefold().startswith("ctcp "):
+                        add_alias("Công ty Cổ phần " + normalized_value[5:])
+                    if normalized_value.casefold().startswith("tmcp "):
+                        add_alias("Thương mại Cổ phần " + normalized_value[5:])
+                    if normalized_value.casefold().startswith("ngân hàng tmcp "):
+                        add_alias("Ngân hàng Thương mại Cổ phần " + normalized_value[15:])
                     # Report questions often omit only a terminal legal form
                     # (for example, ``... Việt Nam`` vs ``... Việt Nam -
                     # CTCP``).  Keep this high-precision variant, but do not
@@ -180,7 +197,7 @@ def extract_tickers(question: str, aliases: dict[str, str]) -> list[str]:
     known_tickers = set(aliases.values())
 
     # Corporate abbreviations such as CTCP/TMCP must not become fake tickers.
-    for match in re.finditer(r"\(([A-Z]{2,6})\)|\b([A-Z]{2,6})\b", question):
+    for match in re.finditer(r"\(([A-Z]{2,6}\d?)\)|\b([A-Z]{2,6}\d?)\b", question):
         ticker = next(group for group in match.groups() if group).upper()
         if known_tickers and ticker not in known_tickers:
             continue
@@ -230,7 +247,11 @@ def infer_family(question: str) -> tuple[QuestionFamily, float]:
     return "direct_lookup", 0.62
 
 
-def reported_value_lookup_reason(question: str) -> str | None:
+def reported_value_lookup_reason(
+    question: str,
+    *,
+    allow_resolved_single_entity_ticker_noise: bool = False,
+) -> str | None:
     """Return a high-precision reason when wording asks for one reported row.
 
     This is classification only.  It does not establish that retrieval found a
@@ -248,7 +269,14 @@ def reported_value_lookup_reason(question: str) -> str | None:
         for match in TICKER_TOKEN_RE.findall(normalized)
         if next(value for value in match if value) not in NON_TICKER_TOKENS
     }
-    if len(ticker_tokens) > 1:
+    # A legal issuer title can contain an all-caps trading name in addition to
+    # its parenthesised ticker (for example ``GELEX (GEX)``).  The base
+    # question-only planner cannot know whether those two tokens identify one
+    # issuer, so it keeps the old conservative rejection.  The typed planner
+    # may opt in only after its immutable source plan independently resolved
+    # exactly one issuer.  All multi-subject and operation-shape guards above
+    # still apply; this switch never accepts a comparison or aggregation.
+    if len(ticker_tokens) > 1 and not allow_resolved_single_entity_ticker_noise:
         return None
     if REPORTED_RATIO_RE.search(normalized):
         return "disclosed_ownership_or_voting_ratio"
@@ -257,6 +285,43 @@ def reported_value_lookup_reason(question: str) -> str | None:
     if REPORTED_FX_ROW_RE.search(normalized):
         return "disclosed_foreign_exchange_row"
     return None
+
+
+def reported_value_metric_hint(question: str, reason: str) -> str:
+    """Return the disclosed row label used by a narrow lookup reclassification.
+
+    This helper intentionally recognises only the three row forms already
+    admitted by :func:`reported_value_lookup_reason`.  It removes issuer/date
+    scaffolding, not financial words, so the later exact-row gate receives a
+    compact source-row hint rather than a whole-question similarity query.
+    """
+    normalized = normalize_text(question)
+    if reason == "disclosed_ownership_or_voting_ratio":
+        match = REPORTED_RATIO_RE.search(normalized)
+        if match:
+            return match.group(0)
+    if reason == "disclosed_total_or_weighted_average_row":
+        match = re.match(
+            r"^(.+?)\s+(?:của\s+(?:công\s+ty|ctcp|ngân\s+hàng|tập\s+đoàn|"
+            r"tổng\s+công\s+ty)|cuối\s+năm|đầu\s+năm|trong\s+năm|vào\s+ngày|"
+            r"đến\s+ngày)\b",
+            normalized,
+            re.IGNORECASE,
+        )
+        if match:
+            metric = match.group(1).strip(" ,:;.-")
+            # Financial-statement tables ordinarily label the total-assets
+            # row ``Tổng tài sản`` while questions sometimes say ``Tổng cộng
+            # tài sản``.  This is a spelling-only normalisation of the
+            # already-admitted reported-total form, not a synonym expansion.
+            if metric.casefold().startswith("tổng cộng "):
+                metric = "Tổng " + metric[len("Tổng cộng ") :]
+            return metric
+    if reason == "disclosed_foreign_exchange_row":
+        match = REPORTED_FX_ROW_RE.search(normalized)
+        if match:
+            return match.group(0)
+    return metric_hint(normalized)
 
 
 def infer_operation_ast(family: QuestionFamily, question: str) -> dict:

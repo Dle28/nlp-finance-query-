@@ -13,6 +13,8 @@ import json
 import time
 from typing import Any, Mapping
 
+from .decimal_executor import DIMENSIONLESS_SCALAR_KIND, parse_dimensionless_scalar
+
 
 DECIMAL_SANDBOX_PROTOCOL = "vifinqa_decimal_ast_sandbox_v1"
 
@@ -109,6 +111,11 @@ def execute_decimal_ast(
             if node not in normalized_operands:
                 raise KeyError(f"missing operand {node}")
             return normalized_operands[node]
+        if isinstance(node, Mapping) and node.get("kind") == DIMENSIONLESS_SCALAR_KIND:
+            try:
+                return parse_dimensionless_scalar(node)
+            except (ValueError, ArithmeticError) as error:
+                raise SandboxViolation("SANDBOX_DIMENSIONLESS_SCALAR_INVALID") from error
         if not isinstance(node, Mapping) or set(node) != {"op", "args"}:
             raise SandboxViolation("SANDBOX_AST_NODE_INVALID")
         operation_count += 1
@@ -125,11 +132,23 @@ def execute_decimal_ast(
             result = sum(values, Decimal("0"))
         elif op == "subtract" and len(values) == 2:
             result = values[0] - values[1]
+        elif op == "mean" and len(values) >= 2:
+            result = sum(values, Decimal("0")) / Decimal(len(values))
         elif op == "divide" and len(values) == 2:
             if values[1] == 0:
                 raise DivisionByZero("zero denominator")
             result = values[0] / values[1]
         elif op == "multiply" and len(values) == 2:
+            result = values[0] * values[1]
+        elif op == "scalar_multiply" and len(values) == 2:
+            raw_args = node["args"]
+            scalar_count = sum(
+                isinstance(argument, Mapping)
+                and argument.get("kind") == DIMENSIONLESS_SCALAR_KIND
+                for argument in raw_args
+            )
+            if scalar_count != 1:
+                raise SandboxViolation("SANDBOX_DIMENSIONLESS_SCALAR_REQUIRED")
             result = values[0] * values[1]
         elif op == "abs" and len(values) == 1:
             result = abs(values[0])
@@ -152,5 +171,59 @@ def execute_decimal_ast(
         policy_sha256=active_policy.policy_sha256,
         operation_count=operation_count,
         max_depth_seen=max_depth_seen,
+        elapsed_ns=elapsed_ns,
+    )
+
+
+def execute_unique_period_extreme(
+    *,
+    stage_order: list[str],
+    stage_values: Mapping[str, Decimal],
+    stage_periods: Mapping[str, int],
+    direction: str,
+    policy: DecimalSandboxPolicy | None = None,
+) -> SandboxedDecimalResult:
+    """Select one proven period from a fixed list of Decimal stage values.
+
+    Unlike amount arithmetic, this selector returns a period label.  It is a
+    deliberately separate primitive: the normal AST sandbox accepts Decimal
+    leaves only, while a period selector must also prove the one-to-one
+    stage-to-period mapping and reject ties.
+    """
+    active_policy = policy or DecimalSandboxPolicy()
+    if direction not in {"min", "max"}:
+        raise SandboxViolation("SANDBOX_PERIOD_SELECTOR_DIRECTION_INVALID")
+    if not isinstance(stage_order, list) or not (2 <= len(stage_order) <= active_policy.max_operands):
+        raise SandboxViolation("SANDBOX_PERIOD_SELECTOR_ARITY_INVALID")
+    if any(not isinstance(stage_id, str) or not stage_id for stage_id in stage_order):
+        raise SandboxViolation("SANDBOX_PERIOD_SELECTOR_STAGE_ID_INVALID")
+    if len(set(stage_order)) != len(stage_order) or set(stage_order) != set(stage_values) or set(stage_order) != set(stage_periods):
+        raise SandboxViolation("SANDBOX_PERIOD_SELECTOR_STAGE_COVERAGE_INVALID")
+    started_ns = time.monotonic_ns()
+    pairs: list[tuple[int, Decimal]] = []
+    for stage_id in stage_order:
+        if time.monotonic_ns() > started_ns + active_policy.max_wall_time_ms * 1_000_000:
+            raise SandboxViolation("SANDBOX_WALL_TIME_EXCEEDED")
+        value, period = stage_values[stage_id], stage_periods[stage_id]
+        if not isinstance(value, Decimal) or not value.is_finite() or _decimal_digits(value) > active_policy.max_decimal_digits:
+            raise SandboxViolation("SANDBOX_PERIOD_SELECTOR_VALUE_INVALID")
+        if isinstance(period, bool) or not isinstance(period, int):
+            raise SandboxViolation("SANDBOX_PERIOD_SELECTOR_PERIOD_INVALID")
+        pairs.append((period, value))
+    if len({period for period, _value in pairs}) != len(pairs):
+        raise SandboxViolation("SANDBOX_PERIOD_SELECTOR_PERIOD_NOT_UNIQUE")
+    extreme = max(value for _period, value in pairs) if direction == "max" else min(value for _period, value in pairs)
+    winners = [period for period, value in pairs if value == extreme]
+    if len(winners) != 1:
+        raise SandboxViolation("SANDBOX_PERIOD_SELECTOR_TIE_OR_MISSING_WINNER")
+    ast = {"op": "arg_extreme_period", "direction": direction, "args": stage_order}
+    payload = json.dumps(ast, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    elapsed_ns = time.monotonic_ns() - started_ns
+    return SandboxedDecimalResult(
+        value=Decimal(winners[0]),
+        ast_sha256=hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+        policy_sha256=active_policy.policy_sha256,
+        operation_count=1,
+        max_depth_seen=1,
         elapsed_ns=elapsed_ns,
     )

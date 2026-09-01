@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "protocol": "external_financial_reference_sources_v1",
+  "purpose": "Independent financial reasoning evaluation without using ViFinQA questions or hidden labels as development data.",
+  "sources": {
+    "finqa": {
+      "repository": "https://github.com/czyssrs/FinQA",
+      "paper": "https://aclanthology.org/2021.emnlp-main.300/",
+      "commit": "0f16e2867befa6840783e58be38c9efb9229d742",
+      "license": "MIT repository license; upstream dataset provenance must be retained",
+      "splits": {
+        "train": "discovery",
+        "dev": "development",
+        "test": "untouched_evaluation"
+      },
+      "private_test_allowed": false
+    },
+    "tatqa": {
+      "repository": "https://github.com/NExTplusplus/TAT-QA",
+      "paper": "https://aclanthology.org/2021.acl-long.254/",
+      "commit": "870accc41953dcde885aabeb963d94aabdc0fbc3",
+      "license": "CC BY 4.0",
+      "splits": {
+        "train": "discovery",
+        "dev": "development",
+        "test_gold": "untouched_evaluation"
+      }
+    }
+  },
+  "firewall": {
+    "vifinqa_question_content_allowed": false,
+    "vifinqa_question_id_allowed": false,
+    "hidden_competition_labels_allowed": false,
+    "leaderboard_feedback_allowed_for_development": false,
+    "external_gold_may_authorize_vifinqa_answer": false,
+    "original_split_mapping_must_be_preserved": true
+  },
+  "source_contract": {
+    "research_only": true,
+    "training_eligible": false,
+    "evidence_eligible": false,
+    "may_materialize_vifinqa_answer": false,
+    "submission_eligible": false,
+    "promotion_allowed": false
+  }
+}

@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI GURU — submission-first architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper:#f5f5f5; --paper-2:#ececec; --white:#fff; --ink:#2d3142;
+      --muted:#4f5d75; --soft:#7a8399; --rule:rgba(45,49,66,.12);
+      --rule-solid:#bfc0c0; --accent:#eb6c36; --accent-tint:rgba(235,108,54,.08);
+      --link:#2e5aa8; --sans:"Geist",system-ui,sans-serif;
+      --serif:"Instrument Serif",Georgia,serif; --mono:"Geist Mono",ui-monospace,monospace;
+    }
+    *,*::before,*::after{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans)}
+    main{max-width:1880px;margin:0 auto;padding:48px 32px 72px}
+    .eyebrow,.section-kicker{margin:0 0 12px;color:var(--soft);font:500 8px/1.4 var(--mono);letter-spacing:.18em;text-transform:uppercase}
+    h1{max-width:1240px;margin:0;font:400 48px/1.04 var(--serif);letter-spacing:-.02em}
+    .lead{max-width:1280px;margin:16px 0 0;color:var(--muted);font-size:16px;line-height:1.6}
+    .meta-row{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 0}
+    .tag{padding:8px 12px;border:1px solid var(--rule-solid);border-radius:4px;background:var(--white);color:var(--muted);font:500 8px/1 var(--mono);letter-spacing:.06em}
+    .tag.focal{border-color:var(--accent);background:var(--accent-tint);color:var(--accent)}
+    section{margin-top:48px}
+    .section-note,.detail-lead{max-width:1320px;margin:12px 0 20px;color:var(--muted);line-height:1.6}
+    .diagram-shell{overflow-x:auto}
+    .diagram-shell svg{display:block;width:100%;min-width:1640px;height:auto}
+    .cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:24px}
+    .card,.panel,.path-panel{padding:20px;border:1px solid var(--rule);border-radius:6px;background:var(--white)}
+    .card{min-height:150px}
+    .card.focal,.panel.focal{border-color:var(--accent);background:var(--accent-tint)}
+    .card .eyebrow,.panel .eyebrow{margin-bottom:8px}
+    h2{margin:0;font:400 32px/1.08 var(--serif)}
+    h3{margin:0;font-size:17px;line-height:1.2;font-weight:600}
+    .card p,.panel p{margin:10px 0 0;color:var(--muted);font-size:14px;line-height:1.55}
+    .module-table,.contract-table,.research-table{width:100%;border-collapse:collapse;background:var(--white);border:1px solid var(--rule);font-size:13px}
+    .module-table th,.module-table td,.contract-table th,.contract-table td,.research-table th,.research-table td{padding:12px 14px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top;line-height:1.45}
+    .module-table th,.contract-table th,.research-table th{color:var(--soft);font:500 8px/1.4 var(--mono);letter-spacing:.12em;text-transform:uppercase}
+    .module-table tr:last-child td,.contract-table tr:last-child td,.research-table tr:last-child td{border-bottom:0}
+    .module-table td:first-child,.contract-table td:first-child,.research-table td:first-child{color:var(--ink);font-weight:600}
+    .language-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+    .panel ul{margin:12px 0 0;padding-left:20px;color:var(--muted);font-size:14px;line-height:1.55}
+    .panel li+li{margin-top:7px}
+    .code-panel{margin-top:16px;padding:18px;overflow-x:auto;border:1px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink);font:400 12px/1.55 var(--mono);white-space:pre-wrap}
+    .path-panel{margin-top:16px}
+    .path-panel code{color:var(--ink);font:400 12px/1.7 var(--mono)}
+    .note{margin-top:16px;padding:14px 16px;border-left:3px solid var(--accent);background:var(--accent-tint);color:var(--muted);font-size:14px;line-height:1.55}
+    a{color:var(--link)}
+    footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--rule);color:var(--soft);font:8px/1.5 var(--mono);letter-spacing:.08em;text-transform:uppercase}
+    .zone-main{fill:rgba(45,49,66,.018);stroke:rgba(45,49,66,.22);stroke-width:1}
+    .zone-feedback{fill:rgba(45,49,66,.018);stroke:rgba(45,49,66,.22);stroke-width:1;stroke-dasharray:4 4}
+    .zone-control{fill:rgba(45,49,66,.035);stroke:rgba(45,49,66,.20);stroke-width:1}
+    .zone-label-mask,.arrow-label-mask{fill:var(--paper)}
+    .zone-label{fill:var(--muted);font:500 8px var(--mono);letter-spacing:.12em}
+    .connector{fill:none;stroke:var(--muted);stroke-width:1.2}
+    .connector.dashed{stroke:var(--soft);stroke-width:1;stroke-dasharray:4 3}
+    .connector.accent{stroke:var(--accent);stroke-width:1.3}
+    .arrow-label{fill:var(--soft);font:500 8px var(--mono);letter-spacing:.06em}
+    .node-underlay{fill:var(--paper)}
+    .node-frame{fill:var(--white);stroke:rgba(45,49,66,.28);stroke-width:1}
+    .node.focal .node-frame{fill:var(--accent-tint);stroke:var(--accent);stroke-width:1.2}
+    .node-number{fill:rgba(45,49,66,.12)}
+    .node.focal .node-number{fill:rgba(235,108,54,.20)}
+    .node-number-text{fill:var(--ink);font:600 12px var(--mono)}
+    .node.focal .node-number-text{fill:var(--accent)}
+    .node-title{fill:var(--ink);font:600 12px var(--sans)}
+    .node-kicker,.slot-label,.control-kicker{fill:var(--soft);font:500 8px var(--mono);letter-spacing:.10em}
+    .slot-text,.control-text{fill:var(--muted);font:400 9px var(--sans)}
+    .node-rule,.control-rule{stroke:var(--rule-solid);stroke-width:.8}
+    .ribbon{fill:rgba(45,49,66,.055);stroke:rgba(45,49,66,.13);stroke-width:.8}
+    .ribbon-text{fill:var(--muted);font:500 8px var(--mono);letter-spacing:.06em}
+    .control-card{fill:var(--white);stroke:rgba(45,49,66,.18);stroke-width:.8}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">AI GURU / SUBMISSION-FIRST UNIFIED ARCHITECTURE V1</p>
+      <h1>Submission là đường chính. E2E là feedback loop — và chỉ là gate khi chọn strict release.</h1>
+      <p class="lead">
+        Một workflow duy nhất đi từ data/question đến submission. RAG và fine-tune giúp tìm candidate, xếp hạng và tạo proposal; Context Compiler bảo toàn câu hỏi/nhãn nguồn tiếng Việt nhưng có thể dùng system instruction tiếng Anh theo model. E2E quan sát proposal/submission, tạo receipt và failure signal cho phiên bản kế tiếp; nó không tự sửa đáp án của run hiện tại.
+      </p>
+      <div class="meta-row" aria-label="architecture principles">
+        <span class="tag focal">SUBMISSION = PRIMARY OUTPUT</span>
+        <span class="tag">CONTEXT = VI SOURCE + CANONICAL JSON</span>
+        <span class="tag">MODEL OPS = EN INSTRUCTION WHEN MEASURED</span>
+        <span class="tag">E2E = FEEDBACK / OPTIONAL STRICT GATE</span>
+      </div>
+    </header>
+
+    <section aria-labelledby="diagram-heading">
+      <p class="section-kicker">ONE FLOW / TWO TIME SCALES</p>
+      <h2 id="diagram-heading">Luồng hợp nhất từ data/question đến submission và vòng cải thiện</h2>
+      <p class="section-note">
+        Đường ngang phía trên là run tạo submission. Rail phía dưới chạy sau đó để đo lỗi, lập experiment, train/re-index hoặc đề xuất code patch, rồi đưa một version đã qua held-out gate về run tiếp theo. Dòng solid là handoff chính; dòng dashed là feedback hoặc next-version route.
+      </p>
+      <div class="diagram-shell">
+        <svg viewBox="0 0 1840 1320" role="img" aria-labelledby="aiguru_submission_first_feedback_unified_v1-title aiguru_submission_first_feedback_unified_v1-desc">
+          <title id="aiguru_submission_first_feedback_unified_v1-title">AI GURU submission-first unified architecture</title>
+          <desc id="aiguru_submission_first_feedback_unified_v1-desc">Luồng chính từ data và câu hỏi qua source closure, typed question, RAG top-k, context prompt, model proposal, submission compiler đến submission package. Sau submission, E2E tạo receipt và feedback, evaluator hoặc codegen đề xuất cải thiện, Kaggle train hoặc re-index, held-out gate và human promotion đưa version mới quay lại context và retrieval.</desc>
+          <defs>
+            <marker id="unified-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+            <marker id="unified-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+          </defs>
+          <rect x="0" y="0" width="1840" height="1320" fill="var(--paper)"/>
+
+          <rect x="32" y="136" width="1776" height="380" rx="8" class="zone-main"/>
+          <rect x="32" y="580" width="1776" height="450" rx="8" class="zone-feedback"/>
+          <rect x="32" y="1064" width="1776" height="224" rx="8" class="zone-control"/>
+          <rect x="52" y="144" width="270" height="16" rx="2" class="zone-label-mask"/>
+          <text x="187" y="157" text-anchor="middle" class="zone-label">MAIN RUN / SUBMISSION PATH</text>
+          <rect x="52" y="588" width="290" height="16" rx="2" class="zone-label-mask"/>
+          <text x="197" y="601" text-anchor="middle" class="zone-label">FEEDBACK RAIL / NEXT VERSION</text>
+          <rect x="52" y="1072" width="330" height="16" rx="2" class="zone-label-mask"/>
+          <text x="217" y="1085" text-anchor="middle" class="zone-label">SHARED CONTRACTS / DELIVERY MODES</text>
+
+          <!-- Main-run connectors are emitted before all node boxes. -->
+          <line x1="244" y1="329" x2="260" y2="329" class="connector" marker-end="url(#unified-arrow)"/>
+          <line x1="464" y1="329" x2="480" y2="329" class="connector" marker-end="url(#unified-arrow)"/>
+          <line x1="684" y1="329" x2="700" y2="329" class="connector" marker-end="url(#unified-arrow)"/>
+          <line x1="904" y1="329" x2="920" y2="329" class="connector accent" marker-end="url(#unified-arrow-accent)"/>
+          <line x1="1124" y1="329" x2="1140" y2="329" class="connector accent" marker-end="url(#unified-arrow-accent)"/>
+          <line x1="1344" y1="329" x2="1360" y2="329" class="connector" marker-end="url(#unified-arrow)"/>
+          <line x1="1564" y1="329" x2="1580" y2="329" class="connector accent" marker-end="url(#unified-arrow-accent)"/>
+
+          <!-- Package becomes feedback after the primary artifact exists. -->
+          <path d="M1686,454 V536 Q1686,548 1674,548 H180 Q168,548 168,560 V674" class="connector dashed" marker-end="url(#unified-arrow)"/>
+          <rect x="818" y="536" width="244" height="16" rx="2" class="arrow-label-mask"/>
+          <text x="940" y="548" text-anchor="middle" class="arrow-label">SUBMISSION PACKAGE → E2E RECEIPT</text>
+
+          <!-- Feedback rail. -->
+          <line x1="288" y1="799" x2="328" y2="799" class="connector dashed" marker-end="url(#unified-arrow)"/>
+          <line x1="576" y1="799" x2="616" y2="799" class="connector dashed" marker-end="url(#unified-arrow)"/>
+          <line x1="864" y1="799" x2="904" y2="799" class="connector dashed" marker-end="url(#unified-arrow)"/>
+          <line x1="1152" y1="799" x2="1192" y2="799" class="connector dashed" marker-end="url(#unified-arrow)"/>
+          <line x1="1440" y1="799" x2="1480" y2="799" class="connector dashed" marker-end="url(#unified-arrow)"/>
+
+          <!-- Active version returns to the next run, never rewriting the current package. -->
+          <path d="M1608,908 V1016 Q1608,1028 1596,1028 H24 Q12,1028 12,1016 V548 Q12,536 24,536 H1012 Q1024,536 1024,524 V466" class="connector dashed" marker-end="url(#unified-arrow)"/>
+          <rect x="782" y="1016" width="176" height="16" rx="2" class="arrow-label-mask"/>
+          <text x="870" y="1028" text-anchor="middle" class="arrow-label">ACTIVE VERSION → NEXT RUN</text>
+
+          <rect x="92" y="478" width="1656" height="24" rx="4" class="ribbon"/>
+          <text x="920" y="494" text-anchor="middle" class="ribbon-text">QUESTION ENVELOPE  →  SOURCE CLOSURE  →  TYPED PLAN  →  CANDIDATE SET  →  CONTEXT PACKET  →  PROPOSAL AST  →  SUBMISSION LEDGER  →  ZIP</text>
+
+          <!-- Main modules. -->
+          <g class="node" transform="translate(48 204)">
+            <rect width="196" height="250" rx="6" class="node-underlay"/><rect width="196" height="250" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">01</text>
+            <text x="16" y="64" class="node-title">INTAKE</text><text x="16" y="80" class="node-title">DATA + QUESTION</text>
+            <text x="16" y="112" class="node-kicker">INPUT / IMMUTABLE</text><line x1="16" y1="128" x2="180" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">RECEIVE</text><text x="16" y="172" class="slot-text">raw reports · tables</text><text x="16" y="188" class="slot-text">question_id · tiếng Việt</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text><text x="16" y="236" class="slot-text">QuestionEnvelope</text>
+          </g>
+          <g class="node" transform="translate(268 204)">
+            <rect width="196" height="250" rx="6" class="node-underlay"/><rect width="196" height="250" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">02</text>
+            <text x="16" y="64" class="node-title">SOURCE</text><text x="16" y="80" class="node-title">CLOSURE</text>
+            <text x="16" y="112" class="node-kicker">HASH-BOUND INPUT</text><line x1="16" y1="128" x2="180" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">CHECK</text><text x="16" y="172" class="slot-text">V2/V3 table manifests</text><text x="16" y="188" class="slot-text">entity · period · scope</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text><text x="16" y="236" class="slot-text">SourceClosure</text>
+          </g>
+          <g class="node" transform="translate(488 204)">
+            <rect width="196" height="250" rx="6" class="node-underlay"/><rect width="196" height="250" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">03</text>
+            <text x="16" y="64" class="node-title">TYPED QUESTION</text><text x="16" y="80" class="node-title">+ LANGUAGE ROUTER</text>
+            <text x="16" y="112" class="node-kicker">SEMANTIC PLAN</text><line x1="16" y1="128" x2="180" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">PARSE</text><text x="16" y="172" class="slot-text">metric · period · scope</text><text x="16" y="188" class="slot-text">VI query + EN aliases</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text><text x="16" y="236" class="slot-text">TypedQuestion</text>
+          </g>
+          <g class="node" transform="translate(708 204)">
+            <rect width="196" height="250" rx="6" class="node-underlay"/><rect width="196" height="250" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">04</text>
+            <text x="16" y="64" class="node-title">RAG TOP-K</text><text x="16" y="80" class="node-title">+ RERANK</text>
+            <text x="16" y="112" class="node-kicker">NAVIGATION ONLY</text><line x1="16" y1="128" x2="180" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">RETRIEVE</text><text x="16" y="172" class="slot-text">lexical · dense · parent</text><text x="16" y="188" class="slot-text">fine-tuned order / top-k</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text><text x="16" y="236" class="slot-text">CandidateSet</text>
+          </g>
+          <g class="node focal" transform="translate(928 204)">
+            <rect width="196" height="250" rx="6" class="node-underlay"/><rect width="196" height="250" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">05</text>
+            <text x="16" y="64" class="node-title">CONTEXT COMPILER</text><text x="16" y="80" class="node-title">+ PROMPT POLICY</text>
+            <text x="16" y="112" class="node-kicker">FOCAL MODULE</text><line x1="16" y1="128" x2="180" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">COMPOSE</text><text x="16" y="172" class="slot-text">VI question + raw labels</text><text x="16" y="188" class="slot-text">schema + hashes · no value</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text><text x="16" y="236" class="slot-text">ContextPacketV2</text>
+          </g>
+          <g class="node" transform="translate(1148 204)">
+            <rect width="196" height="250" rx="6" class="node-underlay"/><rect width="196" height="250" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">06</text>
+            <text x="16" y="64" class="node-title">PROPOSAL MODEL</text><text x="16" y="80" class="node-title">→ JSON AST</text>
+            <text x="16" y="112" class="node-kicker">MODEL CONTRACT</text><line x1="16" y1="128" x2="180" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">GENERATE</text><text x="16" y="172" class="slot-text">VI evidence + EN system*</text><text x="16" y="188" class="slot-text">operands · refs · ABSTAIN</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text><text x="16" y="236" class="slot-text">ProposalAST</text>
+          </g>
+          <g class="node" transform="translate(1368 204)">
+            <rect width="196" height="250" rx="6" class="node-underlay"/><rect width="196" height="250" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">07</text>
+            <text x="16" y="64" class="node-title">SUBMISSION</text><text x="16" y="80" class="node-title">COMPILER</text>
+            <text x="16" y="112" class="node-kicker">HYDRATE + PACKAGE</text><line x1="16" y1="128" x2="180" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">BUILD</text><text x="16" y="172" class="slot-text">V2 exact-cell replay</text><text x="16" y="188" class="slot-text">formula · coverage · reasons</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text><text x="16" y="236" class="slot-text">SubmissionLedger</text>
+          </g>
+          <g class="node focal" transform="translate(1588 204)">
+            <rect width="196" height="250" rx="6" class="node-underlay"/><rect width="196" height="250" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">08</text>
+            <text x="16" y="64" class="node-title">SUBMISSION</text><text x="16" y="80" class="node-title">PACKAGE</text>
+            <text x="16" y="112" class="node-kicker">PRIMARY OUTPUT</text><line x1="16" y1="128" x2="180" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">DELIVER</text><text x="16" y="172" class="slot-text">JSON · CSV · ZIP · all IDs</text><text x="16" y="188" class="slot-text">best-effort status + audit</text>
+            <text x="16" y="216" class="slot-label">STRICT OPTION</text><text x="16" y="236" class="slot-text">wait for E2E certificate</text>
+          </g>
+
+          <!-- Feedback modules. -->
+          <g class="node" transform="translate(48 690)">
+            <rect width="240" height="218" rx="6" class="node-underlay"/><rect width="240" height="218" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">09</text>
+            <text x="16" y="64" class="node-title">E2E OBSERVER</text><text x="16" y="80" class="node-title">+ RECEIPT</text>
+            <text x="16" y="112" class="node-kicker">FEEDBACK / STRICT OPTION</text><line x1="16" y1="128" x2="224" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">OBSERVE</text><text x="16" y="172" class="slot-text">bind · replay · policy</text><text x="16" y="188" class="slot-text">never generate replacement</text><text x="16" y="204" class="slot-text">answer / ABSTAIN / reasons</text>
+          </g>
+          <g class="node" transform="translate(336 690)">
+            <rect width="240" height="218" rx="6" class="node-underlay"/><rect width="240" height="218" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">10</text>
+            <text x="16" y="64" class="node-title">FAILURE</text><text x="16" y="80" class="node-title">TAXONOMY</text>
+            <text x="16" y="112" class="node-kicker">DETERMINISTIC TRIAGE</text><line x1="16" y1="128" x2="224" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">CLASSIFY</text><text x="16" y="172" class="slot-text">retrieval · period · unit</text><text x="16" y="188" class="slot-text">AST · provenance · formula</text><text x="16" y="204" class="slot-text">first failure + next action</text>
+          </g>
+          <g class="node" transform="translate(624 690)">
+            <rect width="240" height="218" rx="6" class="node-underlay"/><rect width="240" height="218" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">11</text>
+            <text x="16" y="64" class="node-title">MODEL OPS</text><text x="16" y="80" class="node-title">CRITIC + CODEGEN</text>
+            <text x="16" y="112" class="node-kicker">OPTIONAL / SANDBOXED</text><line x1="16" y1="128" x2="224" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">ANALYZE</text><text x="16" y="172" class="slot-text">EN instruction when tested</text><text x="16" y="188" class="slot-text">VI raw trace preserved</text><text x="16" y="204" class="slot-text">patch + tests, no direct write</text>
+          </g>
+          <g class="node" transform="translate(912 690)">
+            <rect width="240" height="218" rx="6" class="node-underlay"/><rect width="240" height="218" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">12</text>
+            <text x="16" y="64" class="node-title">IMPROVEMENT</text><text x="16" y="80" class="node-title">BUILDER</text>
+            <text x="16" y="112" class="node-kicker">OFFLINE / VERSIONED</text><line x1="16" y1="128" x2="224" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">CHANGE</text><text x="16" y="172" class="slot-text">prompt · query · hard negative</text><text x="16" y="188" class="slot-text">train · re-index · model bundle</text><text x="16" y="204" class="slot-text">Kaggle = compute worker</text>
+          </g>
+          <g class="node" transform="translate(1200 690)">
+            <rect width="240" height="218" rx="6" class="node-underlay"/><rect width="240" height="218" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">13</text>
+            <text x="16" y="64" class="node-title">HELD-OUT</text><text x="16" y="80" class="node-title">EVALUATION</text>
+            <text x="16" y="112" class="node-kicker">NO LEAKAGE / ABLATION</text><line x1="16" y1="128" x2="224" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">COMPARE</text><text x="16" y="172" class="slot-text">RAG recall / rerank MRR</text><text x="16" y="188" class="slot-text">AST validity + E2E outcomes</text><text x="16" y="204" class="slot-text">baseline vs candidate</text>
+          </g>
+          <g class="node" transform="translate(1488 690)">
+            <rect width="240" height="218" rx="6" class="node-underlay"/><rect width="240" height="218" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-number"/><text x="36" y="33" text-anchor="middle" class="node-number-text">14</text>
+            <text x="16" y="64" class="node-title">PROMOTE +</text><text x="16" y="80" class="node-title">VERSION REGISTRY</text>
+            <text x="16" y="112" class="node-kicker">HUMAN CONTROL</text><line x1="16" y1="128" x2="224" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">DECIDE</text><text x="16" y="172" class="slot-text">approve · reject · hold</text><text x="16" y="188" class="slot-text">hash · prompt · model · index</text><text x="16" y="204" class="slot-text">rollback / active version</text>
+          </g>
+
+          <!-- Shared contracts and delivery modes. -->
+          <g transform="translate(64 1110)">
+            <rect width="500" height="132" rx="6" class="control-card"/><text x="18" y="24" class="control-kicker">CONTRACT LEDGER</text><line x1="18" y1="38" x2="482" y2="38" class="control-rule"/>
+            <text x="18" y="62" class="control-text">QuestionEnvelope · TypedQuestion · ContextPacketV2</text><text x="18" y="82" class="control-text">ProposalAST · SubmissionLedger · E2EReceipt</text><text x="18" y="102" class="control-text">ImprovementSpec · ModelBundle · PromotionDecision</text>
+          </g>
+          <g transform="translate(600 1110)">
+            <rect width="500" height="132" rx="6" class="control-card"/><text x="18" y="24" class="control-kicker">AUTHORITY RULE</text><line x1="18" y1="38" x2="482" y2="38" class="control-rule"/>
+            <text x="18" y="62" class="control-text">numeric truth = V2 source + deterministic executor</text><text x="18" y="82" class="control-text">RAG · reranker · critic · codegen ≠ certificate</text><text x="18" y="102" class="control-text">missing/ambiguous proof → ABSTAIN or blocked</text>
+          </g>
+          <g transform="translate(1136 1110)">
+            <rect width="620" height="132" rx="6" class="control-card"/><text x="18" y="24" class="control-kicker">DELIVERY MODES</text><line x1="18" y1="38" x2="602" y2="38" class="control-rule"/>
+            <text x="18" y="62" class="control-text">BEST-EFFORT: emit the target population with status, reason and lineage</text><text x="18" y="82" class="control-text">STRICT: require complete E2E certificate + full-population audit before release</text><text x="18" y="102" class="control-text">model promotion is separate from submission coverage</text>
+          </g>
+        </svg>
+      </div>
+      <div class="cards">
+        <article class="card focal"><p class="eyebrow">PRIMARY PRODUCT PATH</p><h3>Submission first</h3><p>Builder tạo candidate ledger, hydrate/replay từ V2 và phát JSON/CSV/ZIP. E2E quan sát cùng proposal và sinh receipt cho feedback.</p></article>
+        <article class="card"><p class="eyebrow">LANGUAGE POLICY</p><h3>Không dịch mù toàn bộ context</h3><p>Giữ câu hỏi và nhãn bảng tiếng Việt làm evidence surface. Dùng canonical JSON keys, controlled aliases và English system instruction chỉ khi A/B chứng minh tốt hơn.</p></article>
+        <article class="card"><p class="eyebrow">IMPROVEMENT CONTROL</p><h3>Feedback không tự promote</h3><p>E2E failure → taxonomy → experiment → train/re-index/code patch → held-out evaluation → human decision. Kaggle chỉ là compute worker.</p></article>
+      </div>
+    </section>
+
+    <section aria-labelledby="contract-heading">
+      <p class="section-kicker">MODULE CONTRACTS</p>
+      <h2 id="contract-heading">Một orchestrator mỏng, các module một mục đích</h2>
+      <p class="detail-lead">Mục tiêu refactor là để một file orchestration chỉ nối contract, không chứa đồng thời retrieval, prompt construction, scoring, arithmetic và packaging. Tên dưới đây là target boundary; script hiện tại có thể giữ làm compatibility wrapper trong giai đoạn chuyển đổi.</p>
+      <table class="module-table">
+        <thead><tr><th>Module</th><th>Mục đích duy nhất</th><th>Input → output</th><th>Không được làm</th></tr></thead>
+        <tbody>
+          <tr><td>01 intake</td><td>Đọc question/source và tạo request bất biến.</td><td>files + question → <code>QuestionEnvelope</code></td><td>Không suy semantics từ tên file.</td></tr>
+          <tr><td>02 source_closure</td><td>Khóa V2/V3 paths, hashes và scope nguồn.</td><td>envelope → <code>SourceClosure</code></td><td>Không chọn “file mới nhất” theo mtime.</td></tr>
+          <tr><td>03 question_contract</td><td>Chuẩn hóa entity, metric, period, scope, unit, operation.</td><td>Vietnamese question → <code>TypedQuestion</code></td><td>Không coi confidence/plan là proof.</td></tr>
+          <tr><td>04 retrieval</td><td>Hybrid lexical/dense/parent RAG và top-k candidate navigation.</td><td>typed question + index → <code>CandidateSet</code></td><td>Không đọc numeric truth để trả lời.</td></tr>
+          <tr><td>05 context_compiler</td><td>Hydrate metadata, compose context và chọn prompt profile.</td><td>candidate set + V2 labels → <code>ContextPacketV2</code></td><td>Không nhét numeric answer vào model context.</td></tr>
+          <tr><td>06 proposal_gateway</td><td>Gọi model theo role-specific prompt/schema và parse AST.</td><td>context packet → <code>ProposalAST</code></td><td>Không tự cấp evidence/certificate.</td></tr>
+          <tr><td>07 submission_compiler</td><td>Hydrate/replay candidate, tạo ledger và package competition.</td><td>AST + V2 → <code>SubmissionLedger</code> + ZIP</td><td>Không gọi best-effort là VERIFIED.</td></tr>
+          <tr><td>08 e2e_observer</td><td>Chạy exact binding/Decimal/policy để tạo feedback receipt; strict mode dùng receipt làm gate.</td><td>ledger + source → <code>E2EReceipt</code></td><td>Không sinh answer thay thế.</td></tr>
+          <tr><td>09 improvement_ops</td><td>Taxonomy, evaluator, codegen sandbox, dataset/index/model experiment.</td><td>receipts → <code>ImprovementSpec</code> → <code>ModelBundle</code></td><td>Không tự ghi production hoặc tự promote.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="language-heading">
+      <p class="section-kicker">LANGUAGE / MODEL POLICY</p>
+      <h2 id="language-heading">Tiếng Việt ở content plane, tiếng Anh có điều kiện ở instruction plane</h2>
+      <p class="detail-lead">Đây là chính sách đề xuất, không phải giả định rằng mọi model đều hiểu như nhau. Cùng một model có thể được dùng cho nhiều role, nhưng mỗi role phải có prompt profile, schema, temperature, artifact và metric riêng.</p>
+      <div class="language-grid">
+        <article class="panel focal"><p class="eyebrow">PRESERVE MEANING</p><h3>Giữ nguyên tiếng Việt ở nơi chứa semantics</h3><ul>
+          <li><strong>Question:</strong> giữ nguyên câu hỏi tiếng Việt và bản normalized có provenance.</li>
+          <li><strong>Source labels:</strong> giữ nhãn dòng/cột, đơn vị và header tiếng Việt; không dịch rồi bỏ bản gốc.</li>
+          <li><strong>RAG query:</strong> truy vấn tiếng Việt là chính; thêm ticker, năm, controlled alias tiếng Anh nếu có ích.</li>
+          <li><strong>Canonical fields:</strong> output dùng JSON keys ổn định như <code>entity</code>, <code>period_roles</code>, <code>operation</code>, <code>operands</code>.</li>
+        </ul></article>
+        <article class="panel"><p class="eyebrow">MODEL-SPECIFIC INSTRUCTION</p><h3>Dùng English system prompt khi A/B chứng minh lợi ích</h3><ul>
+          <li><strong>Planner/generator:</strong> instruction tiếng Anh được phép, nhưng input vẫn chứa raw Vietnamese và source labels.</li>
+          <li><strong>Critic/evaluator:</strong> English instruction + machine-readable receipt/failure trace; critic không cấp answer authority.</li>
+          <li><strong>Codegen:</strong> English instruction + repository API/contracts; output chỉ là patch/test proposal trong sandbox.</li>
+          <li><strong>Không chuyển ngữ identity:</strong> hash, UID, row/column index và raw labels phải giữ nguyên.</li>
+        </ul></article>
+      </div>
+      <div class="code-panel">PROMPT PROFILE: proposal_ast_v2
+
+SYSTEM (English is allowed when this model scores better)
+You are a typed financial-query planner.
+Read the original Vietnamese question and the source labels in CONTEXT.
+Return only the JSON schema below. Do not answer with a number.
+Do not invent a source, period, scope, unit, operand, or external fact.
+If a required semantic field is ambiguous, return status=ABSTAIN.
+Numeric cells are intentionally unavailable to this planner.
+
+USER CONTEXT
+{
+  "question_raw_vi": "...",
+  "typed_question": {
+    "entity": "...",
+    "metric": "...",
+    "period_roles": [{"role": "current|baseline", "period": "..."}],
+    "scope": "...",
+    "requested_unit": "...",
+    "operation": "lookup|subtract|percentage_change"
+  },
+  "candidate_tables": [
+    {
+      "table_uid": "...",
+      "section": "...",
+      "header_labels_vi": ["..."],
+      "row_labels_vi": ["..."],
+      "coordinate_hints": ["..."]
+    }
+  ],
+  "source_manifest": {"source_id": "...", "sha256": "..."},
+  "retrieval_provenance": {"route": "...", "rank": 1, "artifact_hash": "..."},
+  "numeric_cells": null
+}
+
+OUTPUT
+{
+  "status": "PROPOSED|ABSTAIN",
+  "operation": "...",
+  "operands": [{"table_uid": "...", "row_hint": "...", "period": "...", "scope": "..."}],
+  "citations": [{"source_id": "...", "table_uid": "...", "coordinate_hint": "..."}],
+  "reason_codes": []
+}</div>
+      <div class="note">“English instruction” không có nghĩa là dịch toàn bộ context sang tiếng Anh. Chỉ đổi ngôn ngữ chỉ dẫn; semantic payload vẫn là tiếng Việt gốc + canonical fields. Nếu A/B cho thấy Vietnamese instruction tốt hơn, profile phải chuyển lại.</div>
+    </section>
+
+    <section aria-labelledby="artifact-heading">
+      <p class="section-kicker">DURABLE ARTIFACTS / TARGET PACKAGE LAYOUT</p>
+      <h2 id="artifact-heading">Các module trao đổi artifact, không trao đổi biến ẩn</h2>
+      <p class="detail-lead">Mỗi handoff cần có version/hash để biết improvement đến từ prompt, query, index, weights hay source change. Một model có thể được tái sử dụng cho critic/improver/codegen, nhưng role và output không được trộn.</p>
+      <table class="contract-table">
+        <thead><tr><th>Artifact</th><th>Chứa gì</th><th>Ai dùng</th><th>Authority</th></tr></thead>
+        <tbody>
+          <tr><td>QuestionEnvelope</td><td>question_id, raw Vietnamese question, input manifest.</td><td>question_contract, retrieval.</td><td>Input identity only.</td></tr>
+          <tr><td>ContextPacketV2</td><td>typed fields, top-k table metadata, headers/row labels, hashes, prompt profile.</td><td>proposal_gateway, audit.</td><td>Navigation/context; no numeric truth.</td></tr>
+          <tr><td>ProposalAST</td><td>operation, operands, source references, claims, status and reason codes.</td><td>submission_compiler, e2e_observer.</td><td>Candidate only.</td></tr>
+          <tr><td>SubmissionLedger</td><td>best-effort predictions, coverage, policy class, lineage and ZIP manifest.</td><td>competition delivery, feedback.</td><td>Submission artifact; not automatically VERIFIED.</td></tr>
+          <tr><td>E2EReceipt</td><td>exact binding, Decimal replay, semantic checks, first failure and certificate/ABSTAIN.</td><td>feedback normalizer, strict release gate.</td><td>Proof only when complete canonical contract passes.</td></tr>
+          <tr><td>ImprovementSpec</td><td>failure class, affected component, hypothesis, experiment, fixed split and expected metric.</td><td>model_ops, Kaggle worker, reviewer.</td><td>Experiment plan; no promotion.</td></tr>
+          <tr><td>ModelBundle</td><td>weights, index, prompt version, code hash, metrics and reproducibility manifest.</td><td>next submission run.</td><td>Candidate version until human promotion.</td></tr>
+        </tbody>
+      </table>
+      <div class="path-panel"><p class="eyebrow">TARGET MODULE LAYOUT</p><code>src/finance_query/pipeline/
+  contracts.py                 # typed payloads and schema versions
+  intake.py                    # data/question envelope
+  source_closure.py            # explicit paths + hashes
+  question_contract.py         # Vietnamese parsing + typed plan
+  language_policy.py           # VI/EN role profiles and aliases
+  retrieval/
+    query_builder.py           # lexical/dense query projections
+    hybrid.py                  # lexical + dense + parent RAG
+    rerank.py                  # fine-tuned ordering, navigation only
+    fusion.py                  # candidate union/dedupe/provenance
+  context/
+    hydrate.py                 # V2 headers/labels/metadata
+    prompt_profiles.py         # proposal/critic/codegen contracts
+    compiler.py                # ContextPacketV2 + prompt hash
+  proposal/
+    gateway.py                 # model call boundary
+    ast_schema.py              # JSON AST validation
+  submission/
+    compiler.py                # candidate → ledger → JSON/CSV/ZIP
+    coverage.py                # population and status accounting
+  feedback/
+    e2e_observer.py            # receipt adapter; no answer replacement
+    failure_taxonomy.py        # deterministic first-failure records
+  improvement/
+    evaluator.py               # baseline/candidate ablation
+    dataset_builder.py         # approved positives/hard negatives
+    codegen_sandbox.py         # patch + tests only
+    train_or_reindex.py        # Kaggle/local worker
+    promotion.py               # human decision + registry</code></div>
+      <div class="note">Giai đoạn chuyển đổi có thể giữ <code>scripts/e2e/build_competition_submission_v1.py</code> làm compatibility wrapper, nhưng logic nên dần tách vào các module trên. <code>run_submission_flow.py</code> chỉ điều phối; nó không được trở thành một monolith mới.</div>
+    </section>
+
+    <section aria-labelledby="research-heading">
+      <p class="section-kicker">RESEARCH CONCLUSION / CURRENT STATE</p>
+      <h2 id="research-heading">Điều nghiên cứu xác nhận và điều chưa được chứng minh</h2>
+      <p class="detail-lead">Model multilingual tạo ra prior tốt cho retrieval/reranking, nhưng chất lượng Vietnamese financial QA phải được đo trên task thật. Không dùng nhãn multilingual để suy ra model đã hiểu đúng period, unit, scope hoặc operation.</p>
+      <table class="research-table">
+        <thead><tr><th>Claim</th><th>Evidence</th><th>Decision for architecture</th></tr></thead>
+        <tbody>
+          <tr><td>Vietnamese retrieval có cơ sở</td><td><code>multilingual-e5-small</code> được model card ghi 94 languages; BGE reranker v2-m3 được ghi rõ là multilingual.</td><td>Giữ Vietnamese query và source labels; thêm alias/structured fields, không dịch mù.</td></tr>
+          <tr><td>Qwen family có multilingual prior</td><td>Qwen2 technical report nêu Vietnamese trong khoảng 30 ngôn ngữ; Qwen2.5-Coder vẫn là model chuyên code nên AST task cần benchmark riêng.</td><td>Cho phép VI hoặc EN system prompt theo role, nhưng bắt buộc A/B trên frozen Vietnamese set.</td></tr>
+          <tr><td>Current integrated run chưa chứng minh generator</td><td>Build report load fine-tuned reranker, <code>generator_path=null</code> và <code>promotion_allowed=false</code>.</td><td>Không gọi current run là fine-tuned generation; wire generator/prompt trước khi đánh giá role này.</td></tr>
+          <tr><td>E2E feedback có thể nuôi version mới</td><td>Receipt có first failure và machine reason; candidate/model output không tự là gold label.</td><td>Chỉ curation được phê duyệt mới tạo training row/hard negative; held-out gate rồi human promote.</td></tr>
+        </tbody>
+      </table>
+      <div class="note">Khuyến nghị chạy: 30–50 câu Vietnamese smoke → fixed benchmark đã adjudicate → chỉ retrain/re-index khi lỗi nằm ở weights/index/training data → full submission population sau khi version chốt. Prompt-only change không cần chạy lại Kaggle.</div>
+    </section>
+    <footer>AI GURU / submission-first unified architecture / static artifact / authority remains explicit</footer>
+  </main>
+</body>
+</html>

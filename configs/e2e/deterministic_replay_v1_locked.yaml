@@ -1,22 +1,17 @@
 schema_version: 1
 protocol: vifinqa_grounded_e2e_v1
-run_name: vifinqa-deterministic-e2e-v1-locked
-# Baseline khóa sau khi deterministic_replay_v1 chạy thành công. Mọi output
-# chính phải byte-match artifact tham chiếu; nếu lệch, E2E fail-closed.
+run_name: vifinqa-main-machine-replay-v1
+# Cấu hình chính duy nhất. Reviewer không nằm trong input closure và không thể
+# cấp quyền cho evidence, answer hay submission.
 paths:
-  period_packets: ../../artifacts/research/production_coverage_iteration_v5/period_column_candidate_packets_v2.jsonl
-  period_manifest: ../../artifacts/research/production_coverage_iteration_v5/period_column_candidate_packets_v2.manifest.json
-  route_overlay: ../../artifacts/research/production_coverage_iteration_v4/route_completeness_overlay_v4.jsonl
-  route_overlay_manifest: ../../artifacts/research/production_coverage_iteration_v4/route_completeness_overlay_v4.manifest.json
+  period_packets: ../../artifacts/main_inputs/period_packets_v1/period_column_candidate_packets_v1.jsonl
+  period_manifest: ../../artifacts/main_inputs/period_packets_v1/period_column_candidate_packets_v1.manifest.json
+  route_overlay: ../../artifacts/main_inputs/route_overlay_v1/route_completeness_overlay_v3.jsonl
+  route_overlay_manifest: ../../artifacts/main_inputs/route_overlay_v1/route_completeness_overlay_v3.manifest.json
   structured_tables: ../../artifacts/kaggle_runs/notebook5554bd790d_v10_20260811/vifinqa_review_bundle/tables_structured_v2.jsonl
   evidence_context: ../../artifacts/kaggle_runs/notebook5554bd790d_v10_20260811/vifinqa_review_bundle/tables_evidence_context_v3.jsonl
   evidence_context_manifest: ../../artifacts/kaggle_runs/notebook5554bd790d_v10_20260811/vifinqa_review_bundle/table_evidence_context_v3.manifest.json
-  semantic_review_queue: ../../artifacts/research/e2e_deterministic_review_queue_v1_20260825/semantic_binding_review_queue_v1.jsonl
-  semantic_review_manifest: ../../artifacts/research/e2e_deterministic_review_queue_v1_20260825/semantic_binding_review_queue_v1.manifest.json
-  semantic_human_decisions: ../../artifacts/research/e2e_deterministic_review_queue_v1_20260825/semantic_binding_human_decisions_v1.jsonl
   metric_registry: financial_metric_registry_v1.yaml
-  expected_bindings: ../../artifacts/runs/e2e-deterministic-verification-v1_20260825/exact_cell_unit_binding_candidates_v2.jsonl
-  expected_execution: ../../artifacts/runs/e2e-deterministic-verification-v1_20260825/grounded_execution_replay_v2.jsonl
-  expected_evidence_bindings: ../../artifacts/runs/e2e-deterministic-verification-v1_20260825/evidence_bindings_v1.jsonl
-  expected_answer_certificates: ../../artifacts/runs/e2e-deterministic-verification-v1_20260825/answer_certificates_v1.jsonl
-  expected_authorization_readiness: ../../artifacts/runs/e2e-deterministic-verification-v1_20260825/authorization_readiness_v1.json
+  # Primary-model candidate ledger: answers may be served as uncertain
+  # predictions when authorization is ABSTAIN; it never authorizes release.
+  best_candidate_predictions: ../../submissions/vifinqa_primary_integrated_20260828_validity_v4/best_surviving_candidates_v1.jsonl

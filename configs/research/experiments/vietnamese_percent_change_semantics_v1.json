@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_generalization_hypothesis_v1",
+  "experiment_id": "vietnamese_percent_change_semantics_v1",
+  "research_question": "Can one narrow Vietnamese percent-change phrase contract recover the correct semantic operation and chronological operand roles without treating an ordinary ratio or percentage-point difference as percentage change?",
+  "observation": {
+    "source_dataset": "ViNumQA, VLSP 2025 Numerical Reasoning QA",
+    "official_task_page": "https://vlsp.org.vn/vi/vlsp2025/eval/numqa",
+    "public_mirror_folder_id": "1ZFtIF88ZJzubbkB0pIJA_rxz3NrzC8gG",
+    "train_file_id": "12lSwZaZglvcEumguWutGN51SfhBG_DaK",
+    "validation_file_id": "1lKUrX-B8OP0JUzN8xALHUN8NDTtDzobQ",
+    "test_file_id": "1v-a96EmmZ7yjzpezhUfYHazZEQ81UZfY",
+    "private_test_file_id": "1is1Qv_36Gsta9s_TxGD3ESng2u8kZume",
+    "train_sha256": "81d44c30d47d96202810f3b4a829382ec110aae6cbd3e9366a4e46253001108e",
+    "validation_sha256": "07eadf7d185c5d42211c624f3b32402802edf57fe5b6fe64337778a0d5524c4d",
+    "test_sha256": "8a62a31ac8ab5276054b24fdab89262230078fe4754c817262311c5b30b623db",
+    "development_eligible_records": 4,
+    "development_current_correct_semantic_predictions": 0,
+    "private_test_schema_audit": "1625 records but no gold program; rejected as an evaluation source before any scoring",
+    "content_provenance_audit": {
+      "method": "table shape plus coordinate-preserving normalized numeric-token fingerprint joined to canonical FinQA tables; all ViNumQA and FinQA IDs excluded",
+      "discovery_unique_company_records": 85,
+      "development_unique_company_records": 18,
+      "test_unique_company_records": 8,
+      "fingerprints_matching_multiple_companies": 0,
+      "test_gold_scored_before_freeze": false
+    },
+    "individual_test_questions_or_programs_seen_before_freeze": false
+  },
+  "hypothesis": {
+    "observed_phenomenon": "The current planner does not give a distinct percentage-change meaning to Vietnamese wording such as 'phan tram thay doi'; it often emits lookup or a generic divide.",
+    "possible_cause": "Question routing conflates a reported percentage, a numerator/denominator ratio, a percentage-point difference, and relative percentage change.",
+    "expected_improvement": "An exact phrase gate plus two explicit periods will compile relative percentage change as (new-old)/old, preserving chronological new and old roles.",
+    "possible_side_effect": "Broad percent matching could incorrectly capture percentage-point differences, shares of a total, or questions without two periods.",
+    "questions_that_should_improve": "Questions with an explicit relative percent-change phrase, exactly two periods, and one content-provenance-resolved source company.",
+    "questions_that_should_remain_unchanged": "Reported percentages, 'chiem bao nhieu phan tram' ratios, percentage-point differences, missing/ambiguous periods, and multi-company questions."
+  },
+  "change_tested": {
+    "primary_change_count": 1,
+    "primary_change": "narrow_vietnamese_relative_percent_change_contract",
+    "forbidden_concurrent_changes": [
+      "retrieval",
+      "metric_linking",
+      "evidence_selection",
+      "answer_execution",
+      "unit_conversion",
+      "other_operation_phrases"
+    ]
+  },
+  "expected_result_frozen_before_private_test": true,
+  "split_design": {
+    "seed": "vietnamese-percent-change-semantics-v1-freeze-20260825",
+    "discovery_source_partition": "ViNumQA train",
+    "development_source_partition": "ViNumQA valid",
+    "untouched_evaluation_source_partition": "ViNumQA private_test",
+    "discovery_size": 10,
+    "development_size": 10,
+    "untouched_evaluation_size": 6,
+    "selection_key": "sha256(seed + question + gold program + table); all record IDs excluded",
+    "question_id_role": "tracking_only",
+    "company_holdout": "Company is resolved only by a unique coordinate-preserving numeric table fingerprint match to canonical FinQA source metadata; question and source record IDs are excluded; company sets are pairwise disjoint.",
+    "wording_holdout": "Development and untouched normalized wording templates must be disjoint.",
+    "metric_holdout": "At least one intrinsic financial metric family must occur in untouched and not development.",
+    "composition_holdout": "At least one intrinsic question-intent composition must occur in untouched and not development; record ID and gold program are excluded from composition classification."
+  },
+  "decision_thresholds": {
+    "minimum_newly_correct_development": 5,
+    "minimum_newly_correct_untouched": 3,
+    "minimum_precision_on_predictions": 1.0,
+    "maximum_false_confident_candidate": 0,
+    "maximum_regressed_baseline_predictions": 0,
+    "minimum_metric_holdout_improved": 1,
+    "minimum_composition_holdout_improved": 1
+  },
+  "ablation_plan": [
+    "remove_exact_relative_percent_phrase_gate",
+    "remove_exact_two_period_gate",
+    "remove_percent_point_exclusion",
+    "reverse_chronological_operand_roles"
+  ],
+  "source_contract": {
+    "research_only": true,
+    "evidence_eligible": false,
+    "training_eligible": false,
+    "submission_eligible": false,
+    "promotion_allowed": false,
+    "vifinqa_answer_authority": false
+  }
+}

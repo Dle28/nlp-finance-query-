@@ -260,12 +260,12 @@ def build_workbench(*, config_path: Path, output_dir: Path) -> dict[str, Any]:
         raise ValueError("closure workbench requires a V13 coverage manifest")
     if (v13_manifest.get("release_decision") or {}).get("status") != "blocked":
         raise ValueError("closure workbench is only valid while V13 release remains blocked")
-    typed_manifest = _assert_sidecar_manifest(
+    _assert_sidecar_manifest(
         inputs["typed_plans_manifest"],
         inputs["typed_plans"],
         protocol="typed_operand_decomposition_fail_closed_v1",
     )
-    formula_manifest = _assert_sidecar_manifest(inputs["formula_evidence_manifest"], inputs["formula_evidence"])
+    _assert_sidecar_manifest(inputs["formula_evidence_manifest"], inputs["formula_evidence"])
     requirement_path = _manifest_output_path(inputs["v13_manifest"], v13_manifest, "claim_requirements", "claim_requirement_sets_v1.jsonl")
     certificate_path = _manifest_output_path(inputs["v13_manifest"], v13_manifest, "semantic_coverage", "semantic_coverage_certificates_v2.jsonl")
     composed_path = _manifest_output_path(inputs["v13_manifest"], v13_manifest, "composed_taxonomy", "composed_blocker_taxonomy_v1.jsonl")

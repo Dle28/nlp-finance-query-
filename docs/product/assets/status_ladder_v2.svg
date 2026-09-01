@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 520" role="img" aria-labelledby="status-ladder-v2-title status-ladder-v2-desc">
+  <title id="status-ladder-v2-title">Các trạng thái tin cậy của kết quả</title>
+  <desc id="status-ladder-v2-desc">Bốn trạng thái từ candidate đến release authorized, cho thấy mỗi bước cần thêm một lớp bằng chứng và không được nhảy cóc.</desc>
+  <defs>
+    <marker id="status-ladder-v2-arrow" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#52657A"/>
+    </marker>
+  </defs>
+  <rect width="1400" height="520" fill="#FAF9F5"/>
+  <text x="48" y="52" fill="#1F8A89" font-size="12" font-weight="600" letter-spacing="0.18em" font-family="'Geist','Noto Sans',Arial,sans-serif">STATUS / TRUST LADDER</text>
+  <text x="48" y="92" fill="#0B2545" font-size="28" font-weight="600" font-family="'Instrument Serif','Noto Serif',Georgia,serif">Không phải kết quả nào cũng có cùng mức độ chắc chắn</text>
+  <text x="48" y="128" fill="#52657A" font-size="16" font-family="'Geist','Noto Sans',Arial,sans-serif">Mỗi trạng thái mô tả lượng bằng chứng đã có — không mô tả cảm giác tự tin của mô hình.</text>
+
+  <!-- connectors first -->
+  <line x1="328" y1="272" x2="376" y2="272" stroke="#52657A" stroke-width="2" marker-end="url(#status-ladder-v2-arrow)"/>
+  <line x1="656" y1="272" x2="704" y2="272" stroke="#52657A" stroke-width="2" marker-end="url(#status-ladder-v2-arrow)"/>
+  <line x1="984" y1="272" x2="1032" y2="272" stroke="#E88C55" stroke-width="2.2" marker-end="url(#status-ladder-v2-arrow)"/>
+
+  <rect x="336" y="236" width="32" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="352" y="248" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">+1</text>
+  <rect x="664" y="236" width="32" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="680" y="248" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">+1</text>
+  <rect x="992" y="236" width="32" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="1008" y="248" text-anchor="middle" fill="#E88C55" font-size="12" font-family="'Geist Mono',monospace">GATE</text>
+
+  <!-- cards -->
+  <rect x="48" y="160" width="280" height="224" rx="8" fill="#F0F3F5" stroke="#9AAABA" stroke-width="1.2"/>
+  <rect x="72" y="184" width="96" height="24" rx="4" fill="#D8E1E8"/>
+  <text x="120" y="201" text-anchor="middle" fill="#52657A" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">CANDIDATE</text>
+  <text x="188" y="248" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Đề xuất</text>
+  <text x="188" y="280" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Có vẻ phù hợp</text>
+  <text x="188" y="320" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">model / retrieval</text>
+  <text x="188" y="344" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">chưa đủ quyền xác nhận</text>
+
+  <rect x="376" y="160" width="280" height="224" rx="8" fill="#E5F2EF" stroke="#1F8A89" stroke-width="1.2"/>
+  <rect x="400" y="184" width="96" height="24" rx="4" fill="#C5E4DE"/>
+  <text x="448" y="201" text-anchor="middle" fill="#1F8A89" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">RESOLVED</text>
+  <text x="516" y="248" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Đã lấy lại dữ liệu</text>
+  <text x="516" y="280" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">exact cell + replay</text>
+  <text x="516" y="320" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">đã chạy được phép tính</text>
+  <text x="516" y="344" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">chưa đồng nghĩa VERIFIED</text>
+
+  <rect x="704" y="160" width="280" height="224" rx="8" fill="#FFFFFF" stroke="#1F8A89" stroke-width="1.6"/>
+  <rect x="728" y="184" width="88" height="24" rx="4" fill="#C5E4DE"/>
+  <text x="772" y="201" text-anchor="middle" fill="#1F8A89" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">VERIFIED</text>
+  <text x="844" y="248" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Đủ bằng chứng</text>
+  <text x="844" y="280" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">source + semantics + policy</text>
+  <text x="844" y="320" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">có thể tin trong contract</text>
+  <text x="844" y="344" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">vẫn chịu release gate</text>
+
+  <rect x="1032" y="160" width="280" height="224" rx="8" fill="#FEF0E7" stroke="#E88C55" stroke-width="1.6"/>
+  <rect x="1056" y="184" width="160" height="24" rx="4" fill="#F9D8C0"/>
+  <text x="1136" y="201" text-anchor="middle" fill="#D46F3D" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">RELEASE AUTHORIZED</text>
+  <text x="1172" y="248" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Được phát hành</text>
+  <text x="1172" y="280" text-anchor="middle" fill="#9C5A36" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">policy + audit toàn population</text>
+  <text x="1172" y="320" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">không suy ra chỉ từ mtime</text>
+  <text x="1172" y="344" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">hay ZIP hợp lệ</text>
+
+  <line x1="48" y1="440" x2="1312" y2="440" stroke="#D6DFE2" stroke-width="1"/>
+  <text x="48" y="468" fill="#7A8A99" font-size="12" font-weight="600" letter-spacing="0.14em" font-family="'Geist Mono',monospace">NGUYÊN TẮC</text>
+  <text x="176" y="468" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Candidate ≠ Authority · replay thành công ≠ semantic accuracy · VERIFIED ≠ RELEASE AUTHORIZED</text>
+</svg>

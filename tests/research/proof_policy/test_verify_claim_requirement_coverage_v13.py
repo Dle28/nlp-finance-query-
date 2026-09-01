@@ -40,7 +40,7 @@ def built_artifact(tmp_path_factory: pytest.TempPathFactory) -> Path:
     for question_id in range(1, 1013):
         route_rows.append({
             "question_id": question_id,
-            "question": f"Chỉ tiêu của DLG năm 2022 là bao nhiêu?",
+            "question": "Chỉ tiêu của DLG năm 2022 là bao nhiêu?",
             "route_status": "route_complete",
             "question_context": {"entities": ["DLG"], "years": [2022]},
             "requested_output_unit": {"kind": "currency", "unit": "vnd", "source": "literal_question"},

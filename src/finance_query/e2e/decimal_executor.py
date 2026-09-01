@@ -10,6 +10,7 @@ from statistics import median
 from typing import Any, Mapping, Sequence
 
 from .core.corpus import infer_unit
+from .core.currency_units import CurrencyUnitContractError, is_fixed_vnd_scale, vnd_scale
 from .core.schemas import ParsedNumber
 
 
@@ -45,6 +46,10 @@ OPERATOR_REGISTRY: dict[str, OperatorContract] = {
     # Multiplication needs dimensional algebra which is intentionally not
     # inferred from report labels in v1.
     "multiply": OperatorContract("multiply", 1, None, "dimensional", "derived", False),
+    # Research round dimensionless_scalar_multiply_v1 supports only an exact,
+    # self-validating scalar literal. Arbitrary amount-by-amount multiplication
+    # remains blocked under the legacy ``multiply`` operator above.
+    "scalar_multiply": OperatorContract("scalar_multiply", 2, 2, "single", "source_unit"),
     "divide": OperatorContract("divide", 2, 2, "same", "ratio"),
     "ratio_to_percent": OperatorContract("ratio_to_percent", 1, 1, "single", "percent"),
     "percentage_change": OperatorContract("percentage_change", 2, 2, "same", "percent"),
@@ -66,6 +71,44 @@ GROUNDED_OPERATOR_PROTOCOL = "grounded_operator_shadow_v1"
 TYPED_PLAN_GROUNDED_PROTOCOL = "typed_plan_grounded_shadow_v1"
 TYPED_OPERAND_PLAN_PROTOCOL = "typed_operand_decomposition_fail_closed_v1"
 RELIABLE_BINDING_WARNINGS = {"percent_value_not_scaled"}
+DIMENSIONLESS_SCALAR_KIND = "dimensionless_scalar"
+DIMENSIONLESS_SCALAR_SOURCES = {"named_constant", "percent_literal"}
+_NAMED_CONSTANT_RE = re.compile(r"const_(m1|[+-]?\d+(?:\.\d+)?)\Z")
+_PERCENT_LITERAL_RE = re.compile(r"([+-]?\d+(?:\.\d+)?)%\Z")
+
+
+def parse_dimensionless_scalar(node: Any) -> Decimal:
+    """Parse the only literal form authorized for grounded scalar multiply.
+
+    The numeric value is derived from the source token instead of accepted as
+    a second caller-controlled field, preventing token/value disagreement.
+    """
+    if not isinstance(node, Mapping) or set(node) != {"kind", "source", "token"}:
+        raise ValueError("dimensionless scalar requires exactly kind, source, and token")
+    if node.get("kind") != DIMENSIONLESS_SCALAR_KIND:
+        raise ValueError("invalid dimensionless scalar kind")
+    source = node.get("source")
+    token = node.get("token")
+    if source not in DIMENSIONLESS_SCALAR_SOURCES or not isinstance(token, str):
+        raise ValueError("invalid dimensionless scalar source or token")
+    if source == "named_constant":
+        match = _NAMED_CONSTANT_RE.fullmatch(token)
+        if match is None:
+            raise ValueError("named constant token is invalid")
+        value = "-1" if match.group(1) == "m1" else match.group(1)
+        return Decimal(value)
+    match = _PERCENT_LITERAL_RE.fullmatch(token)
+    if match is None:
+        raise ValueError("percent literal token is invalid")
+    return Decimal(match.group(1)) / Decimal("100")
+
+
+def _is_dimensionless_scalar(node: Any) -> bool:
+    try:
+        parse_dimensionless_scalar(node)
+    except (InvalidOperation, ValueError):
+        return False
+    return True
 
 
 def parse_decimal(raw_value: Any) -> ParsedNumber:
@@ -160,6 +203,8 @@ def _as_decimal(value: Any) -> Decimal:
 def _resolve(argument: Any, values: Mapping[str, Any]) -> Any:
     if isinstance(argument, dict) and "op" in argument:
         return execute_ast(argument, values)
+    if isinstance(argument, Mapping) and argument.get("kind") == DIMENSIONLESS_SCALAR_KIND:
+        return parse_dimensionless_scalar(argument)
     if isinstance(argument, str) and argument in values:
         return values[argument]
     if isinstance(argument, list):
@@ -197,6 +242,13 @@ def execute_ast(ast: Mapping[str, Any], values: Mapping[str, Any]) -> Any:
         for value in args:
             result *= _as_decimal(value)
         return result
+    if op == "scalar_multiply":
+        raw_args = ast.get("args")
+        if not isinstance(raw_args, list) or len(raw_args) != 2:
+            raise ValueError("scalar_multiply requires two arguments")
+        if sum(_is_dimensionless_scalar(argument) for argument in raw_args) != 1:
+            raise ValueError("scalar_multiply requires exactly one typed scalar literal")
+        return _as_decimal(args[0]) * _as_decimal(args[1])
     if op == "divide":
         if len(args) != 2:
             raise ValueError("divide requires two arguments")
@@ -297,6 +349,10 @@ def validate_operation_ast(ast: Mapping[str, Any]) -> list[str]:
                 errors.append(f"operator_not_shadow_eligible:{op}")
             if op == "arg_extreme_period" and node.get("direction") not in {"min", "max"}:
                 errors.append("invalid_direction:arg_extreme_period")
+            if op == "scalar_multiply" and sum(
+                _is_dimensionless_scalar(argument) for argument in args
+            ) != 1:
+                errors.append("invalid_dimensionless_scalar:scalar_multiply")
             for argument in args:
                 visit(argument)
             return
@@ -305,6 +361,8 @@ def validate_operation_ast(ast: Mapping[str, Any]) -> list[str]:
                 visit(item)
             return
         if isinstance(node, str):
+            return
+        if _is_dimensionless_scalar(node):
             return
         errors.append("ungrounded_literal_in_ast")
 
@@ -322,6 +380,8 @@ def _referenced_inputs(ast: Mapping[str, Any]) -> set[str]:
         elif isinstance(node, list):
             for item in node:
                 visit(item)
+        elif _is_dimensionless_scalar(node):
+            return
         elif isinstance(node, str):
             names.add(node)
 
@@ -479,6 +539,9 @@ def execute_grounded_ast_shadow(
     *,
     source_tables: Mapping[str, Mapping[str, Any]],
     source_contexts: Mapping[str, Mapping[str, Any]],
+    currency_target_unit: str | None = None,
+    currency_conversion_allowed: bool = False,
+    currency_conversion_policy: str | None = None,
 ) -> dict[str, Any]:
     """Execute only exact, typed source bindings and never promote provenance."""
     errors = validate_operation_ast(ast)
@@ -489,6 +552,7 @@ def execute_grounded_ast_shadow(
     errors.extend(f"missing_input:{name}" for name in missing)
     resolved: dict[str, Any] = {}
     all_bindings: list[dict[str, Any]] = []
+    bindings_by_input: dict[str, list[dict[str, Any]]] = {}
     for name in sorted(referenced & set(grounded_inputs)):
         value, bindings, binding_errors = _validate_grounded_value(grounded_inputs[name])
         if not binding_errors:
@@ -510,11 +574,56 @@ def execute_grounded_ast_shadow(
                 for error in _revalidate_binding_source(record, source_tables, source_contexts)
             )
         all_bindings.extend(bindings)
+        bindings_by_input[name] = bindings
 
     scopes = {str(item.get("scope")) for item in all_bindings if item.get("scope")}
     if len(scopes) > 1:
         errors.append("scope_mismatch")
     units = {str(item.get("source_unit")) for item in all_bindings if item.get("source_unit")}
+    conversion_receipt: dict[str, Any] = {
+        "status": "NOT_REQUESTED",
+        "target_unit": None,
+        "converted_input_ids": [],
+    }
+    if currency_target_unit is not None:
+        conversion_receipt["target_unit"] = currency_target_unit
+        if contract is None or contract.output_kind != "source_unit":
+            errors.append("currency_conversion_output_kind_unsupported")
+        elif not is_fixed_vnd_scale(currency_target_unit):
+            errors.append("currency_conversion_target_unit_invalid")
+        else:
+            converted_input_ids: list[str] = []
+            for name, value in resolved.items():
+                bindings = bindings_by_input.get(name) or []
+                if len(bindings) != 1 or not isinstance(value, Decimal):
+                    errors.append(f"{name}:currency_conversion_requires_one_exact_binding")
+                    continue
+                source_unit = str(bindings[0].get("source_unit") or "")
+                if source_unit == currency_target_unit:
+                    continue
+                if not currency_conversion_allowed:
+                    errors.append(f"{name}:currency_conversion_not_allowed")
+                    continue
+                if currency_conversion_policy != "exact_fixed_vnd_scale_only":
+                    errors.append(f"{name}:currency_conversion_policy_invalid")
+                    continue
+                try:
+                    resolved[name] = convert_unit(value, source_unit, currency_target_unit)
+                except ValueError:
+                    errors.append(f"{name}:currency_conversion_source_unit_invalid")
+                    continue
+                converted_input_ids.append(name)
+            if not errors:
+                units = {currency_target_unit}
+                conversion_receipt = {
+                    "status": (
+                        "EXACT_FIXED_VND_SCALE_CONVERTED"
+                        if converted_input_ids
+                        else "NOT_REQUIRED"
+                    ),
+                    "target_unit": currency_target_unit,
+                    "converted_input_ids": sorted(converted_input_ids),
+                }
     if contract and contract.unit_policy in {"same", "single"} and len(units) != 1:
         errors.append("unit_mismatch")
     if root_op == "arg_extreme_period":
@@ -562,6 +671,7 @@ def execute_grounded_ast_shadow(
         "output_unit": output_unit,
         "reason_codes": sorted(set(errors)),
         "exact_binding_count": len(all_bindings) if not errors else 0,
+        "unit_conversion": conversion_receipt,
         "submission_eligible": False,
         "training_eligible": False,
         "review_status_promotion_allowed": False,
@@ -626,6 +736,32 @@ def execute_typed_plan_shadow(
         errors.append("typed_plan_operand_set_mismatch")
     if set(grounded_inputs) != set(by_id):
         errors.append("typed_plan_grounded_input_set_mismatch")
+    currency_target_unit: str | None = None
+    currency_conversion_allowed = False
+    currency_conversion_policy: str | None = None
+    requested_units: set[str] = set()
+    conversion_policies: set[str] = set()
+    conversion_permissions: list[bool] = []
+    for operand in by_id.values():
+        unit_contract = operand.get("unit_contract")
+        if not isinstance(unit_contract, Mapping):
+            continue
+        requested_unit = str(unit_contract.get("requested_unit") or "")
+        if is_fixed_vnd_scale(requested_unit):
+            requested_units.add(requested_unit)
+            conversion_policies.add(str(unit_contract.get("conversion_policy") or ""))
+            conversion_permissions.append(bool(unit_contract.get("conversion_allowed")))
+    root_contract = OPERATOR_REGISTRY.get(str(ast.get("op") or ""))
+    if requested_units and root_contract is not None and root_contract.output_kind == "source_unit":
+        if len(requested_units) != 1:
+            errors.append("typed_currency_target_unit_mismatch")
+        else:
+            currency_target_unit = next(iter(requested_units))
+            currency_conversion_allowed = bool(conversion_permissions) and all(conversion_permissions)
+            if len(conversion_policies) == 1:
+                currency_conversion_policy = next(iter(conversion_policies))
+            else:
+                errors.append("typed_currency_conversion_policy_mismatch")
     for operand_id, operand in by_id.items():
         record = grounded_inputs.get(operand_id)
         if not isinstance(record, Mapping):
@@ -667,6 +803,9 @@ def execute_typed_plan_shadow(
         grounded_inputs,
         source_tables=source_tables,
         source_contexts=source_contexts,
+        currency_target_unit=currency_target_unit,
+        currency_conversion_allowed=currency_conversion_allowed,
+        currency_conversion_policy=currency_conversion_policy,
     )
     return {
         **result,
@@ -679,14 +818,7 @@ def execute_typed_plan_shadow(
 def convert_unit(value: Decimal, source_unit: str | None, target_unit: str | None) -> Decimal:
     if not source_unit or not target_unit or source_unit == target_unit:
         return value
-
-    scale_to_vnd = {
-        "vnd": Decimal("1"),
-        "thousand_vnd": Decimal("1000"),
-        "million_vnd": Decimal("1000000"),
-        "billion_vnd": Decimal("1000000000"),
-        "trillion_vnd": Decimal("1000000000000"),
-    }
-    if source_unit not in scale_to_vnd or target_unit not in scale_to_vnd:
-        raise ValueError(f"Unsupported unit conversion: {source_unit} -> {target_unit}")
-    return value * scale_to_vnd[source_unit] / scale_to_vnd[target_unit]
+    try:
+        return value * vnd_scale(source_unit) / vnd_scale(target_unit)
+    except CurrencyUnitContractError as error:
+        raise ValueError(f"Unsupported unit conversion: {source_unit} -> {target_unit}") from error

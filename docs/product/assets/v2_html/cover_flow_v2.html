@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1600, initial-scale=1">
+  <title>AI GURU — diagram</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #FAF9F5; }
+    body { width: 1600px; min-height: 420px; overflow: hidden; }
+    svg { display: block; width: 1600px; height: 420px; }
+  </style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 420" role="img" aria-labelledby="cover-flow-v2-title cover-flow-v2-desc">
+  <title id="cover-flow-v2-title">Mạch sản phẩm AI GURU</title>
+  <desc id="cover-flow-v2-desc">Sơ đồ giới thiệu cách AI GURU đi từ câu hỏi tài chính qua dữ liệu, phép tính và kiểm chứng để tạo câu trả lời có thể truy vết.</desc>
+  <defs>
+    <marker id="cover-flow-v2-arrow" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#52657A"/>
+    </marker>
+    <marker id="cover-flow-v2-arrow-accent" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#E88C55"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="420" fill="#FAF9F5"/>
+  <text x="48" y="48" fill="#1F8A89" font-size="12" font-weight="600" letter-spacing="0.18em" font-family="'Geist','Noto Sans',Arial,sans-serif">AI GURU / PRODUCT STORY</text>
+  <text x="48" y="88" fill="#0B2545" font-size="32" font-weight="600" font-family="'Instrument Serif','Noto Serif',Georgia,serif">Từ câu hỏi đến câu trả lời có thể kiểm chứng</text>
+  <text x="48" y="124" fill="#52657A" font-size="16" font-family="'Geist','Noto Sans',Arial,sans-serif">Một đường đi dễ hiểu: tìm đúng dữ liệu, tính đúng công thức, rồi quay lại nguồn để kiểm tra.</text>
+
+  <!-- connectors are intentionally drawn before cards -->
+  <line x1="288" y1="262" x2="352" y2="262" stroke="#52657A" stroke-width="2" marker-end="url(#cover-flow-v2-arrow)"/>
+  <line x1="592" y1="262" x2="656" y2="262" stroke="#52657A" stroke-width="2" marker-end="url(#cover-flow-v2-arrow)"/>
+  <line x1="896" y1="262" x2="960" y2="262" stroke="#52657A" stroke-width="2" marker-end="url(#cover-flow-v2-arrow)"/>
+  <line x1="1200" y1="262" x2="1264" y2="262" stroke="#E88C55" stroke-width="2.4" marker-end="url(#cover-flow-v2-arrow-accent)"/>
+
+  <rect x="296" y="226" width="48" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="320" y="238" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono','Noto Sans Mono',monospace">TÌM</text>
+  <rect x="600" y="226" width="56" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="628" y="238" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono','Noto Sans Mono',monospace">HIỂU</text>
+  <rect x="904" y="226" width="56" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="932" y="238" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono','Noto Sans Mono',monospace">TÍNH</text>
+  <rect x="1208" y="226" width="56" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="1236" y="238" text-anchor="middle" fill="#E88C55" font-size="12" font-family="'Geist Mono','Noto Sans Mono',monospace">SOÁT</text>
+
+  <!-- card 01 -->
+  <rect x="48" y="196" width="240" height="132" rx="8" fill="#F0F3F5" stroke="#9AAABA" stroke-width="1.2"/>
+  <rect x="68" y="216" width="40" height="24" rx="4" fill="#D8E1E8"/>
+  <text x="88" y="233" text-anchor="middle" fill="#52657A" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">01</text>
+  <text x="168" y="264" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Câu hỏi</text>
+  <text x="168" y="292" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">ngôn ngữ tự nhiên</text>
+
+  <!-- card 02 -->
+  <rect x="352" y="196" width="240" height="132" rx="8" fill="#E5F2EF" stroke="#1F8A89" stroke-width="1.2"/>
+  <rect x="372" y="216" width="40" height="24" rx="4" fill="#C5E4DE"/>
+  <text x="392" y="233" text-anchor="middle" fill="#1F8A89" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">02</text>
+  <text x="472" y="264" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Dữ liệu</text>
+  <text x="472" y="292" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">đúng nguồn, đúng kỳ</text>
+
+  <!-- card 03 -->
+  <rect x="656" y="196" width="240" height="132" rx="8" fill="#FFFFFF" stroke="#9AAABA" stroke-width="1.2"/>
+  <rect x="676" y="216" width="40" height="24" rx="4" fill="#E7EBEF"/>
+  <text x="696" y="233" text-anchor="middle" fill="#52657A" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">03</text>
+  <text x="776" y="264" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Phép tính</text>
+  <text x="776" y="292" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">formula + operands</text>
+
+  <!-- card 04, focal -->
+  <rect x="960" y="196" width="240" height="132" rx="8" fill="#FEF0E7" stroke="#E88C55" stroke-width="1.6"/>
+  <rect x="980" y="216" width="40" height="24" rx="4" fill="#F9D8C0"/>
+  <text x="1000" y="233" text-anchor="middle" fill="#D46F3D" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">04</text>
+  <text x="1080" y="264" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Kiểm tra</text>
+  <text x="1080" y="292" text-anchor="middle" fill="#9C5A36" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">nguồn + ngữ nghĩa + replay</text>
+
+  <!-- card 05 -->
+  <rect x="1264" y="196" width="240" height="132" rx="8" fill="#0B2545" stroke="#0B2545" stroke-width="1.2"/>
+  <rect x="1284" y="216" width="40" height="24" rx="4" fill="#244A6D"/>
+  <text x="1304" y="233" text-anchor="middle" fill="#D9ECEA" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">05</text>
+  <text x="1384" y="264" text-anchor="middle" fill="#FFFFFF" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Câu trả lời</text>
+  <text x="1384" y="292" text-anchor="middle" fill="#C6D5DF" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">con số + dấu vết</text>
+
+  <line x1="48" y1="360" x2="1504" y2="360" stroke="#D6DFE2" stroke-width="1"/>
+  <text x="48" y="388" fill="#7A8A99" font-size="12" font-weight="600" letter-spacing="0.14em" font-family="'Geist Mono','Noto Sans Mono',monospace">MẠCH SẢN PHẨM</text>
+  <circle cx="240" cy="384" r="6" fill="#1F8A89"/>
+  <text x="256" y="389" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Dữ liệu có nguồn</text>
+  <circle cx="492" cy="384" r="6" fill="#E88C55"/>
+  <text x="508" y="389" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Điểm kiểm chứng</text>
+  <circle cx="752" cy="384" r="6" fill="#0B2545"/>
+  <text x="768" y="389" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Kết quả có thể truy vết</text>
+</svg>
+
+</body>
+</html>

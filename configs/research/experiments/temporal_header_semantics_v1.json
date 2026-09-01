@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_generalization_hypothesis_v1",
+  "experiment_id": "temporal_header_semantics_v1",
+  "research_question": "Can a source-header temporal backoff distinguish duration flows from point-in-time balances when a financial question mentions only a bare fiscal year?",
+  "observation": {
+    "source_dataset": "finqa",
+    "discovery_aggregate_only": {
+      "train_explicit_header_and_year_question_records": 1167,
+      "duration": 627,
+      "instant": 540,
+      "bare_year_duration": 571,
+      "bare_year_instant": 471
+    },
+    "development_aggregate_only": {
+      "dev_explicit_header_and_year_question_records": 146,
+      "duration": 95,
+      "instant": 51,
+      "bare_year_duration": 88,
+      "bare_year_instant": 47
+    },
+    "individual_test_temporal_records_seen_before_freeze": false,
+    "test_temporal_aggregate_seen_before_freeze": false
+  },
+  "hypothesis": {
+    "observed_phenomenon": "Most year-bearing questions use a bare year even when the source table explicitly states a duration or instant reporting convention.",
+    "possible_cause": "Question-only temporal parsing cannot recover duration versus instant semantics from a bare year.",
+    "expected_improvement": "Use the source table header only as a backoff when the question itself has no explicit temporal type; this should convert correct source-supported abstentions into correct classifications.",
+    "possible_side_effect": "A mixed or truncated table header could be misread and create a confident but wrong temporal type.",
+    "questions_that_should_improve": "Bare-year questions grounded to tables with an explicit Years Ended/Fiscal duration anchor or As Of/At-Date/Balance Sheet instant anchor.",
+    "questions_that_should_remain_unchanged": "Questions with an explicit temporal type, source headers without exactly one temporal anchor, records contaminated by exp/greater inspection, and questions without a four-digit year."
+  },
+  "change_tested": {
+    "primary_change_count": 1,
+    "primary_change": "source_header_temporal_backoff_for_bare_year_only",
+    "forbidden_concurrent_changes": [
+      "retrieval",
+      "entity_resolution",
+      "metric_linking",
+      "arithmetic",
+      "evidence_binding",
+      "thresholds"
+    ]
+  },
+  "expected_result_frozen_before_run": true,
+  "split_design": {
+    "seed": "temporal-header-semantics-v1-freeze-20260825",
+    "source_dataset": "finqa",
+    "discovery_source_split": "train",
+    "development_source_split": "dev",
+    "untouched_evaluation_source_split": "test",
+    "discovery_size": 10,
+    "development_size": 30,
+    "untouched_evaluation_size": 30,
+    "question_id_role": "tracking_only",
+    "selection_key": "sha256(seed + canonical source record payload)",
+    "company_holdout": "FinQA issuer IDs are pairwise disjoint across discovery, development, and untouched.",
+    "wording_holdout": "Development and untouched normalized question wording templates are disjoint.",
+    "metric_holdout": "At least one metric family has six or more untouched records and zero development records.",
+    "composition_holdout": "At least one temporal-label plus program-composition signature has six or more untouched records and zero development records."
+  },
+  "contamination_register": {
+    "status": "UNRELATED_OPERATOR_TEST_EXECUTION_OCCURRED_NO_TEMPORAL_PAYLOAD_MATERIALIZED",
+    "excluded_if_program_contains": [
+      "exp(",
+      "greater("
+    ],
+    "reason": "Specific exp-related FinQA test examples were inspected before the scalar hypothesis; excluding them also prevents any cross-experiment ambiguity.",
+    "individual_test_questions_or_headers_seen_for_this_hypothesis": false
+  },
+  "ablation_arms": [
+    "A_question_only_temporal_parser",
+    "B_A_plus_source_header_backoff",
+    "C_B_without_duration_header_anchor",
+    "D_B_without_instant_header_anchor"
+  ],
+  "decision_thresholds": {
+    "minimum_newly_correct_development": 5,
+    "minimum_newly_correct_untouched": 5,
+    "minimum_accuracy_on_candidate_predictions": 1.0,
+    "maximum_false_confident_candidate": 0,
+    "maximum_regressed_question_only_predictions": 0,
+    "minimum_metric_holdout_improved": 5,
+    "minimum_composition_holdout_improved": 5
+  },
+  "evaluator": {
+    "status": "SOURCE_HEADER_GOLD_RESEARCH_ONLY",
+    "kind": "FinQA source table header with exactly one explicit financial-period anchor",
+    "source_commit": "0f16e2867befa6840783e58be38c9efb9229d742",
+    "unavailable_to_vifinqa_prediction_pipeline": true,
+    "vifinqa_answer_authority": false
+  },
+  "human_role": {
+    "per_question_review": false,
+    "allowed_after_round_verdicts": [
+      "KEEP",
+      "REJECT",
+      "INVESTIGATE FURTHER"
+    ]
+  },
+  "source_contract": {
+    "research_only": true,
+    "evidence_eligible": false,
+    "may_materialize_answer": false,
+    "training_eligible": false,
+    "submission_eligible": false,
+    "promotion_allowed": false
+  }
+}

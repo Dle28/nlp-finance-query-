@@ -1,0 +1,24 @@
+{
+  "protocol": "vifinqa_explicit_ticker_role_header_probe_v1",
+  "rules": [
+    {
+      "allowed_table_functions": ["financial_note_detail"],
+      "operand_id": "x0",
+      "period_role": "opening",
+      "question_id": 57,
+      "required_header_compact_fragments": ["sophainop"],
+      "required_row_compact_fragments": ["thuethunhapdoanhnghiep"],
+      "rule_id": "corporate_income_tax_payable_opening_balance_v1"
+    },
+    {
+      "allowed_table_functions": ["financial_note_detail"],
+      "operand_id": "x0",
+      "period_role": "closing",
+      "question_id": 283,
+      "required_header_compact_fragments": ["sophainop"],
+      "required_row_compact_fragments": ["thuegiatrigiatang"],
+      "rule_id": "vat_payable_closing_balance_v1"
+    }
+  ],
+  "schema_version": 1
+}

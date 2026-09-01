@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1600, initial-scale=1">
+  <title>AI GURU — diagram</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #FAF9F5; }
+    body { width: 1600px; min-height: 620px; overflow: hidden; }
+    svg { display: block; width: 1600px; height: 620px; }
+  </style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 620" role="img" aria-labelledby="table-semantics-v2-title table-semantics-v2-desc">
+  <title id="table-semantics-v2-title">Cách AI GURU đọc một bảng tài chính</title>
+  <desc id="table-semantics-v2-desc">Minh họa mối quan hệ giữa tên bảng, header, dòng chỉ tiêu, cột kỳ báo cáo và exact cell được chọn để tính toán.</desc>
+  <defs>
+    <marker id="table-semantics-v2-arrow" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#1F8A89"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="620" fill="#FAF9F5"/>
+  <text x="48" y="52" fill="#1F8A89" font-size="12" font-weight="600" letter-spacing="0.18em" font-family="'Geist','Noto Sans',Arial,sans-serif">DATA / TABLE SEMANTICS</text>
+  <text x="48" y="92" fill="#0B2545" font-size="28" font-weight="600" font-family="'Instrument Serif','Noto Serif',Georgia,serif">Một con số chỉ có ý nghĩa khi đi cùng header và dòng của nó</text>
+  <text x="48" y="128" fill="#52657A" font-size="16" font-family="'Geist','Noto Sans',Arial,sans-serif">Resolver không lấy một ô đơn lẻ; nó lấy ô trong đúng bảng, đúng hàng, đúng cột và đúng ngữ cảnh.</text>
+
+  <!-- table container -->
+  <rect x="48" y="176" width="920" height="300" rx="8" fill="#FFFFFF" stroke="#1F8A89" stroke-width="1.2"/>
+  <rect x="72" y="200" width="180" height="24" rx="4" fill="#C5E4DE"/>
+  <text x="162" y="217" text-anchor="middle" fill="#1F8A89" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">TABLE_UID</text>
+  <text x="72" y="256" fill="#0B2545" font-size="16" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Bảng kết quả kinh doanh</text>
+  <text x="72" y="280" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">document_id · scope=consolidated · unit=VND</text>
+  <line x1="72" y1="300" x2="944" y2="300" stroke="#D6DFE2" stroke-width="1"/>
+  <rect x="72" y="320" width="300" height="48" fill="#F0F3F5"/>
+  <rect x="372" y="320" width="240" height="48" fill="#E5F2EF"/>
+  <rect x="612" y="320" width="240" height="48" fill="#E5F2EF"/>
+  <rect x="852" y="320" width="92" height="48" fill="#F0F3F5"/>
+  <text x="92" y="350" fill="#52657A" font-size="12" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Dòng / chỉ tiêu</text>
+  <text x="492" y="350" text-anchor="middle" fill="#1F8A89" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">31/12/2022</text>
+  <text x="732" y="350" text-anchor="middle" fill="#1F8A89" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">31/12/2023</text>
+  <text x="898" y="350" text-anchor="middle" fill="#52657A" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">ĐVT</text>
+  <rect x="72" y="368" width="300" height="64" fill="#E5F2EF" stroke="#1F8A89" stroke-width="1.6"/>
+  <rect x="372" y="368" width="240" height="64" fill="#FFFFFF" stroke="#D6DFE2" stroke-width="1"/>
+  <rect x="612" y="368" width="240" height="64" fill="#FEF0E7" stroke="#E88C55" stroke-width="1.6"/>
+  <rect x="852" y="368" width="92" height="64" fill="#FFFFFF" stroke="#D6DFE2" stroke-width="1"/>
+  <text x="92" y="407" fill="#0B2545" font-size="16" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Doanh thu thuần</text>
+  <text x="492" y="407" text-anchor="middle" fill="#0B2545" font-size="16" font-weight="600" font-family="'Geist Mono',monospace">120</text>
+  <text x="732" y="407" text-anchor="middle" fill="#D46F3D" font-size="16" font-weight="600" font-family="'Geist Mono',monospace">150</text>
+  <text x="898" y="407" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist Mono',monospace">tỷ</text>
+  <text x="72" y="460" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">row_path = ["Doanh thu thuần"]</text>
+
+  <!-- callout arrows -->
+  <path d="M1100,228 H1032 Q1024,228 1024,236 V328 Q1024,336 1016,336 H944" fill="none" stroke="#1F8A89" stroke-width="2" marker-end="url(#table-semantics-v2-arrow)"/>
+  <path d="M1100,368 H1048 Q1040,368 1040,376 V400 Q1040,408 1032,408 H852" fill="none" stroke="#E88C55" stroke-width="2" marker-end="url(#table-semantics-v2-arrow)"/>
+  <rect x="996" y="196" width="88" height="20" rx="4" fill="#FAF9F5"/>
+  <text x="1040" y="210" text-anchor="middle" fill="#1F8A89" font-size="12" font-family="'Geist Mono',monospace">HEADER</text>
+  <rect x="988" y="340" width="104" height="20" rx="4" fill="#FAF9F5"/>
+  <text x="1040" y="354" text-anchor="middle" fill="#E88C55" font-size="12" font-family="'Geist Mono',monospace">EXACT CELL</text>
+
+  <rect x="1100" y="176" width="400" height="300" rx="8" fill="#FFFFFF" stroke="#D6DFE2" stroke-width="1"/>
+  <text x="1132" y="220" fill="#0B2545" font-size="16" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Để chọn đúng ô, cần giữ:</text>
+  <circle cx="1136" cy="260" r="6" fill="#1F8A89"/>
+  <text x="1156" y="266" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">tên bảng và document</text>
+  <circle cx="1136" cy="296" r="6" fill="#1F8A89"/>
+  <text x="1156" y="302" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">header và kỳ báo cáo</text>
+  <circle cx="1136" cy="332" r="6" fill="#1F8A89"/>
+  <text x="1156" y="338" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">row path và cột</text>
+  <circle cx="1136" cy="368" r="6" fill="#E88C55"/>
+  <text x="1156" y="374" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">unit + source coordinate</text>
+  <text x="1132" y="432" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">Không có ngữ cảnh → không authorize</text>
+
+  <line x1="48" y1="536" x2="1500" y2="536" stroke="#D6DFE2" stroke-width="1"/>
+  <text x="48" y="564" fill="#7A8A99" font-size="12" font-weight="600" letter-spacing="0.14em" font-family="'Geist Mono',monospace">KẾT LUẬN</text>
+  <text x="176" y="564" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Một ô dữ liệu có giá trị khi nó đi cùng nơi nó thuộc về — không chỉ khi nó có thể đưa vào phép tính.</text>
+</svg>
+
+</body>
+</html>

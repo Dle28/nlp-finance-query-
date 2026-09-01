@@ -13,9 +13,9 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping
 
-from .active_learning import MAX_MODEL_PARAMETERS_BILLIONS, MODEL_POLICY_PROTOCOL, QUEUE_OUTPUTS, _model_policy
+from .active_learning import MAX_MODEL_PARAMETERS_BILLIONS, QUEUE_OUTPUTS, _model_policy
 from .evidence_closure import canonical_sha256, load_json, load_jsonl, sha256_file
 from ..llm.qwen_inference import parse_json_object
 

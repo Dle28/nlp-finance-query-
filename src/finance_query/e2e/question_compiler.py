@@ -15,10 +15,16 @@ import re
 from typing import Any, Mapping
 
 from .decimal_executor import OPERATOR_REGISTRY
+from .core.advisory_intent import is_explicit_single_entity_advisory
 from .core.answer_certificates import temporal_contract_for_operand
+from .core.currency_units import is_fixed_vnd_scale
 from .core.financial_metrics import infer_formula_spec
-from .core.questions import metric_hint, normalize_text, reported_value_lookup_reason
-from .core.report_entities import resolve_question_entity
+from .core.questions import (
+    normalize_text,
+    reported_value_lookup_reason,
+    reported_value_metric_hint,
+)
+from .core.report_entities import resolve_explicit_question_ticker, resolve_question_entity
 
 
 TYPED_OPERAND_PLAN_SCHEMA_VERSION = 1
@@ -102,7 +108,15 @@ def _typed_operand(
         "unit_contract": {
             "requested_unit": requested_unit,
             "source_unit_required": True,
-            "conversion_allowed": False,
+            # A source unit remains mandatory and is checked later against an
+            # exact header.  Only deterministic VND scales may be converted;
+            # rates, percentages and arbitrary units remain fail-closed.
+            "conversion_allowed": is_fixed_vnd_scale(requested_unit),
+            "conversion_policy": (
+                "exact_fixed_vnd_scale_only"
+                if is_fixed_vnd_scale(requested_unit)
+                else "not_applicable"
+            ),
         },
         "allowed_table_functions": list(operand.get("allowed_table_functions") or []),
         "stage_id": str(operand.get("stage_id") or "").strip() or None,
@@ -129,6 +143,12 @@ def _formula_ast(formula: Mapping[str, Any]) -> dict[str, Any]:
         },
         "net_service_result": {"op": "subtract", "args": ["service_income", "service_expense"]},
         "net_finance_result": {"op": "subtract", "args": ["finance_income", "finance_expense"]},
+        "net_other_income": {"op": "subtract", "args": ["other_income", "other_expense"]},
+        # The controlled rule explicitly names ``x_old`` and ``x_new``.  The
+        # Decimal operator takes new first, then old; making that orientation
+        # explicit removes a former compiler-only blocker without guessing a
+        # period or an operand.
+        "percentage_change": {"op": "percentage_change", "args": ["x_new", "x_old"]},
     }
     if formula_id in simple:
         return simple[formula_id]
@@ -444,9 +464,15 @@ def build_typed_operand_plan(
         # successful result is navigation metadata for the operand plan, not
         # numeric evidence and never an implicit scope choice.
         entity_resolution = resolve_question_entity(question, report_entity_aliases)
+        if entity_resolution is None:
+            entity_resolution = resolve_explicit_question_ticker(question, report_entity_aliases)
         if entity_resolution is not None:
             tickers = [str(entity_resolution["ticker"])]
-            reason_codes.append("SOURCE_TITLE_ENTITY_RESOLVED")
+            reason_codes.append(
+                "SOURCE_TITLE_ENTITY_RESOLVED"
+                if entity_resolution["policy"] != "unique_explicit_source_ticker_token_question_match_v1"
+                else "EXPLICIT_SOURCE_TICKER_RESOLVED"
+            )
     default_ticker = tickers[0] if len(tickers) == 1 else None
     operands: list[dict[str, Any]] = []
     operation_ast: dict[str, Any] = {"op": "abstain"}
@@ -455,6 +481,8 @@ def build_typed_operand_plan(
     explicit_staged_formula = formula_id in {
         "quick_ratio_gpm_interest_coverage_selection",
         "cfo_positive_multiyear_max_net_margin",
+        "debt_to_equity_argmax_interest_coverage",
+        "positive_operating_profit_argmin_cfo_ratio_net_margin",
         "operating_cash_flow_argmax_period",
     }
     safe_formula_route = bool(
@@ -470,14 +498,29 @@ def build_typed_operand_plan(
     )
 
     source_operands = list(source_plan.get("operands") or [])
-    if reported_value_lookup_reason(question):
+    reported_lookup_reason = reported_value_lookup_reason(question)
+    if reported_lookup_reason is None and len(tickers) == 1:
+        # This does not resolve an issuer from text.  It only permits a
+        # reported-row classifier to ignore duplicate uppercase title/ticker
+        # tokens after the incoming typed plan has already resolved one
+        # issuer.  Exact V2/V3 entity, scope, row and period checks remain
+        # mandatory downstream.
+        reported_lookup_reason = reported_value_lookup_reason(
+            question,
+            allow_resolved_single_entity_ticker_noise=True,
+        )
+    if is_explicit_single_entity_advisory(question, entity_count=len(tickers)):
+        route = "explicit_advisory_abstention"
+        effective_family = "out_of_scope_advisory"
+        reason_codes.append("EXPLICIT_SINGLE_ENTITY_ADVISORY_INTENT")
+    elif reported_lookup_reason:
         # The original keyword router can misclassify report-row names such as
         # "Tổng cộng tài sản" as aggregation.  This narrow classifier only
         # restores the one disclosed-value semantics; evidence remains exact.
         effective_family = "direct_lookup"
         metric = str(source_plan.get("metric_hint") or "").strip()
         if not metric:
-            metric = metric_hint(question)
+            metric = reported_value_metric_hint(question, reported_lookup_reason)
         operands = [
             _typed_operand(
                 {

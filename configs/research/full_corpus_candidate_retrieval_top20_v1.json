@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_full_corpus_candidate_retrieval_v1",
+  "expected_question_count": 1012,
+  "eligible_decomposition_statuses": ["complete"],
+  "retrieval": {
+    "match_mode": "any",
+    "top_k_tables_per_operand_year": 20,
+    "max_row_candidates_per_table": 3,
+    "required_filters": ["ticker", "report_year"],
+    "scope_policy": "explicit_first_then_tagged_unscoped_supplement"
+  },
+  "review": {
+    "include_raw_numeric_values": false,
+    "exact_column_unresolved": true
+  },
+  "authorization": {
+    "navigation_metadata_only": true,
+    "may_authorize_answer": false,
+    "may_authorize_evidence": false,
+    "training_eligible": false,
+    "submission_eligible": false
+  }
+}

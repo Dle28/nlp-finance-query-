@@ -9,7 +9,14 @@ from finance_query.e2e.decimal_executor import execute_typed_plan_shadow
 from finance_query.e2e.question_compiler import build_typed_operand_plan
 
 
-def _item(question: str, *, family: str, tickers: list[str], years: list[int]) -> dict[str, Any]:
+def _item(
+    question: str,
+    *,
+    family: str,
+    tickers: list[str],
+    years: list[int],
+    requested_unit: str = "million_vnd",
+) -> dict[str, Any]:
     return {
         "id": 1,
         "question": question,
@@ -18,7 +25,7 @@ def _item(question: str, *, family: str, tickers: list[str], years: list[int]) -
             "tickers": tickers,
             "years": years,
             "scope": "consolidated",
-            "requested_unit": "million_vnd",
+            "requested_unit": requested_unit,
             "operands": [],
         },
     }
@@ -94,6 +101,64 @@ def test_cross_entity_difference_positive_canary() -> None:
     assert result["status"] == "shadow_complete"
     assert result["result_value"] == "20"
     assert result["submission_eligible"] is False
+
+
+def test_typed_e2e_converts_only_exact_vnd_scales_to_the_question_unit() -> None:
+    plan = build_typed_operand_plan(
+        _item(
+            "Chênh lệch doanh thu thuần giữa HPG và HSG trong năm 2022 là bao nhiêu tỷ đồng?",
+            family="cross_entity_comparison",
+            tickers=["HPG", "HSG"],
+            years=[2022],
+            requested_unit="billion_vnd",
+        )
+    )
+    assert all(operand["unit_contract"]["conversion_allowed"] for operand in plan["operands"])
+    assert {operand["unit_contract"]["conversion_policy"] for operand in plan["operands"]} == {
+        "exact_fixed_vnd_scale_only"
+    }
+    result = _execute(plan, {"x0": ("HPG", 2022, "2500"), "x1": ("HSG", 2022, "500")})
+    assert result["status"] == "shadow_complete"
+    assert result["result_value"] == "2.0"
+    assert result["output_unit"] == "billion_vnd"
+    assert result["unit_conversion"] == {
+        "status": "EXACT_FIXED_VND_SCALE_CONVERTED",
+        "target_unit": "billion_vnd",
+        "converted_input_ids": ["x0", "x1"],
+    }
+    assert result["submission_eligible"] is False
+
+
+def test_typed_e2e_rejects_currency_conversion_when_the_plan_disallows_it() -> None:
+    plan = build_typed_operand_plan(
+        _item(
+            "Chênh lệch doanh thu thuần giữa HPG và HSG trong năm 2022 là bao nhiêu tỷ đồng?",
+            family="cross_entity_comparison",
+            tickers=["HPG", "HSG"],
+            years=[2022],
+            requested_unit="billion_vnd",
+        )
+    )
+    blocked = deepcopy(plan)
+    for operand in blocked["operands"]:
+        operand["unit_contract"]["conversion_allowed"] = False
+    payload = {
+        "effective_family": blocked["effective_family"],
+        "status": blocked["decomposition_status"],
+        "route": blocked["route"],
+        "operands": blocked["operands"],
+        "operation_ast": blocked["operation_ast"],
+    }
+    import hashlib
+    import json
+
+    blocked["plan_fingerprint"] = hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    result = _execute(blocked, {"x0": ("HPG", 2022, "2500"), "x1": ("HSG", 2022, "500")})
+    assert result["status"] == "shadow_blocked"
+    assert "x0:currency_conversion_not_allowed" in result["reason_codes"]
+    assert result["result_value"] is None
 
 
 def test_cross_entity_difference_rejects_period_drift() -> None:

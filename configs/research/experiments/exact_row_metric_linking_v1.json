@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_generalization_hypothesis_v1",
+  "experiment_id": "exact_row_metric_linking_v1",
+  "research_question": "Can a high-precision normalized metric-to-row linker convert safe automatic-variable abstentions into exact gold-row selections without increasing false confidence?",
+  "observation": {
+    "production_baseline": "grounded_authorization._build_binding",
+    "production_baseline_behavior": "Without an independent semantic approval, automatic variable_binding is UNRESOLVED with V2_ROUTE_CONCEPT_IS_NOT_SOURCE_VARIABLE_EVIDENCE.",
+    "finqa_train_single_gold_table_row_no_text_count": 1898,
+    "discovery_size": 10,
+    "discovery_threshold_grid_seen": [0.2, 0.3, 0.4, 0.5, 0.6],
+    "frozen_candidate_threshold": {
+      "minimum_token_f1": 0.2,
+      "minimum_unique_margin": 0.1
+    },
+    "discovery_observed_at_frozen_threshold": {
+      "predicted": 8,
+      "correct": 8,
+      "false_confident": 0
+    },
+    "discovery_evidence_frozen_before_development": {
+      "report": "artifacts/research/exact_row_metric_linking_v1_discovery_20260825_r1/evaluation_report_v1.json",
+      "report_sha256": "6a6df38f20a6f5e3afa221f10619fefe676c2452083ab1d2612d4cba7f05cbef",
+      "manifest_sha256": "83736e942ad8097c6df3616e8e2dc373d39313f9c92e186c2e3d04f27bc32be1"
+    },
+    "individual_dev_or_test_records_seen_before_freeze": false
+  },
+  "hypothesis": {
+    "observed_phenomenon": "The current automatic path always abstains on source-variable identity even when a question and one source row share a distinctive financial metric phrase.",
+    "possible_cause": "The fail-closed production baseline lacks a machine-calibrated exact-row semantic linker.",
+    "expected_improvement": "A normalized token-F1 linker with a strict unique-best margin should safely bind a subset of exact gold rows and leave ambiguous rows abstained.",
+    "possible_side_effect": "Generic financial words or near-duplicate rows could make an incorrect row appear uniquely best.",
+    "questions_that_should_improve": "Questions with exactly one gold table row and a distinctive row-label phrase after financial stopword and light morphology normalization.",
+    "questions_that_should_remain_unchanged": "Questions requiring text evidence, multiple table rows, rows below the score threshold, ties/near-ties, and ambiguous generic labels."
+  },
+  "change_tested": {
+    "primary_change_count": 1,
+    "primary_change": "machine_calibrated_exact_row_metric_linker",
+    "forbidden_concurrent_changes": [
+      "retrieval_candidate_universe",
+      "entity_resolution",
+      "period_resolution",
+      "unit_resolution",
+      "arithmetic",
+      "answer_thresholds"
+    ]
+  },
+  "expected_result_frozen_before_development": true,
+  "split_design": {
+    "seed": "exact-row-metric-linking-v1-freeze-20260825",
+    "source_dataset": "finqa",
+    "discovery_source_split": "train",
+    "development_source_split": "dev",
+    "untouched_evaluation_source_split": "test",
+    "discovery_size": 10,
+    "development_size": 30,
+    "untouched_evaluation_size": 30,
+    "selection_key": "sha256(seed + canonical question text + canonical table content); source record ID excluded",
+    "question_id_role": "tracking_only",
+    "company_holdout": "FinQA issuer IDs are pairwise disjoint across stages.",
+    "wording_holdout": "Development and untouched normalized wording templates are disjoint.",
+    "metric_holdout": "At least one intrinsic metric family has six or more untouched records and zero development records.",
+    "composition_holdout": "At least one program-operation signature has six or more untouched records and zero development records."
+  },
+  "contamination_register": {
+    "status": "PREVIOUS_EXP_TEST_EXAMPLES_EXCLUDED",
+    "excluded_if_program_contains": [
+      "exp(",
+      "greater("
+    ],
+    "individual_test_questions_or_rows_seen_for_this_hypothesis": false,
+    "test_metric_linking_aggregate_seen_before_freeze": false
+  },
+  "ablation_arms": [
+    "A_current_no_automatic_variable_binding",
+    "B_A_plus_normalized_unique_margin_linker",
+    "C_B_without_financial_stopword_and_morphology_normalization",
+    "D_B_without_unique_margin_gate"
+  ],
+  "decision_thresholds": {
+    "minimum_newly_correct_development": 5,
+    "minimum_newly_correct_untouched": 5,
+    "minimum_precision_on_predictions": 1.0,
+    "maximum_false_confident_candidate": 0,
+    "maximum_regressed_baseline_predictions": 0,
+    "minimum_metric_holdout_improved": 5,
+    "minimum_composition_holdout_improved": 5
+  },
+  "evaluator": {
+    "status": "HASH_BOUND_EXTERNAL_GOLD_AVAILABLE",
+    "kind": "FinQA official gold_inds with exactly one table_N key and no text_N key",
+    "source_commit": "0f16e2867befa6840783e58be38c9efb9229d742",
+    "unavailable_to_vifinqa_prediction_pipeline": true,
+    "vifinqa_answer_authority": false
+  },
+  "human_role": {
+    "per_question_review": false,
+    "allowed_after_round_verdicts": [
+      "KEEP",
+      "REJECT",
+      "INVESTIGATE FURTHER"
+    ]
+  },
+  "source_contract": {
+    "research_only": true,
+    "evidence_eligible": false,
+    "may_materialize_answer": false,
+    "training_eligible": false,
+    "submission_eligible": false,
+    "promotion_allowed": false
+  }
+}

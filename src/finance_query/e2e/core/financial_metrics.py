@@ -511,9 +511,20 @@ def _cfo_positive_multiyear_max_net_margin_plan(
         r"\s+cao\s+nhat\s+nam\s+((?:19|20)\d{2})",
         folded_question,
     )
-    if not target_match:
-        return None
-    target_year = int(target_match.group(1))
+    if target_match:
+        target_year = int(target_match.group(1))
+    else:
+        # Some questions put the target period at the beginning (``Năm 2024,
+        # trong các công ty ...``) and state the target ratio only at the
+        # end.  Accept that grammar only when the ratio phrase and the
+        # positive-CFO multi-year filter above are both explicit.  A leading
+        # year alone must not be treated as the target period.
+        leading_year = re.match(r"^nam\s+((?:19|20)\d{2})\s*[,;]", folded_question)
+        if not leading_year:
+            return None
+        target_year = int(leading_year.group(1))
+        if target_year not in years:
+            return None
     screening_years = set(years)
     # A closed year range is a literal part of the filter, not an inferred
     # intervening period. Keep the expansion bounded so malformed OCR cannot
@@ -613,6 +624,239 @@ def _cfo_positive_multiyear_max_net_margin_plan(
     return spec
 
 
+def _explicit_group_tickers(question: str) -> list[str]:
+    """Read only literal ticker-like tokens from a closed question shape.
+
+    This helper deliberately has no alias or fuzzy company-name resolution.
+    The caller must additionally verify the resulting list against the typed
+    question plan before a formula can be accepted.
+    """
+    excluded = {"CFO", "EBIT", "ICR", "LNST", "PBT", "ROA", "ROE", "GPM", "VND"}
+    result: list[str] = []
+    for match in re.finditer(r"\b[A-Z]{2,6}\b", question):
+        ticker = match.group(0)
+        if ticker not in excluded and ticker not in result:
+            result.append(ticker)
+    return result
+
+
+def _debt_to_equity_argmax_interest_coverage_plan(
+    question: str,
+    folded_question: str,
+    years: list[int],
+) -> dict[str, Any] | None:
+    """Recognise one literal selector-to-interest-coverage program.
+
+    The selector and target are fully named in the question.  We still leave
+    the result as a staged, non-executable EvidenceSet plan: every balance-
+    sheet and income-statement leaf must later bind to an exact V2 cell and
+    the definition remains review-required.
+    """
+    selector = "no phai tra tren von chu so huu cao nhat"
+    target_forms = (
+        "he so kha nang thanh toan lai vay",
+        "ty le tong cua loi nhuan truoc thue va chi phi lai vay tren chi phi lai vay",
+    )
+    if selector not in folded_question or not any(form in folded_question for form in target_forms):
+        return None
+    if len(years) != 1:
+        return None
+    entities = _explicit_group_tickers(question)
+    if len(entities) < 2:
+        return None
+    year = years[0]
+    operands: list[dict[str, Any]] = []
+    for entity in entities:
+        prefix = entity.casefold()
+        operands.extend(
+            [
+                _operand(
+                    f"{prefix}_total_liabilities_{year}",
+                    f"{entity} — Nợ phải trả {year}",
+                    ["nợ phải trả"],
+                    [year],
+                    "debt_to_equity_numerator",
+                    entity=entity,
+                    stage_id="debt_to_equity_rank",
+                    allowed_table_functions=["balance_sheet"],
+                ),
+                _operand(
+                    f"{prefix}_equity_{year}",
+                    f"{entity} — Vốn chủ sở hữu {year}",
+                    ["vốn chủ sở hữu"],
+                    [year],
+                    "debt_to_equity_denominator",
+                    entity=entity,
+                    stage_id="debt_to_equity_rank",
+                    allowed_table_functions=["balance_sheet"],
+                ),
+                _operand(
+                    f"{prefix}_profit_before_tax_{year}",
+                    f"{entity} — Lợi nhuận kế toán trước thuế {year}",
+                    ["lợi nhuận kế toán trước thuế", "lợi nhuận trước thuế"],
+                    [year],
+                    "interest_coverage_pbt_component",
+                    entity=entity,
+                    stage_id="interest_coverage_output",
+                    allowed_table_functions=["income_statement"],
+                ),
+                _operand(
+                    f"{prefix}_interest_expense_{year}",
+                    f"{entity} — Chi phí lãi vay {year}",
+                    ["chi phí lãi vay"],
+                    [year],
+                    "interest_coverage_denominator",
+                    entity=entity,
+                    stage_id="interest_coverage_output",
+                    allowed_table_functions=["income_statement", "financial_note_detail"],
+                ),
+            ]
+        )
+    spec = _spec(
+        "debt_to_equity_argmax_interest_coverage",
+        "Chọn nợ phải trả/vốn chủ sở hữu cao nhất rồi lấy hệ số thanh toán lãi vay",
+        "argmax(Nợ phải trả / Vốn chủ sở hữu) → (Lợi nhuận trước thuế + |Chi phí lãi vay|) / |Chi phí lãi vay|",
+        operands,
+        confidence=0.99,
+        definition_status="review_required",
+        notes=[
+            "Chỉ xếp hạng trên đúng tập ticker và năm được ghi trong câu hỏi.",
+            "Nợ phải trả/vốn chủ sở hữu dùng hai exact cells của cùng entity, scope và kỳ; không thay bằng nợ thuần.",
+            "Hệ số thanh toán lãi vay dùng lợi nhuận trước thuế và chi phí lãi vay của chính entity thắng; thiếu source, tie hoặc khác scope thì fail-closed.",
+        ],
+    )
+    spec.update(
+        {
+            "output_unit": "times",
+            "entities": entities,
+            "execution_status": "stage_binding_required",
+            "stages": [
+                {
+                    "stage_id": "debt_to_equity_rank",
+                    "label": f"1. Xếp hạng nợ phải trả/vốn chủ sở hữu năm {year}",
+                    "expression": "D/E = Nợ phải trả / Vốn chủ sở hữu",
+                    "decision": "Chọn entity có D/E lớn nhất duy nhất.",
+                },
+                {
+                    "stage_id": "interest_coverage_output",
+                    "label": f"2. Tính hệ số thanh toán lãi vay năm {year}",
+                    "expression": "ICR = (Lợi nhuận trước thuế + |Chi phí lãi vay|) / |Chi phí lãi vay|",
+                    "decision": "Chỉ dùng PBT và chi phí lãi vay của entity thắng.",
+                },
+            ],
+        }
+    )
+    return spec
+
+
+def _positive_operating_profit_argmin_cfo_ratio_net_margin_plan(
+    question: str,
+    folded_question: str,
+    years: list[int],
+) -> dict[str, Any] | None:
+    """Recognise a literal positive-profit filter → argmin → net-margin plan."""
+    required_phrases = (
+        "loi nhuan thuan tu hoat dong kinh doanh duong",
+        "ty le luu chuyen tien thuan tu hoat dong kinh doanh tren loi nhuan thuan tu hoat dong kinh doanh thap nhat",
+        "ty le loi nhuan sau thue tren doanh thu thuan",
+    )
+    if not all(phrase in folded_question for phrase in required_phrases):
+        return None
+    if len(years) != 1:
+        return None
+    entities = _explicit_group_tickers(question)
+    if len(entities) < 2:
+        return None
+    year = years[0]
+    operands: list[dict[str, Any]] = []
+    for entity in entities:
+        prefix = entity.casefold()
+        operands.extend(
+            [
+                _operand(
+                    f"{prefix}_operating_profit_{year}",
+                    f"{entity} — Lợi nhuận thuần từ hoạt động kinh doanh {year}",
+                    ["lợi nhuận thuần từ hoạt động kinh doanh"],
+                    [year],
+                    "operating_profit_positive_filter",
+                    entity=entity,
+                    stage_id="operating_profit_positive_filter",
+                    allowed_table_functions=["income_statement"],
+                ),
+                _operand(
+                    f"{prefix}_operating_cash_flow_{year}",
+                    f"{entity} — Lưu chuyển tiền thuần từ hoạt động kinh doanh {year}",
+                    ["lưu chuyển tiền thuần từ hoạt động kinh doanh"],
+                    [year],
+                    "cfo_to_operating_profit_numerator",
+                    entity=entity,
+                    stage_id="cfo_to_operating_profit_argmin",
+                    allowed_table_functions=["cash_flow_statement"],
+                ),
+                _operand(
+                    f"{prefix}_net_profit_{year}",
+                    f"{entity} — Lợi nhuận sau thuế {year}",
+                    ["lợi nhuận sau thuế", "lợi nhuận ròng"],
+                    [year],
+                    "net_margin_numerator",
+                    entity=entity,
+                    stage_id="net_margin_output",
+                    allowed_table_functions=["income_statement"],
+                ),
+                _operand(
+                    f"{prefix}_net_revenue_{year}",
+                    f"{entity} — Doanh thu thuần {year}",
+                    ["doanh thu thuần"],
+                    [year],
+                    "net_margin_denominator",
+                    entity=entity,
+                    stage_id="net_margin_output",
+                    allowed_table_functions=["income_statement"],
+                ),
+            ]
+        )
+    spec = _spec(
+        "positive_operating_profit_argmin_cfo_ratio_net_margin",
+        "Lọc lợi nhuận hoạt động dương → chọn CFO/lợi nhuận hoạt động thấp nhất → lấy biên lợi nhuận ròng",
+        "filter(LNHD > 0) → argmin(CFO / LNHD) → LNST / Doanh thu thuần × 100%",
+        operands,
+        confidence=0.99,
+        notes=[
+            "Chỉ giữ entity có lợi nhuận thuần từ hoạt động kinh doanh dương.",
+            "Chỉ xếp hạng CFO/LNHD trên tập còn lại; value bằng nhau hoặc operand thiếu phải fail-closed.",
+            "Kết quả là LNST/doanh thu thuần của entity thắng tại cùng năm, không phải tỷ lệ ở bước xếp hạng.",
+        ],
+    )
+    spec.update(
+        {
+            "output_unit": "percent",
+            "entities": entities,
+            "execution_status": "stage_binding_required",
+            "stages": [
+                {
+                    "stage_id": "operating_profit_positive_filter",
+                    "label": f"1. Lọc lợi nhuận hoạt động dương năm {year}",
+                    "expression": "LNHD > 0",
+                    "decision": "Giữ entity khi exact operand lợi nhuận hoạt động dương.",
+                },
+                {
+                    "stage_id": "cfo_to_operating_profit_argmin",
+                    "label": f"2. Chọn CFO/LNHD thấp nhất năm {year}",
+                    "expression": "CFO / LNHD",
+                    "decision": "Chọn entity có tỷ lệ nhỏ nhất duy nhất trong tập sau lọc.",
+                },
+                {
+                    "stage_id": "net_margin_output",
+                    "label": f"3. Tính biên lợi nhuận ròng năm {year}",
+                    "expression": "LNST / Doanh thu thuần × 100%",
+                    "decision": "Chỉ trả tỷ lệ của entity thắng.",
+                },
+            ],
+        }
+    )
+    return spec
+
+
 def _operating_cash_flow_argmax_period_plan(
     question: str,
     folded_question: str,
@@ -703,6 +947,18 @@ def infer_formula_spec(question: str) -> dict[str, Any] | None:
     )
     if cfo_net_margin_plan:
         return cfo_net_margin_plan
+
+    debt_to_equity_plan = _debt_to_equity_argmax_interest_coverage_plan(
+        question, text, years
+    )
+    if debt_to_equity_plan:
+        return debt_to_equity_plan
+
+    operating_profit_plan = _positive_operating_profit_argmin_cfo_ratio_net_margin_plan(
+        question, text, years
+    )
+    if operating_profit_plan:
+        return operating_profit_plan
 
     cfo_argmax_plan = _operating_cash_flow_argmax_period_plan(question, text, years)
     if cfo_argmax_plan:

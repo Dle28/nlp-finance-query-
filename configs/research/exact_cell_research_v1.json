@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_exact_cell_research_v1",
+  "expected_route_count": 1232,
+  "research": {
+    "max_tables_per_route": 3,
+    "max_rows_per_table": 5,
+    "period_policy": "header-year-candidate-only",
+    "unit_policy": "header-unit-candidate-only"
+  },
+  "review_sample": {
+    "per_priority_bucket": {
+      "agreement_high_proxy": 50,
+      "standard_review": 50,
+      "hard_review": 50
+    }
+  },
+  "authorization": {
+    "research_only": true,
+    "navigation_metadata_only": true,
+    "may_authorize_evidence": false,
+    "may_authorize_answer": false,
+    "training_eligible": false,
+    "submission_eligible": false
+  }
+}

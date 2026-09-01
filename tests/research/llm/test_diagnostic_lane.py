@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
 from finance_query.research.proof_policy.active_learning_models import (
     MODEL_JOB_PROTOCOL,
@@ -12,7 +11,6 @@ from finance_query.research.proof_policy.active_learning_models import (
 )
 from finance_query.research.proof_policy.evidence_closure import canonical_sha256, load_json, load_jsonl, sha256_file
 from finance_query.research.llm.diagnostic_lane import (
-    LLM_DIAGNOSTIC_BATCH_PROTOCOL,
     LLM_DIAGNOSTIC_REVIEW_PROTOCOL,
     build_diagnostic_batch,
     evaluate_diagnostic_batch,

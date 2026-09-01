@@ -1,0 +1,78 @@
+{
+  "protocol": "vifinqa_explicit_ticker_semantic_source_probe_v1",
+  "rules": [
+    {
+      "allowed_table_functions": ["balance_sheet"],
+      "forbidden_compact_fragments": [],
+      "operand_id": "x0",
+      "primary_statement_only": true,
+      "question_id": 7,
+      "required_compact_fragments": ["quykhenthuongphucloi"],
+      "rule_id": "staff_welfare_fund_balance_sheet_v1"
+    },
+    {
+      "allowed_table_functions": [],
+      "forbidden_compact_fragments": [],
+      "operand_id": "x0",
+      "primary_statement_only": false,
+      "question_id": 49,
+      "required_compact_fragments": ["chiphidichvumuangoai"],
+      "rule_id": "outsourced_service_cost_v1"
+    },
+    {
+      "allowed_table_functions": ["financial_note_detail"],
+      "forbidden_compact_fragments": [],
+      "operand_id": "x0",
+      "primary_statement_only": false,
+      "question_id": 57,
+      "required_compact_fragments": ["thuethunhapdoanhnghiep"],
+      "rule_id": "corporate_income_tax_note_v1"
+    },
+    {
+      "allowed_table_functions": ["balance_sheet"],
+      "forbidden_compact_fragments": [],
+      "operand_id": "x0",
+      "primary_statement_only": true,
+      "question_id": 58,
+      "required_compact_fragments": ["tratruocchonguoibannganhan"],
+      "rule_id": "seller_prepayment_balance_sheet_v1"
+    },
+    {
+      "allowed_table_functions": ["balance_sheet"],
+      "forbidden_compact_fragments": [],
+      "operand_id": "x0",
+      "primary_statement_only": true,
+      "question_id": 73,
+      "required_compact_fragments": ["dautuvaocongtylienket"],
+      "rule_id": "associate_investment_balance_sheet_v1"
+    },
+    {
+      "allowed_table_functions": ["balance_sheet"],
+      "forbidden_compact_fragments": ["daihan"],
+      "operand_id": "x0",
+      "primary_statement_only": true,
+      "question_id": 276,
+      "required_compact_fragments": ["vaynganhan"],
+      "rule_id": "short_term_borrowings_balance_sheet_v1"
+    },
+    {
+      "allowed_table_functions": ["financial_note_detail"],
+      "forbidden_compact_fragments": [],
+      "operand_id": "x0",
+      "primary_statement_only": false,
+      "question_id": 283,
+      "required_compact_fragments": ["thuegiatrigiatang"],
+      "rule_id": "value_added_tax_note_v1"
+    },
+    {
+      "allowed_table_functions": ["financial_note_detail"],
+      "forbidden_compact_fragments": [],
+      "operand_id": "x0",
+      "primary_statement_only": false,
+      "question_id": 327,
+      "required_compact_fragments": ["phaithukhachhangkhac"],
+      "rule_id": "other_customer_receivables_note_v1"
+    }
+  ],
+  "schema_version": 1
+}

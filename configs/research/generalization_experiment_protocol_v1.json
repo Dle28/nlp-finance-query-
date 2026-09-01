@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_generalization_experiment_protocol_v1",
+  "mode": "research_only_fail_closed",
+  "baseline_policy": {
+    "sole_baseline": "configs/e2e/deterministic_replay_v1_locked.yaml",
+    "must_replay_unchanged": true,
+    "byte_match_required": true
+  },
+  "taxonomy_policy": {
+    "artifact_protocol": "vifinqa_question_intrinsic_dataset_map_v1",
+    "question_id_role": "tracking_only",
+    "baseline_result_must_not_influence_taxonomy": true,
+    "blocker_taxonomy_is_not_dataset_taxonomy": true
+  },
+  "hypothesis_policy": {
+    "prediction_must_be_frozen_before_run": true,
+    "one_primary_change": true,
+    "required_fields": [
+      "observed_phenomenon",
+      "possible_cause",
+      "expected_improvement",
+      "possible_side_effect",
+      "questions_that_should_improve",
+      "questions_that_should_remain_unchanged"
+    ]
+  },
+  "subset_policy": {
+    "stages_in_order": [
+      "discovery",
+      "development",
+      "untouched_evaluation",
+      "full_dataset"
+    ],
+    "discovery_size": {"minimum": 5, "maximum": 10},
+    "development_size": {"minimum": 20, "maximum": 30},
+    "untouched_evaluation_size": {"minimum": 20, "maximum": 30},
+    "pairwise_disjoint_before_full_dataset": true,
+    "freeze_before_untouched_evaluation": true,
+    "full_dataset_requires_unseen_signal": true,
+    "full_dataset_may_not_be_reused_as_development": true,
+    "required_diversity_dimensions": [
+      "company",
+      "year",
+      "wording_template",
+      "source_topology",
+      "metric"
+    ]
+  },
+  "holdout_policy": {
+    "required": [
+      "company",
+      "wording",
+      "metric",
+      "composition"
+    ],
+    "question_id_only_holdout_forbidden": true
+  },
+  "ablation_policy": {
+    "required": true,
+    "minimum_arms": [
+      "current_baseline",
+      "baseline_plus_change"
+    ],
+    "remove_each_component_when_change_has_multiple_components": true
+  },
+  "result_policy": {
+    "required_outcomes": [
+      "IMPROVED",
+      "UNCHANGED",
+      "REGRESSED"
+    ],
+    "required_full_dataset_dimensions": [
+      "overall",
+      "question_family",
+      "operation_family",
+      "temporal_family",
+      "source_topology",
+      "entity_company_group",
+      "abstention",
+      "false_positive",
+      "regression"
+    ],
+    "abstention_reduction_alone_is_not_improvement": true,
+    "development_only_improvement_verdict": "REJECT_AS_POSSIBLE_OVERFIT"
+  },
+  "overfitting_checklist": [
+    "rule_contains_specific_company",
+    "rule_contains_question_id",
+    "rule_contains_unnecessary_specific_year",
+    "rule_depends_on_single_wording",
+    "rule_developed_from_too_few_examples",
+    "improvement_transfers_to_unseen_subset",
+    "improvement_transfers_to_unseen_issuer",
+    "improvement_transfers_to_unseen_wording",
+    "false_confidence_increases",
+    "abstention_reduction_comes_from_guessing"
+  ],
+  "human_policy": {
+    "per_question_answer_review_forbidden": true,
+    "per_question_correction_forbidden": true,
+    "allowed_stage": "end_of_research_round",
+    "allowed_verdicts": [
+      "KEEP",
+      "REJECT",
+      "INVESTIGATE FURTHER"
+    ]
+  },
+  "required_report_sections": [
+    "RESEARCH QUESTION",
+    "OBSERVATION",
+    "HYPOTHESIS",
+    "BASELINE",
+    "SUBSET DESIGN",
+    "CHANGE TESTED",
+    "EXPECTED RESULT",
+    "RESULT — DEVELOPMENT",
+    "RESULT — UNSEEN",
+    "RESULT — FULL DATASET",
+    "IMPROVEMENTS",
+    "REGRESSIONS",
+    "GENERALIZATION",
+    "OVERFITTING RISK",
+    "STRENGTHS",
+    "WEAKNESSES",
+    "WHAT THIS EXPERIMENT PROVES",
+    "WHAT THIS EXPERIMENT DOES NOT PROVE",
+    "VERDICT"
+  ],
+  "evaluator_gate": {
+    "independent_gold_or_official_evaluator_required": true,
+    "hash_bound": true,
+    "must_be_unavailable_to_prediction_pipeline": true,
+    "missing_evaluator_action": "STOP_BEFORE_MODEL_CHANGE"
+  },
+  "source_contract": {
+    "research_only": true,
+    "evidence_eligible": false,
+    "may_materialize_answer": false,
+    "training_eligible": false,
+    "submission_eligible": false,
+    "promotion_allowed": false
+  }
+}

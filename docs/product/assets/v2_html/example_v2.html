@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1600, initial-scale=1">
+  <title>AI GURU — diagram</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #FAF9F5; }
+    body { width: 1600px; min-height: 660px; overflow: hidden; }
+    svg { display: block; width: 1600px; height: 660px; }
+  </style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 660" role="img" aria-labelledby="example-v2-title example-v2-desc">
+  <title id="example-v2-title">Ví dụ tính phần trăm tăng trưởng</title>
+  <desc id="example-v2-desc">Ví dụ minh họa câu hỏi doanh thu tăng bao nhiêu phần trăm, hai giá trị nguồn 120 và 150, công thức tính và kết quả 25 phần trăm.</desc>
+  <defs>
+    <marker id="example-v2-arrow" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#52657A"/>
+    </marker>
+    <marker id="example-v2-arrow-accent" markerWidth="12" markerHeight="8" refX="10" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#E88C55"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="660" fill="#FAF9F5"/>
+  <text x="48" y="52" fill="#1F8A89" font-size="12" font-weight="600" letter-spacing="0.18em" font-family="'Geist','Noto Sans',Arial,sans-serif">EXAMPLE / TRACEABLE ANSWER</text>
+  <text x="48" y="92" fill="#0B2545" font-size="28" font-weight="600" font-family="'Instrument Serif','Noto Serif',Georgia,serif">Một câu hỏi, một đường đi, một phép tính có thể giải thích</text>
+  <rect x="48" y="124" width="1504" height="88" rx="8" fill="#E5F2EF" stroke="#1F8A89" stroke-width="1"/>
+  <text x="76" y="158" fill="#1F8A89" font-size="12" font-weight="600" letter-spacing="0.14em" font-family="'Geist Mono',monospace">CÂU HỎI</text>
+  <text x="76" y="188" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Doanh thu năm 2023 tăng bao nhiêu phần trăm so với năm 2022?</text>
+
+  <!-- connectors first -->
+  <line x1="528" y1="384" x2="600" y2="384" stroke="#52657A" stroke-width="2" marker-end="url(#example-v2-arrow)"/>
+  <line x1="1000" y1="384" x2="1088" y2="384" stroke="#E88C55" stroke-width="2.2" marker-end="url(#example-v2-arrow-accent)"/>
+  <rect x="540" y="348" width="48" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="564" y="360" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">LẤY Ô</text>
+  <rect x="1016" y="348" width="56" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="1044" y="360" text-anchor="middle" fill="#E88C55" font-size="12" font-family="'Geist Mono',monospace">REPLAY</text>
+
+  <!-- source table -->
+  <rect x="48" y="264" width="480" height="240" rx="8" fill="#FFFFFF" stroke="#1F8A89" stroke-width="1.2"/>
+  <rect x="72" y="288" width="80" height="24" rx="4" fill="#C5E4DE"/>
+  <text x="112" y="305" text-anchor="middle" fill="#1F8A89" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">SOURCE</text>
+  <text x="72" y="348" fill="#0B2545" font-size="16" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Bảng doanh thu</text>
+  <line x1="72" y1="368" x2="504" y2="368" stroke="#D6DFE2" stroke-width="1"/>
+  <rect x="72" y="384" width="176" height="40" fill="#F0F3F5"/>
+  <rect x="248" y="384" width="128" height="40" fill="#E5F2EF"/>
+  <rect x="376" y="384" width="128" height="40" fill="#E5F2EF"/>
+  <text x="88" y="410" fill="#52657A" font-size="12" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Chỉ tiêu</text>
+  <text x="312" y="410" text-anchor="middle" fill="#1F8A89" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">2022</text>
+  <text x="440" y="410" text-anchor="middle" fill="#1F8A89" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">2023</text>
+  <rect x="72" y="424" width="176" height="48" fill="#FFFFFF" stroke="#D6DFE2" stroke-width="1"/>
+  <rect x="248" y="424" width="128" height="48" fill="#FFFFFF" stroke="#D6DFE2" stroke-width="1"/>
+  <rect x="376" y="424" width="128" height="48" fill="#FFFFFF" stroke="#D6DFE2" stroke-width="1"/>
+  <text x="88" y="454" fill="#0B2545" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Doanh thu</text>
+  <text x="312" y="454" text-anchor="middle" fill="#0B2545" font-size="16" font-weight="600" font-family="'Geist Mono',monospace">120</text>
+  <text x="440" y="454" text-anchor="middle" fill="#0B2545" font-size="16" font-weight="600" font-family="'Geist Mono',monospace">150</text>
+  <text x="72" y="492" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">table_uid · row_path · column · unit</text>
+
+  <!-- formula -->
+  <rect x="600" y="264" width="400" height="240" rx="8" fill="#FFFFFF" stroke="#9AAABA" stroke-width="1.2"/>
+  <rect x="624" y="288" width="80" height="24" rx="4" fill="#E7EBEF"/>
+  <text x="664" y="305" text-anchor="middle" fill="#52657A" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">FORMULA</text>
+  <text x="800" y="348" text-anchor="middle" fill="#0B2545" font-size="16" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Percentage change</text>
+  <text x="800" y="392" text-anchor="middle" fill="#52657A" font-size="16" font-family="'Geist Mono',monospace">(150 − 120) / 120 × 100</text>
+  <line x1="680" y1="416" x2="920" y2="416" stroke="#D6DFE2" stroke-width="1"/>
+  <text x="800" y="456" text-anchor="middle" fill="#1F8A89" font-size="16" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">= 25%</text>
+  <text x="800" y="484" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">replay bằng giá trị exact cell</text>
+
+  <!-- answer -->
+  <rect x="1088" y="264" width="416" height="240" rx="8" fill="#FEF0E7" stroke="#E88C55" stroke-width="1.6"/>
+  <rect x="1112" y="288" width="80" height="24" rx="4" fill="#F9D8C0"/>
+  <text x="1152" y="305" text-anchor="middle" fill="#D46F3D" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">ANSWER</text>
+  <text x="1296" y="348" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Tăng 25%</text>
+  <text x="1296" y="388" text-anchor="middle" fill="#9C5A36" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">2023 so với 2022</text>
+  <line x1="1140" y1="416" x2="1452" y2="416" stroke="#F1CDB5" stroke-width="1"/>
+  <text x="1120" y="452" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Có thể giải thích bằng:</text>
+  <text x="1120" y="476" fill="#52657A" font-size="12" font-family="'Geist Mono',monospace">source · formula · status</text>
+
+  <rect x="48" y="552" width="1456" height="52" rx="8" fill="#0B2545"/>
+  <text x="76" y="584" fill="#FFFFFF" font-size="16" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Lưu ý:</text>
+  <text x="152" y="584" fill="#C6D5DF" font-size="16" font-family="'Geist','Noto Sans',Arial,sans-serif">120 và 150 ở đây chỉ là số minh họa để giải thích luồng, không phải kết luận cho một doanh nghiệp cụ thể.</text>
+</svg>
+
+</body>
+</html>

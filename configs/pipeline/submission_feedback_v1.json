@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_blocked_feedback_prompt_contract_v1",
+  "default_prompt_profile": "en_system_vi_context_compact_v2",
+  "role": "blocked_question_feedback_critic",
+  "input": {
+    "raw_question_language": "vi_preserved",
+    "source_labels": "preserve_exactly",
+    "canonical_aliases": "vi_plus_en",
+    "language_policy": "preserve Vietnamese semantic surface; English system instruction and enum output are allowed per model A/B result",
+    "source_scope_semantics": "source_scope/source_universe is the allowed retrieval universe; reporting_scope is the requested financial reporting scope",
+    "top_k_semantics": "top-k is navigation metadata only and never numeric evidence",
+    "numeric_cells": null,
+    "allowed_context": [
+      "question_raw_vi",
+      "typed_question",
+      "proposal_metadata_without_numeric_answer",
+      "verification_receipt",
+      "blocked_reason_codes",
+      "candidate_labels_and_coordinates",
+      "source_hashes",
+      "resolved_prediction_metadata",
+      "e2e_receipt_failure_metadata"
+    ]
+  },
+  "output": {
+    "serialization": {
+      "prompt_profile": "en_system_vi_context_compact_v2",
+      "instruction": "exactly_one_json_object",
+      "accepted_wrappers": [
+        "harmless_leading_trailing_text",
+        "complete_markdown_json_code_fence"
+      ],
+      "rejected_shapes": [
+        "multiple_json_objects",
+        "malformed_json",
+        "unknown_keys",
+        "numeric_answer_or_source_value_keys",
+        "authority_keys"
+      ]
+    },
+    "decision": ["FEEDBACK_ONLY", "ABSTAIN"],
+    "failure_class": [
+      "RETRIEVAL_MISS",
+      "RERANK_MISS",
+      "CONTEXT_INCOMPLETE",
+      "SEMANTIC_AMBIGUITY",
+      "TEMPORAL_OR_SCOPE_AMBIGUITY",
+      "UNIT_AMBIGUITY",
+      "FORMULA_OR_OPERAND",
+      "PROVENANCE_OR_SOURCE_CONFLICT",
+      "AST_OR_FORMAT",
+      "DETERMINISTIC_REPLAY",
+      "INSUFFICIENT_EVIDENCE",
+      "ABSTAIN",
+      "OTHER"
+    ],
+    "reason_codes": "closed_enum",
+    "observations": "array_of_short_strings",
+    "missing_context_fields": "closed_enum",
+    "recommended_actions": "max_4_action_target_rationale_objects",
+    "confidence": ["LOW", "MEDIUM", "HIGH"],
+    "source_ref_sha256": "subset_of_allowed_source_refs"
+  },
+  "authority": {
+    "answer_authorized": false,
+    "evidence_authorized": false,
+    "training_eligible": false,
+    "promotion_allowed": false,
+    "submission_eligible": false,
+    "release_authorized": false
+  },
+  "learning": {
+    "mode": "feedback_candidate_not_weight_update",
+    "human_verification_required_before_training": true,
+    "next_consumers": [
+      "prompt_ablation",
+      "retrieval_hard_negative_builder",
+      "reranker_finetune_dataset",
+      "ast_sft_dataset",
+      "source_binding_review_queue"
+    ]
+  }
+}

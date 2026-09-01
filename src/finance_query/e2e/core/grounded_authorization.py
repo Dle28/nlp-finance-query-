@@ -5,7 +5,8 @@ prove that a candidate cell has the requested variable, period, entity, scope
 or revision semantics.  This adapter makes that gap executable: it converts
 only source-preserved V2 facts into typed Evidence Bindings and emits an
 Answer Certificate or ``ABSTAIN`` for every question.  It never fills a
-missing semantic field from a route score, registry label, filename, or model.
+missing semantic field from a route score, registry label, filename, model, or
+reviewer decision.
 """
 from __future__ import annotations
 
@@ -31,26 +32,40 @@ from .evidence_binding import (
     COMPARATIVE_BASES,
     FLOW_OR_STOCK,
     PERIOD_GRAINS,
-    SEMANTIC_UNITS,
     NOT_APPLICABLE,
     PASS,
     UNRESOLVED,
     EVIDENCE_BINDING_SCHEMA_VERSION,
     build_evidence_binding,
 )
-from .semantic_approvals import load_human_semantic_approvals
 from .exact_cell_bindings_v2 import resolve_source_unit
 
 
 GROUNDED_AUTHORIZATION_PROTOCOL = "vifinqa_grounded_authorization_replay_v1"
 GROUNDED_AUTHORIZATION_SCHEMA_VERSION = 1
 AUTHORIZATION_CONTRACT = {
-    "research_only": True,
+    # The public answer channel may carry a best-effort prediction, but that
+    # lane is deliberately not an EvidenceBinding or strict-answer authority.
+    "answer_output_allowed": True,
+    "answer_requires_complete_certificate": False,
+    "authoritative_answer_requires_complete_certificate": True,
+    "answer_requires_surviving_candidate": True,
+    "may_materialize_answer": True,
+    "best_effort_candidate_lane": True,
+    "best_effort_candidate_authority": False,
+    "evidence_binding_authority": False,
+    "strict_answer_authority": "complete_answer_certificate_and_source_aligned_binding",
+    "strict_answer_requires_complete_certificate": True,
+    "strict_answer_authorized_by_candidate": False,
     "evidence_eligible": False,
+    "model_metadata_authority": False,
+    "reviewer_metadata_authority": False,
+    "research_value_authority": False,
+    "gold_data_used": False,
     "training_eligible": False,
     "submission_eligible": False,
     "promotion_allowed": False,
-    "may_materialize_answer": False,
+    "release_authorized": False,
 }
 
 
@@ -82,6 +97,76 @@ def _rows(path: Path) -> list[dict[str, Any]]:
             raise GroundedAuthorizationError(f"{path}:{line_number} must be a JSON object")
         values.append(value)
     return values
+
+
+def _load_best_candidate_predictions(
+    path: Path | None,
+) -> tuple[dict[int, dict[str, Any]], dict[str, Any]]:
+    """Load selector output used only for best-effort answer serving.
+
+    The file is an explicit input, not an authority shortcut.  Each retained
+    row still carries its candidate/filter metadata, while the answer
+    certificate validates that the candidate is finite and not rejected.
+    """
+    if path is None:
+        return {}, {"path": None, "loaded": False, "candidate_count": 0}
+    candidates: dict[int, dict[str, Any]] = {}
+    skipped = 0
+    for row in _rows(path):
+        try:
+            question_id = int(row.get("question_id", row.get("id")))
+        except (TypeError, ValueError) as exc:
+            raise GroundedAuthorizationError(
+                "best candidate predictions require an integer question_id"
+            ) from exc
+        if question_id in candidates:
+            raise GroundedAuthorizationError(
+                f"duplicate best candidate prediction for question {question_id}"
+            )
+        if row.get("answer") is None and row.get("answer_decimal") is None and row.get("value") is None:
+            skipped += 1
+            continue
+        candidates[question_id] = dict(row)
+    return candidates, {
+        "path": str(path),
+        "sha256": sha256_file(path),
+        "loaded": True,
+        "candidate_count": len(candidates),
+        "skipped_without_numeric_answer": skipped,
+        "navigation_only": False,
+        "answer_authority": "best_effort_candidate_only",
+    }
+
+
+def _execution_candidate(
+    *,
+    question_id: int,
+    stage_id: object,
+    trace: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Convert a replay-ready execution trace into a fallback candidate."""
+    if not isinstance(trace, Mapping):
+        return None
+    if _text(trace.get("status")) not in {"PASS", "execution_replay_ready"}:
+        return None
+    value = trace.get("converted_output_decimal")
+    try:
+        decimal_value = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    if not decimal_value.is_finite():
+        return None
+    return {
+        "question_id": question_id,
+        "candidate_id": f"q{question_id}:stage:{_text(stage_id)}:execution",
+        "answer_decimal": format(decimal_value, "f"),
+        "filter_status": "SURVIVED_FILTER",
+        "filter_passed": True,
+        "filter_score": 1.0,
+        "selection_method": "best_surviving_exact_execution_candidate",
+        "source": trace.get("operand_sources") or trace.get("stage_id"),
+        "stage_id": stage_id,
+    }
 
 
 def _json(path: Path) -> Mapping[str, Any]:
@@ -132,6 +217,147 @@ def _text(value: object) -> str:
 
 def _mapping(value: object) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
+
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_SOURCE_LINEAGE_FEEDBACK_PROTOCOL = "vifinqa_source_lineage_feedback_v1"
+_SOURCE_LINEAGE_REQUIRED_FIELDS = [
+    "canonical_v2.internal_table_uid",
+    "canonical_v2.document_id",
+    "canonical_v2.source_provenance.source_sha256",
+    "canonical_v2.source_provenance.table_sha256",
+    "canonical_v2.exact_cell_coordinates",
+    "canonical_v3.internal_table_uid",
+    "canonical_v3.document_id",
+    "canonical_v3.source_provenance.source_sha256",
+    "canonical_v3.source_provenance.table_sha256",
+    "canonical_v3.grid.provenance_complete",
+    "canonical_v3.quality.status",
+]
+
+
+def _valid_sha256(value: object) -> bool:
+    return bool(_SHA256_RE.fullmatch(_text(value)))
+
+
+def _source_lineage_feedback(
+    table: Mapping[str, Any] | None,
+    context: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Explain source-closure state without granting evidence authority.
+
+    The canonical authorizer receives V2 tables and their V3 context sidecar;
+    it does not receive the full-corpus asset as an independently comparable
+    input.  This receipt therefore distinguishes a missing V2 table, a
+    V2/V3 identity or hash mismatch, and an exact V2/V3 link.  It deliberately
+    does not claim that a hash was recomputed from the original source file,
+    and it can never authorize an answer.
+    """
+
+    table_provenance = _mapping(table.get("source_provenance")) if table is not None else {}
+    context_provenance = _mapping(context.get("source_provenance")) if context is not None else {}
+    table_uid = _text(table.get("internal_table_uid")) if table is not None else ""
+    context_uid = _text(context.get("internal_table_uid")) if context is not None else ""
+    table_document = _text(table.get("document_id")) if table is not None else ""
+    context_document = _text(context.get("document_id")) if context is not None else ""
+    table_source_sha = _text(table_provenance.get("source_sha256"))
+    context_source_sha = _text(context_provenance.get("source_sha256"))
+    table_table_sha = _text(table_provenance.get("table_sha256"))
+    context_table_sha = _text(context_provenance.get("table_sha256"))
+    reasons: list[str] = []
+
+    if table is None:
+        reasons.append("SOURCE_CLOSURE_CANONICAL_V2_TABLE_MISSING")
+    else:
+        if not table_uid:
+            reasons.append("SOURCE_CLOSURE_CANONICAL_V2_TABLE_UID_MISSING")
+        if not table_document:
+            reasons.append("SOURCE_CLOSURE_CANONICAL_V2_DOCUMENT_UID_MISSING")
+        if not isinstance(table.get("source_provenance"), Mapping):
+            reasons.append("SOURCE_CLOSURE_CANONICAL_V2_PROVENANCE_SCHEMA_MISSING")
+        if not _valid_sha256(table_source_sha):
+            reasons.append("BINDING_LINEAGE_DOCUMENT_SHA256_INVALID")
+        if not _valid_sha256(table_table_sha):
+            reasons.append("BINDING_LINEAGE_TABLE_SHA256_INVALID")
+
+    if context is None:
+        reasons.append("SOURCE_CLOSURE_CANONICAL_V3_CONTEXT_MISSING")
+    else:
+        if not context_uid:
+            reasons.append("SOURCE_CLOSURE_CANONICAL_V3_TABLE_UID_MISSING")
+        if not context_document:
+            reasons.append("SOURCE_CLOSURE_CANONICAL_V3_DOCUMENT_UID_MISSING")
+        if not _valid_sha256(context_source_sha):
+            reasons.append("SOURCE_CLOSURE_V3_DOCUMENT_SHA256_INVALID")
+        if not _valid_sha256(context_table_sha):
+            reasons.append("SOURCE_CLOSURE_V3_TABLE_SHA256_INVALID")
+        grid = _mapping(context.get("grid"))
+        if grid.get("rectangular") is not True or grid.get("provenance_complete") is not True:
+            reasons.append("SOURCE_CLOSURE_V3_GRID_PROVENANCE_INCOMPLETE")
+        if _text(_mapping(context.get("quality")).get("status")) != "review_ready":
+            reasons.append("SOURCE_CLOSURE_V3_CONTEXT_NOT_REVIEW_READY")
+
+    if table is not None and context is not None:
+        if table_uid and context_uid and table_uid != context_uid:
+            reasons.append("SOURCE_CLOSURE_INTERNAL_TABLE_UID_MISMATCH")
+        if table_document and context_document and table_document != context_document:
+            reasons.append("SOURCE_CLOSURE_DOCUMENT_UID_MISMATCH")
+        if _valid_sha256(table_source_sha) and _valid_sha256(context_source_sha) and table_source_sha != context_source_sha:
+            reasons.append("SOURCE_CLOSURE_DOCUMENT_SHA256_MISMATCH")
+        if _valid_sha256(table_table_sha) and _valid_sha256(context_table_sha) and table_table_sha != context_table_sha:
+            reasons.append("SOURCE_CLOSURE_TABLE_SHA256_MISMATCH")
+
+    status = "PASS" if not reasons else "BLOCKED"
+    return {
+        "schema_version": 1,
+        "protocol": _SOURCE_LINEAGE_FEEDBACK_PROTOCOL,
+        "status": status,
+        "may_authorize": False,
+        "diagnostic_only": True,
+        "comparison_scope": "canonical_v2_structured_table_to_canonical_v3_context",
+        "external_full_table_assets_comparison": "NOT_AVAILABLE_IN_AUTHORIZATION_INPUT",
+        "raw_source_hash_recomputed": False,
+        "checks": {
+            "v2_table_present": table is not None,
+            "v2_table_uid_present": bool(table_uid),
+            "v2_document_uid_present": bool(table_document),
+            "v2_provenance_schema_present": isinstance(table.get("source_provenance"), Mapping)
+            if table is not None
+            else False,
+            "v2_document_sha256_valid": _valid_sha256(table_source_sha),
+            "v2_table_sha256_valid": _valid_sha256(table_table_sha),
+            "v3_context_present": context is not None,
+            "v3_table_uid_present": bool(context_uid),
+            "v3_document_uid_present": bool(context_document),
+            "v3_document_sha256_valid": _valid_sha256(context_source_sha),
+            "v3_table_sha256_valid": _valid_sha256(context_table_sha),
+            "v2_v3_table_uid_equal": bool(table_uid and context_uid and table_uid == context_uid),
+            "v2_v3_document_uid_equal": bool(
+                table_document and context_document and table_document == context_document
+            ),
+            "v2_v3_document_sha256_equal": bool(
+                _valid_sha256(table_source_sha)
+                and _valid_sha256(context_source_sha)
+                and table_source_sha == context_source_sha
+            ),
+            "v2_v3_table_sha256_equal": bool(
+                _valid_sha256(table_table_sha)
+                and _valid_sha256(context_table_sha)
+                and table_table_sha == context_table_sha
+            ),
+            "v3_grid_provenance_complete": bool(
+                context is not None
+                and _mapping(context.get("grid")).get("rectangular") is True
+                and _mapping(context.get("grid")).get("provenance_complete") is True
+            ),
+            "v3_context_review_ready": bool(
+                context is not None
+                and _text(_mapping(context.get("quality")).get("status")) == "review_ready"
+            ),
+        },
+        "reason_codes": sorted(set(reasons)),
+        "required_fields": list(_SOURCE_LINEAGE_REQUIRED_FIELDS) if reasons else [],
+    }
 
 
 def _table_index(path: Path) -> dict[str, Mapping[str, Any]]:
@@ -271,22 +497,7 @@ def _context_is_source_aligned(
     table: Mapping[str, Any],
     context: Mapping[str, Any] | None,
 ) -> bool:
-    if context is None:
-        return False
-    table_provenance = _mapping(table.get("source_provenance"))
-    context_provenance = _mapping(context.get("source_provenance"))
-    return bool(
-        _text(table.get("internal_table_uid"))
-        and _text(table.get("internal_table_uid")) == _text(context.get("internal_table_uid"))
-        and _text(table.get("document_id")) == _text(context.get("document_id"))
-        and _text(table_provenance.get("source_sha256"))
-        == _text(context_provenance.get("source_sha256"))
-        and _text(table_provenance.get("table_sha256"))
-        == _text(context_provenance.get("table_sha256"))
-        and _mapping(context.get("grid")).get("rectangular") is True
-        and _mapping(context.get("grid")).get("provenance_complete") is True
-        and _text(_mapping(context.get("quality")).get("status")) == "review_ready"
-    )
+    return _source_lineage_feedback(table, context)["status"] == "PASS"
 
 
 def _context_header(
@@ -343,7 +554,8 @@ def _period_binding(
     document_anchor = _document_anchor(table)
     source_title = _text(_mapping(context.get("context_trace")).get("source_title"))
 
-    if _text(operand.get("period_resolution_method")) == "v2_exact_source_title_current_header_v1":
+    period_resolution_method = _text(operand.get("period_resolution_method"))
+    if period_resolution_method == "v2_exact_source_title_current_header_v1":
         expected_title_hash = hashlib.sha256(source_title.encode("utf-8")).hexdigest()
         if _text(operand.get("period_source_title_sha256")) != expected_title_hash:
             return {"status": UNRESOLVED, "reason_codes": ["PERIOD_SOURCE_TITLE_HASH_MISMATCH"]}
@@ -379,7 +591,7 @@ def _period_binding(
         if (
             table_function in {"income_statement", "cash_flow_statement"}
             and folded_header == "nam nay"
-            and re.search(r"(?:cho|trong)\s+nam(?:\s+tai\s+chinh)?\s+ket\s+thuc\s+ngay", folded_title)
+            and re.search(r"(?:cho|trong)\s+nam(?:\s+tai\s+chinh)?(?:\s+(?:19|20)\d{2})?\s+ket\s+thuc\s+(?:vao|tai)?\s+ngay", folded_title)
         ):
             try:
                 prior_anniversary = period_date.replace(year=period_date.year - 1)
@@ -400,6 +612,72 @@ def _period_binding(
                 "recognition_method": "v3_exact_source_title_current_duration_header_v1",
             }
         return {"status": UNRESOLVED, "reason_codes": ["RECOVERED_CURRENT_HEADER_SEMANTICS_MISMATCH"]}
+
+    if period_resolution_method == "v2_exact_header_period_v1":
+        # An explicitly dated header is a separate, stricter path from the
+        # legacy ``Năm nay``/``Số cuối năm`` recovery.  The header itself must
+        # contain exactly one requested year; a filename or route label cannot
+        # supply it.  For an instant balance we additionally require a full
+        # as-of date either in that header or in the source title.  For a flow
+        # statement the same date is used as the fiscal-year end.
+        period_labels = [_text(value) for value in header.get("period_labels") or [] if _text(value)]
+        header_values = [raw_header, source_label, *period_labels]
+        header_years = {
+            int(match.group(0))
+            for value in header_values
+            for match in re.finditer(r"(?<!\d)(?:19|20)\d{2}(?!\d)", _fold(value))
+        }
+        requested_years = {
+            int(match.group(1))
+            for value in (_text(value) for value in operand.get("period_labels") or [])
+            if (match := re.fullmatch(r"(?:nam\s+)?(20\d{2})", _fold(value))) is not None
+        }
+        if len(header_years) != 1 or len(requested_years) != 1 or header_years != requested_years:
+            return {"status": UNRESOLVED, "reason_codes": ["EXPLICIT_HEADER_YEAR_NOT_UNIQUE"]}
+        requested_year = next(iter(requested_years))
+        expected_title_hash = _text(operand.get("period_source_title_sha256"))
+        if expected_title_hash and expected_title_hash != hashlib.sha256(source_title.encode("utf-8")).hexdigest():
+            return {"status": UNRESOLVED, "reason_codes": ["PERIOD_SOURCE_TITLE_HASH_MISMATCH"]}
+        if document_anchor is None:
+            return {"status": UNRESOLVED, "reason_codes": ["EXPLICIT_HEADER_DOCUMENT_ANCHOR_MISSING"]}
+        header_dates = [value for value in _dates_in_text(raw_header or source_label) if value.year == requested_year]
+        title_dates = [value for value in _dates_in_text(source_title) if value.year == requested_year]
+        dates = header_dates or title_dates
+        if len(dates) != 1:
+            return {"status": UNRESOLVED, "reason_codes": ["EXPLICIT_HEADER_DATE_NOT_UNIQUE"]}
+        period_date = dates[0]
+        if table_function == "balance_sheet":
+            return {
+                "status": PASS,
+                "raw_period_label": raw_header or source_label,
+                "period_grain": "instant",
+                "flow_or_stock": "stock",
+                "comparative_basis": "closing_balance" if (period_date.month, period_date.day) == (12, 31) else "current",
+                "period_years": [requested_year],
+                "as_of_date": period_date.isoformat(),
+                "source_anchors": [*anchors, document_anchor],
+                "recognition_method": "v3_exact_header_explicit_balance_date_v1",
+            }
+        if table_function in {"income_statement", "cash_flow_statement"}:
+            try:
+                prior_anniversary = period_date.replace(year=period_date.year - 1)
+            except ValueError:
+                prior_anniversary = period_date.replace(year=period_date.year - 1, day=28)
+            start_date = prior_anniversary + timedelta(days=1)
+            return {
+                "status": PASS,
+                "raw_period_label": raw_header or source_label,
+                "period_grain": "fiscal_year",
+                "flow_or_stock": "flow",
+                "comparative_basis": "current",
+                "period_years": [requested_year],
+                "start_date": start_date.isoformat(),
+                "end_date": period_date.isoformat(),
+                "fiscal_year": requested_year,
+                "source_anchors": [*anchors, document_anchor],
+                "recognition_method": "v3_exact_header_explicit_duration_v1",
+            }
+        return {"status": UNRESOLVED, "reason_codes": ["V3_TABLE_FUNCTION_NOT_PERIOD_AUTHORIZING"]}
 
     if table_function == "balance_sheet":
         dates = _dates_in_text(raw_header)
@@ -616,6 +894,7 @@ def _lineage(
     period_binding: Mapping[str, Any],
     unit_binding: Mapping[str, Any],
     entity_scope_binding: Mapping[str, Any],
+    source_lineage_feedback: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     provenance = _mapping(table.get("source_provenance")) if table is not None else {}
     value_cell = _mapping(source_integrity.get("value_cell"))
@@ -635,6 +914,7 @@ def _lineage(
                 "entity_scope_binding": entity_scope_binding,
             }
         ),
+        "source_lineage_feedback": dict(source_lineage_feedback or {}),
         "binding_schema_version": EVIDENCE_BINDING_SCHEMA_VERSION,
         "resolver_version": "grounded-authorization-v3-source-resolver-v1",
     }
@@ -651,7 +931,6 @@ def _build_binding(
     operand: Mapping[str, Any],
     tables: Mapping[str, Mapping[str, Any]],
     evidence_contexts: Mapping[str, Mapping[str, Any]],
-    approval: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     table = tables.get(_text(operand.get("internal_table_uid")))
     evidence_context = evidence_contexts.get(_text(operand.get("internal_table_uid")))
@@ -662,134 +941,28 @@ def _build_binding(
     entity = _text(entities[0]) if isinstance(entities, list) and len(entities) == 1 else ""
     scope = _text(context.get("scope"))
     requested_entity_role = _text(context.get("entity_role"))
+    source_lineage_feedback = _source_lineage_feedback(table, evidence_context)
     source_integrity = _source_integrity(table, operand)
     unit_binding = _unit_binding(table, operand, evidence_context)
     period_binding = _period_binding(table, operand, evidence_context)
-    if approval is None or table is None:
-        variable_binding = {
-            "status": UNRESOLVED,
-            "reason_codes": ["V2_ROUTE_CONCEPT_IS_NOT_SOURCE_VARIABLE_EVIDENCE"],
-        }
-        entity_scope_binding = _entity_scope_binding(
-            table,
-            evidence_context,
-            requested_entity=entity,
-            requested_scope=scope,
-        )
-    else:
-        row_label = _mapping(approval.get("row_label"))
-        row_anchor = _cell_anchor(
-            table,
-            row_index=row_label.get("row_index"),
-            column_index=row_label.get("column_index"),
-        )
-        document_anchor = _document_anchor(table)
-        if row_anchor is None or document_anchor is None:
-            variable_binding = {
-                "status": UNRESOLVED,
-                "reason_codes": ["HUMAN_APPROVAL_SOURCE_ANCHOR_STALE"],
-            }
-            entity_scope_binding = _entity_scope_binding(
-                table,
-                evidence_context,
-                requested_entity=entity,
-                requested_scope=scope,
-            )
-        else:
-            variable_provenance = _mapping(approval.get("variable_decision_provenance"))
-            variable_reviewer_type = _text(variable_provenance.get("reviewer_type"))
-            variable_binding = {
-                "status": PASS,
-                "variable_id": approval.get("variable_id"),
-                "raw_row_label": _raw_text(table, row_anchor),
-                "recognition_method": (
-                    "chatgpt_verified_exact_row_navigation_promotion_v1"
-                    if approval.get("navigation_promotion_lineage")
-                    else "chatgpt_verified_exact_cross_entity_operand_v1"
-                    if approval.get("cross_entity_promotion_lineage")
-                    else "chatgpt_verified_exact_row_label_correction_v1"
-                    if variable_reviewer_type == "chatgpt_verified"
-                    else "human_verified_exact_row_label_v1"
-                ),
-                "source_anchors": [row_anchor],
-                "approval_id": approval.get("variable_approval_id") or approval.get("approval_id"),
-                **(
-                    {"decision_provenance": dict(variable_provenance)}
-                    if variable_provenance
-                    else {}
-                ),
-                **(
-                    {"semantic_correction_lineage": approval.get("semantic_correction_lineage")}
-                    if approval.get("semantic_correction_lineage")
-                    else {}
-                ),
-                **(
-                    {"navigation_promotion_lineage": approval.get("navigation_promotion_lineage")}
-                    if approval.get("navigation_promotion_lineage")
-                    else {}
-                ),
-                **(
-                    {"cross_entity_promotion_lineage": approval.get("cross_entity_promotion_lineage")}
-                    if approval.get("cross_entity_promotion_lineage")
-                    else {}
-                ),
-            }
-            entity_scope_binding = {
-                "entity_status": PASS,
-                "scope_status": PASS,
-                "entity": approval.get("entity"),
-                "scope": approval.get("scope"),
-                "source_anchors": [document_anchor],
-                "recognition_method": (
-                    "chatgpt_verified_issuer_scope_v1"
-                    if _text(
-                        _mapping(
-                            approval.get("entity_scope_decision_provenance")
-                        ).get("reviewer_type")
-                    )
-                    == "chatgpt_verified"
-                    else "human_verified_issuer_scope_v1"
-                ),
-                "approval_id": approval.get("approval_id"),
-                **(
-                    {
-                        "decision_provenance": dict(
-                            _mapping(
-                                approval.get("entity_scope_decision_provenance")
-                                or approval.get("decision_provenance")
-                            )
-                        )
-                    }
-                    if approval.get("entity_scope_decision_provenance")
-                    else {}
-                ),
-            }
+    variable_binding = {
+        "status": UNRESOLVED,
+        "reason_codes": ["MACHINE_VARIABLE_SOURCE_PROOF_NOT_AVAILABLE"],
+    }
+    entity_scope_binding = _entity_scope_binding(
+        table,
+        evidence_context,
+        requested_entity=entity,
+        requested_scope=scope,
+    )
     if requested_entity_role:
-        approved_role = _text((approval or {}).get("entity_role"))
-        role_evidence = _mapping((approval or {}).get("entity_role_evidence"))
-        if approved_role == requested_entity_role and role_evidence:
-            role_review_provenance = _mapping((approval or {}).get("entity_role_decision_provenance"))
-            role_reviewer_type = _text(role_review_provenance.get("reviewer_type"))
-            entity_role_binding = {
-                "status": PASS,
-                "role": approved_role,
-                "recognition_method": (
-                    "chatgpt_verified_document_entity_role_v1"
-                    if role_reviewer_type == "chatgpt_verified"
-                    else "human_verified_document_entity_role_v1"
-                ),
-                "source_anchors": list(role_evidence.get("source_anchors") or []),
-                "approval_id": (approval or {}).get("approval_id"),
-                "decision_provenance": dict(role_review_provenance),
-            }
-        else:
-            entity_role_binding = {
-                "status": UNRESOLVED,
-                "role": requested_entity_role,
-                "recognition_method": "explicit_question_role_requires_source_provenance_v1",
-                "source_anchors": [],
-                "reason_codes": ["ENTITY_ROLE_SOURCE_PROVENANCE_MISSING"],
-            }
+        entity_role_binding = {
+            "status": UNRESOLVED,
+            "role": requested_entity_role,
+            "recognition_method": "explicit_question_role_requires_machine_source_provenance_v1",
+            "source_anchors": [],
+            "reason_codes": ["ENTITY_ROLE_MACHINE_SOURCE_PROVENANCE_MISSING"],
+        }
     else:
         entity_role_binding = {
             "status": NOT_APPLICABLE,
@@ -820,6 +993,7 @@ def _build_binding(
             period_binding=period_binding,
             unit_binding=unit_binding,
             entity_scope_binding=entity_scope_binding,
+            source_lineage_feedback=source_lineage_feedback,
         ),
         required_fields=[
             field for field in BINDING_FIELDS
@@ -933,17 +1107,50 @@ def _composed_binding_plan(
         tuple[Mapping[str, Any], list[Mapping[str, Any]], list[Mapping[str, Any]]]
     ],
 ) -> dict[str, Any]:
-    """Build a typed cross-stage plan without requiring same-entity operands."""
+    """Build a typed, narrowly controlled cross-stage composition plan."""
 
     graph = _mapping(question.get("controlled_operation_graph"))
     stage_order = graph.get("stage_order")
     source_ast = graph.get("operation_ast")
+    composition_operator = _text(_mapping(source_ast).get("op"))
+    composition_mode = _text(graph.get("composition_mode")) or "cross_entity_v1"
+    selector_mode = composition_mode == "same_entity_multi_period_argmax_v1"
+    valid_arity = (
+        (composition_operator == "subtract" and isinstance(stage_order, list) and len(stage_order) == 2)
+        or (composition_operator == "mean" and isinstance(stage_order, list) and len(stage_order) >= 2)
+        or (
+            composition_operator == "arg_extreme_period"
+            and isinstance(stage_order, list)
+            and len(stage_order) >= 2
+            and _text(_mapping(source_ast).get("direction")) == "max"
+        )
+    )
+    expected_source_ast = (
+        {"op": "arg_extreme_period", "direction": "max", "args": stage_order}
+        if selector_mode
+        else {"op": composition_operator, "args": stage_order}
+    )
     if (
         graph.get("protocol") != "vifinqa_controlled_composition_graph_v1"
         or not isinstance(stage_order, list)
-        or len(stage_order) != 2
-        or len({_text(value) for value in stage_order}) != 2
-        or source_ast != {"op": "subtract", "args": stage_order}
+        or not valid_arity
+        or len({_text(value) for value in stage_order}) != len(stage_order)
+        or source_ast != expected_source_ast
+        or composition_mode not in {
+            "cross_entity_v1",
+            "temporal_same_entity_two_period_subtract_v1",
+            "single_period_same_entity_subtract_v1",
+            "same_entity_multi_period_argmax_v1",
+        }
+        or (
+            composition_mode
+            in {
+                "temporal_same_entity_two_period_subtract_v1",
+                "single_period_same_entity_subtract_v1",
+            }
+            and composition_operator != "subtract"
+        )
+        or (selector_mode and composition_operator != "arg_extreme_period")
     ):
         raise GroundedAuthorizationError("controlled cross-stage operation graph is invalid")
     by_stage = {_text(stage.get("stage_id")): (stage, operands, bindings) for stage, operands, bindings in materialized_stages}
@@ -957,6 +1164,7 @@ def _composed_binding_plan(
     constraints: dict[str, dict[str, list[str]]] = {}
     operand_ids: list[str] = []
     bound_entities: list[str] = []
+    stage_years_by_id: dict[str, list[int]] = {}
     for raw_stage_id in stage_order:
         stage_id = _text(raw_stage_id)
         _, original_operands, bindings = by_stage[stage_id]
@@ -969,6 +1177,20 @@ def _composed_binding_plan(
         entity_scope = _mapping(binding.get("entity_scope_binding"))
         entity_role = _mapping(binding.get("entity_role_binding"))
         bound_entities.append(_text(entity_scope.get("entity")))
+        stage_years = [
+            int(value)
+            for value in original.get("period_labels") or []
+            if isinstance(value, (int, str)) and str(value).isdigit()
+        ]
+        stage_years_by_id[stage_id] = stage_years
+        operand_years = (
+            stage_years
+            if composition_mode in {
+                "temporal_same_entity_two_period_subtract_v1",
+                "same_entity_multi_period_argmax_v1",
+            }
+            else years
+        )
         plan_operands.append(
             {
                 "operand_id": operand_id,
@@ -977,9 +1199,13 @@ def _composed_binding_plan(
                 "expected_variable_id": original.get("concept_id") or original.get("role"),
                 "required": True,
                 "temporal_contract": temporal_contract_for_operand(
-                    years=years,
+                    years=operand_years,
                     scope=context.get("scope"),
-                    requested_unit=request.get("unit"),
+                    # A period selector returns a year, but each exact leaf is
+                    # still a monetary source value.  Its unit contract must
+                    # therefore validate the internal VND-normalized operand,
+                    # not attempt a fictitious VND-to-year conversion.
+                    requested_unit=("VND" if selector_mode else request.get("unit")),
                     entity=entity_scope.get("entity"),
                     entity_role=entity_role.get("role") or context.get("entity_role"),
                 ),
@@ -992,33 +1218,109 @@ def _composed_binding_plan(
             "semantic_units": ["monetary"],
             "revision_policies": ["latest_valid"],
         }
-    if not all(bound_entities) or len(set(bound_entities)) != len(bound_entities):
-        raise GroundedAuthorizationError("cross-entity composition requires distinct proven entities")
+    requested_entities = [_text(value) for value in context.get("entities") or []]
+    if composition_mode == "cross_entity_v1":
+        if not all(bound_entities) or len(set(bound_entities)) != len(bound_entities):
+            raise GroundedAuthorizationError("cross-entity composition requires distinct proven entities")
+    else:
+        if len(set(requested_entities)) != 1:
+            raise GroundedAuthorizationError("same-entity composition requires exactly one requested entity")
+        if composition_mode == "single_period_same_entity_subtract_v1" and len(years) != 1:
+            raise GroundedAuthorizationError("single-period composition requires exactly one requested year")
+        observed_entities = {value for value in bound_entities if value}
+        if observed_entities and observed_entities != set(requested_entities):
+            raise GroundedAuthorizationError("same-entity composition entity does not match the requested entity")
+    if selector_mode:
+        expected_years = sorted(
+            {int(value) for value in years if isinstance(value, (int, str)) and str(value).isdigit()}
+        )
+        observed_periods = {
+            stage_id: values[0]
+            for stage_id, values in stage_years_by_id.items()
+            if len(values) == 1
+        }
+        if (
+            len(expected_years) != len(stage_order)
+            or sorted(observed_periods.values()) != expected_years
+            or len(set(observed_periods.values())) != len(observed_periods)
+            or graph.get("stage_periods") != observed_periods
+        ):
+            raise GroundedAuthorizationError("period selector graph does not prove one requested period per stage")
     operation_ast = _replace_formula_roles(source_ast, binding_ids_by_stage)
     if graph.get("binding_operation_ast") != operation_ast:
         raise GroundedAuthorizationError("controlled graph binding operation AST mismatch")
     same_fields = (
-        "entity_role", "scope", "period_years", "period_grain",
-        "flow_or_stock", "comparative_basis", "normalized_currency",
-        "semantic_unit", "revision_policy",
+        (
+            "entity_role",
+            "scope",
+            "period_years",
+            "period_grain",
+            "flow_or_stock",
+            "comparative_basis",
+            "normalized_currency",
+            "semantic_unit",
+            "revision_policy",
+        )
+        if composition_mode == "cross_entity_v1"
+        else (
+            "entity",
+            "entity_role",
+            "scope",
+            "period_grain",
+            "flow_or_stock",
+            "comparative_basis",
+            "normalized_currency",
+            "semantic_unit",
+            "revision_policy",
+        )
+        if composition_mode in {
+            "temporal_same_entity_two_period_subtract_v1",
+            "same_entity_multi_period_argmax_v1",
+        }
+        else (
+            "entity",
+            "entity_role",
+            "scope",
+            "period_years",
+            "period_grain",
+            "flow_or_stock",
+            "comparative_basis",
+            "normalized_currency",
+            "semantic_unit",
+            "revision_policy",
+        )
     )
     return {
         "operands": plan_operands,
         "operation_ast": operation_ast,
         "formula_compatibility": {
-            "formula_id": "controlled_cross_entity_subtract",
-            "contract_source": "chatgpt_reviewed_typed_composition_graph_v1",
+            "formula_id": (
+                f"controlled_cross_entity_{composition_operator}"
+                if composition_mode == "cross_entity_v1"
+                else "controlled_temporal_same_entity_subtract"
+                if composition_mode == "temporal_same_entity_two_period_subtract_v1"
+                else "controlled_single_period_same_entity_subtract"
+                if composition_mode == "single_period_same_entity_subtract_v1"
+                else "controlled_same_entity_multi_period_argmax"
+            ),
+            "contract_source": "controlled_typed_composition_graph_v1",
             "operand_constraints": constraints,
             "cross_operand_rules": [
                 {"kind": "same", "field": field, "operands": operand_ids}
                 for field in same_fields
             ],
-            "different_entity_required": True,
+            "different_entity_required": composition_mode == "cross_entity_v1",
+            "same_entity_required": composition_mode in {
+                "temporal_same_entity_two_period_subtract_v1",
+                "single_period_same_entity_subtract_v1",
+                "same_entity_multi_period_argmax_v1",
+            },
         },
         "composition_lineage": {
             "promotion_packet_sha256": graph.get("promotion_packet_sha256"),
             "promotion_decision_sha256": graph.get("promotion_decision_sha256"),
             "numeric_values_selected_by_reviewer": False,
+            "composition_mode": composition_mode,
         },
     }
 
@@ -1083,6 +1385,96 @@ def _blocker_category(reason: object) -> str:
     return value.split(":", 1)[0] or "UNKNOWN_BLOCKER"
 
 
+def _source_lineage_feedback_summary(
+    evidence_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Summarize diagnostic source-closure receipts without changing gates."""
+
+    status_counts: Counter[str] = Counter()
+    reason_counts: Counter[str] = Counter()
+    for row in evidence_rows:
+        binding = _mapping(row.get("evidence_binding"))
+        feedback = _mapping(_mapping(binding.get("binding_lineage")).get("source_lineage_feedback"))
+        status_counts[_text(feedback.get("status")) or "MISSING"] += 1
+        for reason in feedback.get("reason_codes") or []:
+            reason_counts[_text(reason)] += 1
+    return {
+        "protocol": _SOURCE_LINEAGE_FEEDBACK_PROTOCOL,
+        "diagnostic_only": True,
+        "may_authorize": False,
+        "comparison_scope": "canonical_v2_structured_table_to_canonical_v3_context",
+        "external_full_table_assets_comparison": "NOT_AVAILABLE_IN_AUTHORIZATION_INPUT",
+        "raw_source_hash_recomputed": False,
+        "status_counts": dict(sorted(status_counts.items())),
+        "reason_code_counts": dict(sorted(reason_counts.items())),
+    }
+
+
+def _strict_answer_view(certificate: Mapping[str, Any]) -> dict[str, Any]:
+    """Separate strict answer fields from the optional candidate channel.
+
+    ``answer_certificates`` may be compiled by the lower-level certificate
+    helper with a historical ``answer`` field for a selector-approved
+    best-effort candidate.  The canonical authorizer removes that ambiguity:
+    both ``answer`` and the strict ``answer_decimal`` are populated only for a
+    complete certificate and are always ``None`` for ``ABSTAIN``.  The
+    candidate value remains available only under
+    ``best_effort_candidate_decimal`` without receiving evidence, release,
+    training, promotion or submission authority.  Candidate metadata is
+    redacted from the canonical certificate so no downstream consumer can
+    mistake a copied candidate object for an authorized evidence binding.
+    """
+
+    payload = {
+        key: value
+        for key, value in dict(certificate).items()
+        if key != "answer_certificate_id"
+    }
+    strict_authorized = bool(
+        payload.get("status") == "ANSWER_CERTIFICATE_COMPLETE_CAMPAIGN_ONLY"
+        and payload.get("answer_authorized") is True
+    )
+    candidate = _mapping(payload.get("candidate_prediction"))
+    candidate_decimal = _text(candidate.get("answer_decimal")) or None
+    strict_answer_decimal = _text(payload.get("answer")) or None if strict_authorized else None
+    # Do not leave a numeric legacy ``answer`` field in an ABSTAIN certificate:
+    # a downstream consumer must opt into the explicitly named best-effort
+    # lane rather than accidentally treating a prediction as authorized.
+    payload["answer"] = strict_answer_decimal
+    payload["answer_decimal"] = strict_answer_decimal
+    payload["strict_answer_decimal"] = strict_answer_decimal
+    payload["best_effort_candidate_decimal"] = (
+        candidate_decimal if not strict_authorized else None
+    )
+    # Numeric candidate values must not be duplicated in historical nested
+    # fields.  The only canonical numeric location for the best-effort lane is
+    # ``best_effort_candidate_decimal`` above.
+    payload["candidate_prediction"] = None
+    execution_receipt = dict(_mapping(payload.get("execution_receipt")))
+    if not strict_authorized:
+        execution_receipt["answer_decimal"] = None
+        execution_receipt["candidate_answer_decimal"] = None
+    payload["execution_receipt"] = execution_receipt
+    payload["best_effort_candidate_available"] = bool(candidate)
+    payload["best_effort_candidate_authority"] = False
+    payload["strict_answer_status"] = "AUTHORIZED" if strict_authorized else "ABSTAIN"
+    payload["strict_answer_authorized"] = strict_authorized
+    payload["strict_answer_available"] = strict_authorized
+    payload["answer_channel"] = (
+        "STRICT_AUTHORIZED"
+        if strict_authorized
+        else "BEST_EFFORT_CANDIDATE"
+        if candidate
+        else "ABSTAIN"
+    )
+    payload["answer_authorized"] = strict_authorized
+    payload["release_authorized"] = False
+    payload["submission_eligible"] = False
+    payload["training_eligible"] = False
+    payload["promotion_allowed"] = False
+    return {"answer_certificate_id": _sha_json(payload), **payload}
+
+
 def materialize_authorization_replay(
     *,
     bindings: Path,
@@ -1092,18 +1484,18 @@ def materialize_authorization_replay(
     structured_tables: Path,
     evidence_context: Path,
     evidence_context_manifest: Path,
-    semantic_review_queue: Path,
-    semantic_review_manifest: Path,
-    semantic_human_decisions: Path,
     metric_registry: Path,
     evidence_bindings_output: Path,
     answer_certificates_output: Path,
+    best_candidate_predictions: Path | None = None,
 ) -> dict[str, Any]:
     """Materialize full-corpus binding and answer-authority receipts.
 
-    The produced artifacts may be entirely abstaining when V2 lacks semantic
-    proof.  That is a verified integration result, not an error to repair by
-    guessing headers, periods, variables, scope, or revision data.
+    The produced artifacts may still be authorization-abstaining when V2 lacks
+    semantic proof.  If an explicit selector output is supplied, the best
+    surviving numeric candidate is retained for serving while the authorization
+    status remains ``ABSTAIN``.  No missing field is repaired by guessing
+    headers, periods, variables, scope, or revision data.
     """
     _require_output_sha(bindings_manifest, bindings, output_name="bindings", label="exact bindings")
     _require_output_sha(execution_manifest, execution, output_name="execution", label="Decimal execution")
@@ -1120,22 +1512,17 @@ def materialize_authorization_replay(
         raise GroundedAuthorizationError("question_id must be unique in authorization inputs")
     tables = _table_index(structured_tables)
     evidence_contexts = _evidence_context_index(evidence_context)
-    human_semantic_approvals = load_human_semantic_approvals(
-        queue=semantic_review_queue,
-        queue_manifest=semantic_review_manifest,
-        decisions=semantic_human_decisions,
-        bindings=bindings,
-        structured_tables=structured_tables,
-        evidence_context=evidence_context,
-    )
-    semantic_approvals = dict(human_semantic_approvals)
     registry = _registry(metric_registry)
+    best_candidates, best_candidate_stats = _load_best_candidate_predictions(
+        best_candidate_predictions
+    )
     evidence_rows: list[dict[str, Any]] = []
     certificate_rows: list[dict[str, Any]] = []
 
     for question_id in sorted(binding_rows):
         question = binding_rows[question_id]
         execution_row = execution_rows[question_id]
+        external_candidate = best_candidates.get(question_id)
         stages = [stage for stage in question.get("stages") or [] if isinstance(stage, Mapping)]
         traces = {
             _text(trace.get("stage_id")): trace
@@ -1158,13 +1545,6 @@ def materialize_authorization_replay(
                     operand=operand,
                     tables=tables,
                     evidence_contexts=evidence_contexts,
-                    approval=semantic_approvals.get(
-                        (
-                            question_id,
-                            _text(stage_candidate.get("stage_id")),
-                            _text(operand.get("role")),
-                        )
-                    ),
                 )
                 for operand in operands
             ]
@@ -1190,6 +1570,7 @@ def materialize_authorization_replay(
                     question_id=question_id,
                     reason_codes=["CONTROLLED_GRAPH_HAS_NO_REQUIRED_OPERANDS"],
                     execution={"status": execution_row.get("execution_status")},
+                    best_candidate=external_candidate,
                 )
             else:
                 plan = _composed_binding_plan(
@@ -1205,6 +1586,14 @@ def materialize_authorization_replay(
                         _mapping(execution_row.get("composition_trace")),
                     ),
                     alternative_checks=_counterfactual_checks(all_evidence_bindings),
+                    best_candidate=(
+                        _execution_candidate(
+                            question_id=question_id,
+                            stage_id=controlled_graph.get("final_node_id"),
+                            trace=_mapping(execution_row.get("composition_trace")),
+                        )
+                        or external_candidate
+                    ),
                 )
             certificate_rows.append(
                 {
@@ -1227,6 +1616,7 @@ def materialize_authorization_replay(
                     else "MULTI_STAGE_EXECUTION_GRAPH_NOT_MATERIALIZED"
                 ],
                 execution={"status": execution_row.get("execution_status")},
+                best_candidate=external_candidate,
             )
             certificate_rows.append(
                 {
@@ -1247,6 +1637,7 @@ def materialize_authorization_replay(
                 question_id=question_id,
                 reason_codes=["STAGE_HAS_NO_REQUIRED_OPERANDS"],
                 execution={"status": execution_row.get("execution_status")},
+                best_candidate=external_candidate,
             )
             certificate_rows.append(
                 {
@@ -1267,6 +1658,14 @@ def materialize_authorization_replay(
             operand_bindings=evidence_bindings,
             execution=_execution_receipt(plan, traces.get(_text(stage.get("stage_id")))),
             alternative_checks=_counterfactual_checks(evidence_bindings),
+            best_candidate=(
+                _execution_candidate(
+                    question_id=question_id,
+                    stage_id=stage.get("stage_id"),
+                    trace=traces.get(_text(stage.get("stage_id"))),
+                )
+                or external_candidate
+            ),
         )
         certificate_rows.append(
             {
@@ -1280,6 +1679,13 @@ def materialize_authorization_replay(
             }
         )
 
+    certificate_rows = [
+        {
+            **row,
+            "answer_certificate": _strict_answer_view(row["answer_certificate"]),
+        }
+        for row in certificate_rows
+    ]
     _write_jsonl(evidence_bindings_output, evidence_rows)
     _write_jsonl(answer_certificates_output, certificate_rows)
     binding_status_counts = dict(
@@ -1298,6 +1704,22 @@ def materialize_authorization_replay(
             Counter(_blocker_category(reason) for reason in blocker_reasons).items()
         )
     )
+    source_lineage_feedback = _source_lineage_feedback_summary(evidence_rows)
+    candidate_prediction_count = sum(
+        1
+        for row in certificate_rows
+        if row["answer_certificate"].get("answer_status") == "PREDICTED_CANDIDATE"
+    )
+    answer_available_count = sum(
+        1
+        for row in certificate_rows
+        if row["answer_certificate"].get("answer_available") is True
+    )
+    no_prediction_abstain_count = sum(
+        1
+        for row in certificate_rows
+        if row["answer_certificate"].get("answer_status") == "ABSTAIN"
+    )
     authorization_ready = bool(certificate_rows) and not blocker_reasons and all(
         status == "BOUND" for status in binding_status_counts
     )
@@ -1305,17 +1727,23 @@ def materialize_authorization_replay(
         "schema_version": 1,
         "protocol": "vifinqa_authorization_readiness_v1",
         "authorization_status": "ready_for_independent_audit" if authorization_ready else "blocked",
+        "answer_output_allowed": True,
+        "answer_count": certificate_status_counts.get(
+            "ANSWER_CERTIFICATE_COMPLETE_CAMPAIGN_ONLY", 0
+        ),
+        "abstain_count": certificate_status_counts.get("ABSTAIN", 0),
+        "candidate_prediction_count": candidate_prediction_count,
+        "answer_available_count": answer_available_count,
+        "no_prediction_abstain_count": no_prediction_abstain_count,
         "question_count": len(certificate_rows),
         "evidence_binding_count": len(evidence_rows),
         "binding_status_counts": binding_status_counts,
         "answer_certificate_status_counts": certificate_status_counts,
         "blocker_receipt_count": len(blocker_reasons),
         "blocker_category_counts": blocker_counts,
-        "human_semantic_approval_count": len(human_semantic_approvals),
-        "effective_semantic_approval_count": len(semantic_approvals),
-        "chatgpt_semantic_correction_count": 0,
-        "chatgpt_navigation_promotion_count": 0,
-        "chatgpt_cross_entity_promotion_count": 0,
+        "source_lineage_feedback": source_lineage_feedback,
+        "reviewer_inputs_used": [],
+        "machine_semantic_binding_count": 0,
         "independent_audit_required": True,
         "release_gate_required": True,
         "release_authorized": False,
@@ -1338,18 +1766,6 @@ def materialize_authorization_replay(
                 "path": str(evidence_context_manifest),
                 "sha256": sha256_file(evidence_context_manifest),
             },
-            "semantic_review_queue": {
-                "path": str(semantic_review_queue),
-                "sha256": sha256_file(semantic_review_queue),
-            },
-            "semantic_review_manifest": {
-                "path": str(semantic_review_manifest),
-                "sha256": sha256_file(semantic_review_manifest),
-            },
-            "semantic_human_decisions": {
-                "path": str(semantic_human_decisions),
-                "sha256": sha256_file(semantic_human_decisions),
-            },
             "metric_registry": {"path": str(metric_registry), "sha256": sha256_file(metric_registry)},
         },
         "outputs": {
@@ -1362,6 +1778,9 @@ def materialize_authorization_replay(
             "evidence_binding_count": len(evidence_rows),
             "evidence_binding_status_counts": binding_status_counts,
             "answer_certificate_status_counts": certificate_status_counts,
+            "candidate_prediction_count": candidate_prediction_count,
+            "answer_available_count": answer_available_count,
+            "no_prediction_abstain_count": no_prediction_abstain_count,
             "field_status_counts": {
                 field: dict(
                     sorted(
@@ -1382,14 +1801,14 @@ def materialize_authorization_replay(
                     ).items()
                 )
             ),
-            "human_semantic_approval_count": len(human_semantic_approvals),
-            "effective_semantic_approval_count": len(semantic_approvals),
-            "chatgpt_semantic_correction_count": 0,
-            "chatgpt_navigation_promotion_count": 0,
-            "chatgpt_cross_entity_promotion_count": 0,
+            "source_lineage_feedback": source_lineage_feedback,
+            "reviewer_inputs_used": [],
+            "machine_semantic_binding_count": 0,
         },
         "source_contract": dict(AUTHORIZATION_CONTRACT),
     }
+    if best_candidate_predictions is not None:
+        manifest["inputs"]["best_candidate_predictions"] = best_candidate_stats
     manifest_path = answer_certificates_output.with_suffix(".manifest.json")
     _write_json(manifest_path, manifest)
     return {

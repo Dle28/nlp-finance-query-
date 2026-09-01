@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_generalization_hypothesis_v1",
+  "experiment_id": "explicit_advisory_intent_abstention_v1",
+  "research_question": "Can one explicit Vietnamese advisory-intent gate stop investment-action questions from entering the numeric financial-statement pipeline without blocking factual or comparison questions?",
+  "observation": {
+    "source_dataset": "VNFinsQA",
+    "source_repository": "https://huggingface.co/datasets/duykhangh/VNFinsQA",
+    "source_commit": "3345135c339de5a41df21de65064236420d771e0",
+    "source_sha256": "488e597a6d443f33fa1144ba46956eef4e0bd7bfd59b8f1bfe6b4dc43bbf7f7b",
+    "license": "CC BY-NC 4.0 research use",
+    "record_count": 790,
+    "exact_co_nen_action_records": 28,
+    "aggregate_gold_categories": {
+      "recommendation": 24,
+      "valuation": 2,
+      "technical": 1,
+      "screening": 1
+    },
+    "individual_questions_seen_before_freeze": false
+  },
+  "hypothesis": {
+    "observed_phenomenon": "The current rule planner assigns a numeric-report family even when the user explicitly asks whether they should buy, sell, hold, or invest.",
+    "possible_cause": "No narrow out-of-scope intent contract runs before numeric family routing.",
+    "expected_improvement": "Questions matching exact 'co nen' plus one investment action and exactly one ticker should emit an out-of-scope advisory abstention rather than a numeric retrieval plan.",
+    "possible_side_effect": "A broad 'nen' or action-word rule may capture screening, comparisons, or factual questions and increase false abstention.",
+    "questions_that_should_improve": "Explicit single-ticker investment-action requests whose expert category is recommendation, valuation, technical, or screening.",
+    "questions_that_should_remain_unchanged": "Factual lookups, cross-stock comparisons, questions without exact advisory syntax, missing ticker, and multi-ticker questions."
+  },
+  "change_tested": {
+    "primary_change_count": 1,
+    "primary_change": "explicit_single_ticker_co_nen_action_abstention",
+    "forbidden_concurrent_changes": [
+      "ticker_extraction",
+      "financial_metric_linking",
+      "retrieval",
+      "answer_generation",
+      "arithmetic",
+      "other_intent_phrases"
+    ]
+  },
+  "expected_result_frozen_before_run": true,
+  "split_design": {
+    "seed": "explicit-advisory-intent-abstention-v1-freeze-20260825",
+    "discovery_size": 5,
+    "development_size": 6,
+    "untouched_evaluation_size": 6,
+    "selection_key": "sha256(seed + question + tickers + intrinsic metadata); VNFinsQA ID excluded",
+    "question_id_role": "tracking_only",
+    "company_holdout": "Ticker sets are pairwise disjoint across discovery, development, and untouched evaluation.",
+    "wording_holdout": "Normalized wording templates are disjoint between development and untouched evaluation.",
+    "metric_holdout": "At least one expert question category occurs in untouched and not development.",
+    "composition_holdout": "At least one difficulty plus multi-document signature occurs in untouched and not development."
+  },
+  "decision_thresholds": {
+    "minimum_newly_correct_development": 4,
+    "minimum_newly_correct_untouched": 4,
+    "minimum_precision_on_predictions": 1.0,
+    "maximum_false_confident_candidate": 0,
+    "maximum_regressed_baseline_predictions": 0,
+    "minimum_metric_holdout_improved": 1,
+    "minimum_composition_holdout_improved": 1
+  },
+  "ablation_plan": [
+    "remove_exact_co_prefix",
+    "remove_action_vocabulary",
+    "remove_single_ticker_compatibility",
+    "remove_advisory_abstention"
+  ],
+  "source_contract": {
+    "research_only": true,
+    "evidence_eligible": false,
+    "training_eligible": false,
+    "submission_eligible": false,
+    "promotion_allowed": false,
+    "vifinqa_answer_authority": false
+  }
+}

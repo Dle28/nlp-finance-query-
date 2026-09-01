@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI GURU — từ data/question đến submission</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper: #f5f5f5;
+      --paper-2: #ececec;
+      --white: #ffffff;
+      --ink: #2d3142;
+      --muted: #4f5d75;
+      --soft: #7a8399;
+      --rule: rgba(45, 49, 66, .12);
+      --rule-solid: #bfc0c0;
+      --accent: #eb6c36;
+      --accent-tint: rgba(235, 108, 54, .08);
+      --link: #2e5aa8;
+      --sans: "Geist", system-ui, sans-serif;
+      --serif: "Instrument Serif", Georgia, serif;
+      --mono: "Geist Mono", ui-monospace, monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+    }
+    main {
+      max-width: 1800px;
+      margin: 0 auto;
+      padding: 48px 32px 72px;
+    }
+    .eyebrow,
+    .section-kicker {
+      margin: 0 0 12px;
+      color: var(--soft);
+      font: 500 8px/1.4 var(--mono);
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    h1 {
+      max-width: 1120px;
+      margin: 0;
+      font: 400 48px/1.04 var(--serif);
+      letter-spacing: -.02em;
+    }
+    .lead {
+      max-width: 1120px;
+      margin: 16px 0 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.6;
+    }
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 20px 0 0;
+    }
+    .tag {
+      padding: 8px 12px;
+      border: 1px solid var(--rule-solid);
+      border-radius: 4px;
+      background: var(--white);
+      color: var(--muted);
+      font: 500 8px/1 var(--mono);
+      letter-spacing: .06em;
+    }
+    .tag.focal {
+      border-color: var(--accent);
+      background: var(--accent-tint);
+      color: var(--accent);
+    }
+    section { margin-top: 48px; }
+    .section-note {
+      max-width: 1160px;
+      margin: 12px 0 20px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .diagram-shell {
+      overflow-x: auto;
+      padding: 0;
+    }
+    .diagram-shell svg {
+      display: block;
+      width: 100%;
+      min-width: 1560px;
+      height: auto;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr .9fr;
+      gap: 16px;
+      margin-top: 28px;
+    }
+    .card {
+      min-height: 132px;
+      padding: 20px;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      background: var(--white);
+    }
+    .card.focal { border-color: var(--accent); background: var(--accent-tint); }
+    .card .eyebrow { margin-bottom: 8px; }
+    .card h3 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+      font-weight: 600;
+    }
+    .card p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .prompt-section,
+    .improvement-section { margin-top: 48px; }
+    .prompt-section h2,
+    .improvement-section h2 {
+      margin: 0;
+      font: 400 32px/1.08 var(--serif);
+    }
+    .prompt-lead,
+    .improvement-lead {
+      max-width: 1120px;
+      margin: 12px 0 20px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .prompt-layout {
+      display: grid;
+      grid-template-columns: 1.35fr .65fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .prompt-panel,
+    .rule-panel {
+      padding: 20px;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      background: var(--white);
+    }
+    .prompt-panel.focal { border-color: var(--accent); background: var(--accent-tint); }
+    .prompt-panel h3,
+    .rule-panel h3 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+      font-weight: 600;
+    }
+    .prompt-panel .eyebrow,
+    .rule-panel .eyebrow { margin-bottom: 8px; }
+    .prompt-code {
+      margin: 16px 0 0;
+      padding: 16px;
+      overflow-x: auto;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      background: var(--paper);
+      color: var(--ink);
+      font: 400 12px/1.55 var(--mono);
+      white-space: pre-wrap;
+    }
+    .rule-panel ul {
+      margin: 14px 0 0;
+      padding-left: 20px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .rule-panel li + li { margin-top: 8px; }
+    .improvement-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--white);
+      border: 1px solid var(--rule);
+      font-size: 13px;
+    }
+    .improvement-table th,
+    .improvement-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--rule);
+      text-align: left;
+      vertical-align: top;
+      line-height: 1.45;
+    }
+    .improvement-table th {
+      color: var(--soft);
+      font: 500 8px/1.4 var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .improvement-table tr:last-child td { border-bottom: 0; }
+    .improvement-table td:first-child {
+      width: 18%;
+      color: var(--ink);
+      font-weight: 600;
+    }
+    .improvement-table td:nth-child(2) { width: 26%; }
+    .improvement-table td:nth-child(3) { width: 30%; }
+    .improvement-table td:nth-child(4) { width: 26%; }
+    footer {
+      margin-top: 36px;
+      padding-top: 16px;
+      border-top: 1px solid var(--rule);
+      color: var(--soft);
+      font: 8px/1.5 var(--mono);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .zone-candidate {
+      fill: rgba(45, 49, 66, .018);
+      stroke: rgba(45, 49, 66, .22);
+      stroke-width: 1;
+      stroke-dasharray: 4 4;
+    }
+    .zone-authority {
+      fill: rgba(45, 49, 66, .045);
+      stroke: rgba(45, 49, 66, .28);
+      stroke-width: 1;
+    }
+    .zone-offline {
+      fill: rgba(45, 49, 66, .018);
+      stroke: rgba(45, 49, 66, .22);
+      stroke-width: 1;
+      stroke-dasharray: 4 4;
+    }
+    .zone-label-mask,
+    .arrow-label-mask,
+    .boundary-label-mask { fill: var(--paper); }
+    .zone-label,
+    .boundary-label {
+      fill: var(--muted);
+      font: 500 8px var(--mono);
+      letter-spacing: .12em;
+    }
+    .authority-boundary {
+      stroke: var(--accent);
+      stroke-width: 1;
+      stroke-dasharray: 4 4;
+    }
+    .connector {
+      fill: none;
+      stroke: var(--muted);
+      stroke-width: 1.2;
+    }
+    .connector.accent {
+      stroke: var(--accent);
+      stroke-width: 1.2;
+    }
+    .connector.dashed {
+      stroke: var(--soft);
+      stroke-width: 1;
+      stroke-dasharray: 4 3;
+    }
+    .arrow-label {
+      fill: var(--soft);
+      font: 500 8px var(--mono);
+      letter-spacing: .06em;
+    }
+    .node-underlay { fill: var(--paper); }
+    .node-frame {
+      fill: var(--white);
+      stroke: rgba(45, 49, 66, .28);
+      stroke-width: 1;
+    }
+    .node.focal .node-frame {
+      fill: var(--accent-tint);
+      stroke: var(--accent);
+      stroke-width: 1.2;
+    }
+    .node-step { fill: rgba(45, 49, 66, .12); }
+    .node.focal .node-step { fill: rgba(235, 108, 54, .20); }
+    .node-step-text {
+      fill: var(--ink);
+      font: 600 12px var(--mono);
+    }
+    .node.focal .node-step-text { fill: var(--accent); }
+    .node-title {
+      fill: var(--ink);
+      font: 600 12px var(--sans);
+    }
+    .node-kicker,
+    .slot-label {
+      fill: var(--soft);
+      font: 500 8px var(--mono);
+      letter-spacing: .10em;
+    }
+    .slot-text {
+      fill: var(--muted);
+      font: 400 8px var(--sans);
+    }
+    .node-rule { stroke: var(--rule-solid); stroke-width: .8; }
+    .legend-rule { stroke: var(--rule); stroke-width: 1; }
+    .legend-key {
+      fill: var(--soft);
+      font: 500 8px var(--mono);
+      letter-spacing: .14em;
+    }
+    .legend-text {
+      fill: var(--muted);
+      font: 400 8px var(--sans);
+    }
+    .legend-box {
+      fill: var(--white);
+      stroke: rgba(45, 49, 66, .28);
+      stroke-width: 1;
+    }
+    .legend-box.focal-box {
+      fill: var(--accent-tint);
+      stroke: var(--accent);
+      stroke-width: 1.2;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">AI GURU / TARGET ARCHITECTURE V3</p>
+      <h1>Từ data/question đến submission — E2E là cổng quyết định, không phải toàn bộ pipeline.</h1>
+      <p class="lead">
+        RAG và fine-tune tạo context, candidate và proposal ở đường chạy online. E2E kiểm chứng proposal với source closure rồi mới phân loại quyền submit. Kết quả E2E có thể nuôi vòng cải thiện RAG/fine-tune cho phiên bản kế tiếp, nhưng không được sửa ngược đáp án của run hiện tại.
+      </p>
+      <div class="meta-row" aria-label="architecture principles">
+        <span class="tag">DATA / QUESTION → SUBMISSION</span>
+        <span class="tag focal">E2E = AUTHORITY GATE</span>
+        <span class="tag">OFFLINE LOOP = NEXT VERSION</span>
+      </div>
+    </header>
+
+    <section aria-labelledby="diagram-heading">
+      <p class="section-kicker">ONLINE RUN + OFFLINE IMPROVEMENT</p>
+      <h2 id="diagram-heading" style="font: 400 32px/1.08 var(--serif); margin: 0;">Một workflow, hai vòng thời gian</h2>
+      <p class="section-note">
+        Mũi tên ngang là luồng tạo submission trong run hiện tại. Nhánh dashed phía trên là bounded replan: retrieve/re-propose rồi chạy lại E2E. Vòng dashed phía dưới mới là nơi tạo phiên bản RAG/fine-tune mới sau curation và held-out evaluation.
+      </p>
+
+      <div class="diagram-shell">
+        <svg viewBox="0 0 1800 1048" role="img" aria-labelledby="aiguru_pipeline_data_to_submission_v3-title aiguru_pipeline_data_to_submission_v3-desc">
+          <title id="aiguru_pipeline_data_to_submission_v3-title">AI GURU từ data và question đến submission</title>
+          <desc id="aiguru_pipeline_data_to_submission_v3-desc">Sơ đồ cho thấy context prompt, RAG và fine-tune tạo proposal trước E2E; E2E bind source và quyết định policy trước submission, trong khi audit có thể tạo phiên bản model mới cho run tiếp theo.</desc>
+          <defs>
+            <marker id="aiguru-v3-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+            </marker>
+            <marker id="aiguru-v3-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+            </marker>
+          </defs>
+
+          <rect x="0" y="0" width="1800" height="1048" fill="var(--paper)"/>
+
+          <!-- Zones first: candidate, authority, then the offline improvement loop. -->
+          <rect x="32" y="136" width="1060" height="456" rx="8" class="zone-candidate"/>
+          <rect x="1092" y="136" width="704" height="456" rx="8" class="zone-authority"/>
+          <rect x="32" y="640" width="1764" height="280" rx="8" class="zone-offline"/>
+
+          <rect x="52" y="144" width="220" height="16" rx="2" class="zone-label-mask"/>
+          <text x="162" y="157" text-anchor="middle" class="zone-label">ONLINE / PROPOSAL</text>
+          <rect x="1248" y="144" width="220" height="16" rx="2" class="zone-label-mask"/>
+          <text x="1358" y="157" text-anchor="middle" class="zone-label">AUTHORITY / DELIVERY</text>
+          <rect x="52" y="648" width="256" height="16" rx="2" class="zone-label-mask"/>
+          <text x="180" y="661" text-anchor="middle" class="zone-label">OFFLINE / NEXT VERSION</text>
+
+          <line x1="1092" y1="136" x2="1092" y2="592" class="authority-boundary"/>
+          <rect x="1016" y="152" width="152" height="16" rx="2" class="boundary-label-mask"/>
+          <text x="1092" y="165" text-anchor="middle" class="boundary-label">AUTHORITY BOUNDARY</text>
+
+          <!-- Connectors before all node boxes. -->
+          <!-- Canonical V2 source closure is a direct reference path into E2E. -->
+          <path d="M358,220 V188 Q358,180 366,180 H1198 Q1206,180 1206,188 V220"
+                class="connector" marker-end="url(#aiguru-v3-arrow)"/>
+          <rect x="742" y="196" width="76" height="12" rx="2" class="arrow-label-mask"/>
+          <text x="780" y="205" text-anchor="middle" class="arrow-label">V2 SOURCE</text>
+
+          <!-- A failed policy result may request a bounded new proposal, never a post-proof edit. -->
+          <path d="M1418,220 V212 Q1418,204 1410,204 H790 Q782,204 782,212 V220"
+                class="connector dashed" marker-end="url(#aiguru-v3-arrow)"/>
+          <rect x="950" y="184" width="72" height="12" rx="2" class="arrow-label-mask"/>
+          <text x="986" y="193" text-anchor="middle" class="arrow-label">REPLAN</text>
+
+          <line x1="236" y1="344" x2="268" y2="344" class="connector" marker-end="url(#aiguru-v3-arrow)"/>
+          <line x1="448" y1="344" x2="480" y2="344" class="connector" marker-end="url(#aiguru-v3-arrow)"/>
+          <line x1="660" y1="344" x2="692" y2="344" class="connector" marker-end="url(#aiguru-v3-arrow)"/>
+          <line x1="872" y1="344" x2="904" y2="344" class="connector" marker-end="url(#aiguru-v3-arrow)"/>
+          <line x1="1084" y1="344" x2="1116" y2="344" class="connector accent" marker-end="url(#aiguru-v3-arrow-accent)"/>
+          <line x1="1296" y1="344" x2="1328" y2="344" class="connector" marker-end="url(#aiguru-v3-arrow)"/>
+          <line x1="1508" y1="344" x2="1540" y2="344" class="connector" marker-end="url(#aiguru-v3-arrow)"/>
+
+          <!-- E2E receipts feed offline curation; this is not a same-run authority path. -->
+          <path d="M1206,468 V596 Q1206,604 1198,604 H1008 Q1000,604 1000,612 V704"
+                class="connector dashed" marker-end="url(#aiguru-v3-arrow)"/>
+
+          <!-- Offline improvement returns only to the next proposal run. -->
+          <path d="M760,808 H648 Q640,808 640,800 V516 Q640,508 648,508 H774 Q782,508 782,500 V468"
+                class="connector dashed" marker-end="url(#aiguru-v3-arrow)"/>
+          <rect x="672" y="484" width="84" height="12" rx="2" class="arrow-label-mask"/>
+          <text x="714" y="493" text-anchor="middle" class="arrow-label">NEXT RUN</text>
+
+          <!-- Node 01 -->
+          <g class="node" transform="translate(56 220)">
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-underlay"/>
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-step"/>
+            <text x="36" y="33" text-anchor="middle" class="node-step-text">01</text>
+            <text x="16" y="64" class="node-title">DATA +</text>
+            <text x="16" y="80" class="node-title">QUESTION</text>
+            <text x="16" y="112" class="node-kicker">INPUT / IMMUTABLE</text>
+            <line x1="16" y1="128" x2="164" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">RECEIVE</text>
+            <text x="16" y="172" class="slot-text">raw tables · docs</text>
+            <text x="16" y="188" class="slot-text">question + ID</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text>
+            <text x="16" y="236" class="slot-text">typed intake</text>
+          </g>
+
+          <!-- Node 02 -->
+          <g class="node" transform="translate(268 220)">
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-underlay"/>
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-step"/>
+            <text x="36" y="33" text-anchor="middle" class="node-step-text">02</text>
+            <text x="16" y="64" class="node-title">SOURCE</text>
+            <text x="16" y="80" class="node-title">CLOSURE</text>
+            <text x="16" y="112" class="node-kicker">CANONICAL EVIDENCE</text>
+            <line x1="16" y1="128" x2="164" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">CHECK</text>
+            <text x="16" y="172" class="slot-text">V2 + V3 manifests</text>
+            <text x="16" y="188" class="slot-text">entity · period · scope</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text>
+            <text x="16" y="236" class="slot-text">source manifest</text>
+          </g>
+
+          <!-- Node 03 -->
+          <g class="node" transform="translate(480 220)">
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-underlay"/>
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-step"/>
+            <text x="36" y="33" text-anchor="middle" class="node-step-text">03</text>
+            <text x="16" y="64" class="node-title">CONTEXT</text>
+            <text x="16" y="80" class="node-title">PROMPT</text>
+            <text x="16" y="112" class="node-kicker">PROMPT CONTRACT</text>
+            <line x1="16" y1="128" x2="164" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">ASSEMBLE</text>
+            <text x="16" y="172" class="slot-text">rules + question + scope</text>
+            <text x="16" y="188" class="slot-text">AST schema · ABSTAIN</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text>
+            <text x="16" y="236" class="slot-text">prompt skeleton</text>
+          </g>
+
+          <!-- Node 04 -->
+          <g class="node" transform="translate(692 220)">
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-underlay"/>
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-step"/>
+            <text x="36" y="33" text-anchor="middle" class="node-step-text">04</text>
+            <text x="16" y="64" class="node-title">RAG +</text>
+            <text x="16" y="80" class="node-title">FINE-TUNE</text>
+            <text x="16" y="112" class="node-kicker">NAVIGATION ONLY</text>
+            <line x1="16" y1="128" x2="164" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">RETRIEVE</text>
+            <text x="16" y="172" class="slot-text">lexical · dense · research</text>
+            <text x="16" y="188" class="slot-text">fine-tuned reranker</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text>
+            <text x="16" y="236" class="slot-text">context candidates</text>
+          </g>
+
+          <!-- Node 05 -->
+          <g class="node" transform="translate(904 220)">
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-underlay"/>
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-step"/>
+            <text x="36" y="33" text-anchor="middle" class="node-step-text">05</text>
+            <text x="16" y="64" class="node-title">MODEL</text>
+            <text x="16" y="80" class="node-title">PROPOSAL</text>
+            <text x="16" y="112" class="node-kicker">PROPOSAL ONLY</text>
+            <line x1="16" y1="128" x2="164" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">GENERATE</text>
+            <text x="16" y="172" class="slot-text">prompt + context</text>
+            <text x="16" y="188" class="slot-text">AST · operands · claims</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text>
+            <text x="16" y="236" class="slot-text">claim ledger</text>
+          </g>
+
+          <!-- Node 06: the one authority focal node. -->
+          <g class="node focal" transform="translate(1116 220)">
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-underlay"/>
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-step"/>
+            <text x="36" y="33" text-anchor="middle" class="node-step-text">06</text>
+            <text x="16" y="64" class="node-title">E2E PROOF</text>
+            <text x="16" y="80" class="node-title">+ DECIMAL</text>
+            <text x="16" y="112" class="node-kicker">AUTHORITY FOCAL</text>
+            <line x1="16" y1="128" x2="164" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">VERIFY</text>
+            <text x="16" y="172" class="slot-text">exact V2 cell binding</text>
+            <text x="16" y="188" class="slot-text">semantic + formula check</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text>
+            <text x="16" y="236" class="slot-text">certificate / ABSTAIN</text>
+          </g>
+
+          <!-- Node 07 -->
+          <g class="node" transform="translate(1328 220)">
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-underlay"/>
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-step"/>
+            <text x="36" y="33" text-anchor="middle" class="node-step-text">07</text>
+            <text x="16" y="64" class="node-title">POLICY</text>
+            <text x="16" y="80" class="node-title">DECISION</text>
+            <text x="16" y="112" class="node-kicker">CLAIM / POPULATION</text>
+            <line x1="16" y1="128" x2="164" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">CLASSIFY</text>
+            <text x="16" y="172" class="slot-text">VERIFIED · PARTIAL</text>
+            <text x="16" y="188" class="slot-text">UNRESOLVED · REJECTED</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text>
+            <text x="16" y="236" class="slot-text">eligible / blocked</text>
+          </g>
+
+          <!-- Node 08 -->
+          <g class="node" transform="translate(1540 220)">
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-underlay"/>
+            <rect x="0" y="0" width="180" height="248" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-step"/>
+            <text x="36" y="33" text-anchor="middle" class="node-step-text">08</text>
+            <text x="16" y="64" class="node-title">SUBMISSION</text>
+            <text x="16" y="80" class="node-title">PACKAGE</text>
+            <text x="16" y="112" class="node-kicker">DELIVERY OUTPUT</text>
+            <line x1="16" y1="128" x2="164" y2="128" class="node-rule"/>
+            <text x="16" y="152" class="slot-label">EMIT</text>
+            <text x="16" y="172" class="slot-text">authorized claims</text>
+            <text x="16" y="188" class="slot-text">CSV · ZIP · audit ledger</text>
+            <text x="16" y="216" class="slot-label">OUTPUT</text>
+            <text x="16" y="236" class="slot-text">SUBMIT / BLOCK</text>
+          </g>
+
+          <!-- Node 09: offline feedback, deliberately outside the current authority path. -->
+          <g class="node" transform="translate(760 704)">
+            <rect x="0" y="0" width="480" height="208" rx="6" class="node-underlay"/>
+            <rect x="0" y="0" width="480" height="208" rx="6" class="node-frame"/>
+            <rect x="16" y="16" width="40" height="24" rx="4" class="node-step"/>
+            <text x="36" y="33" text-anchor="middle" class="node-step-text">09</text>
+            <text x="16" y="56" class="node-title">OFFLINE IMPROVEMENT</text>
+            <text x="16" y="88" class="node-kicker">NEXT VERSION ONLY</text>
+            <line x1="16" y1="104" x2="464" y2="104" class="node-rule"/>
+            <text x="16" y="128" class="slot-label">INPUT</text>
+            <text x="16" y="148" class="slot-text">E2E receipts · human_verified</text>
+            <text x="16" y="172" class="slot-label">OUTPUT</text>
+            <text x="16" y="192" class="slot-text">curated RAG index / reranker · held-out eval</text>
+          </g>
+
+          <!-- Horizontal legend strip. -->
+          <line x1="32" y1="956" x2="1768" y2="956" class="legend-rule"/>
+          <text x="32" y="984" class="legend-key">LEGEND</text>
+          <rect x="144" y="968" width="24" height="24" rx="6" class="legend-box"/>
+          <text x="184" y="984" class="legend-text">candidate / proposal</text>
+          <rect x="420" y="968" width="24" height="24" rx="6" class="legend-box focal-box"/>
+          <text x="460" y="984" class="legend-text">E2E authority focal</text>
+          <line x1="700" y1="980" x2="748" y2="980" class="connector dashed" marker-end="url(#aiguru-v3-arrow)"/>
+          <text x="764" y="984" class="legend-text">feedback / bounded recovery</text>
+          <line x1="1112" y1="968" x2="1112" y2="992" class="authority-boundary"/>
+          <text x="1132" y="984" class="legend-text">authority boundary</text>
+          <text x="1432" y="984" class="legend-text">V2 cell replay = numeric authority</text>
+        </svg>
+      </div>
+    </section>
+
+    <section class="cards" aria-label="architecture reading guide">
+      <article class="card">
+        <p class="eyebrow">CURRENT RUN</p>
+        <h3>RAG + fine-tune trước E2E</h3>
+        <p>Retriever và reranker mở rộng coverage; model tạo AST/claim proposal. Nếu proof fail, chỉ re-query/replan có giới hạn rồi quay lại E2E.</p>
+      </article>
+      <article class="card focal">
+        <p class="eyebrow">DECISION POINT</p>
+        <h3>E2E quyết định trạng thái</h3>
+        <p>Exact-cell binding, semantic/formula proof và Decimal replay tạo Certificate hoặc ABSTAIN; policy mới chọn eligible hay blocked.</p>
+      </article>
+      <article class="card">
+        <p class="eyebrow">NEXT VERSION</p>
+        <h3>E2E nuôi cải thiện offline</h3>
+        <p>Có thể dùng receipt, failure và nhãn đã xác minh để làm hard negative, dataset hoặc index mới. Model/index mới phải chạy lại E2E.</p>
+      </article>
+    </section>
+
+    <section class="prompt-section" aria-labelledby="prompt-contract-heading">
+      <p class="section-kicker">CONTEXT PROMPT / CONTRACT</p>
+      <h2 id="prompt-contract-heading">Prompt phải nói rõ model được làm gì và không được làm gì</h2>
+      <p class="prompt-lead">
+        Prompt chỉ biến question và context đã được chọn thành một proposal có kiểu. Nó không phải evidence, không mang numeric truth và không được tự đánh dấu VERIFIED.
+      </p>
+      <div class="prompt-layout">
+        <article class="prompt-panel focal">
+          <p class="eyebrow">MODEL INPUT → MODEL OUTPUT</p>
+          <h3>Context prompt mẫu</h3>
+          <pre class="prompt-code">SYSTEM:
+Bạn là bộ lập kế hoạch truy vấn tài chính có kiểu.
+Chỉ trả JSON AST; không đoán, không tính và không tự tạo giá trị số.
+Chỉ dùng source/table/row/column reference có trong context.
+Nếu entity, period, scope, unit hoặc operand còn mơ hồ: trả ABSTAIN.
+
+QUESTION:
+question_id: {{question_id}}
+question: {{question_text}}
+task_type: {{lookup | subtract | percentage_change}}
+entity: {{entity}}
+period: {{period}}
+scope: {{scope}}
+requested_unit: {{unit}}
+
+SOURCE_CONTEXT:
+source_manifest: {{source_id + hash}}
+table_candidates: {{table_uid + section + purpose}}
+header_labels: {{labels only}}
+row_labels: {{labels only}}
+coordinate_hints: {{row/column/period references}}
+retrieval_provenance: {{route + rank + artifact hash}}
+numeric_answer: null  # numeric cell stays with V2 executor
+
+OUTPUT:
+{
+  "status": "PROPOSED | ABSTAIN",
+  "operation": "lookup | subtract | percentage_change",
+  "operands": [
+    {"table_uid": "...", "row_hint": "...", "period": "...", "scope": "..."}
+  ],
+  "citations": [{"source_id": "...", "table_uid": "...", "coordinate_hint": "..."}],
+  "reason": "..."
+}</pre>
+        </article>
+        <aside class="rule-panel">
+          <p class="eyebrow">BOUNDARY</p>
+          <h3>Model được / không được</h3>
+          <ul>
+            <li><strong>Được:</strong> chọn route, table, row, column, period; sinh AST, operands và citation hints.</li>
+            <li><strong>Không được:</strong> ghi numeric answer, tạo evidence receipt, đổi source closure hoặc tự cấp quyền submit.</li>
+            <li><strong>E2E làm tiếp:</strong> hydrate ô V2, kiểm semantics, replay Decimal và quyết định Certificate hay ABSTAIN.</li>
+            <li><strong>Đổi model/index:</strong> tạo version mới, chạy held-out evaluation và chạy lại E2E.</li>
+          </ul>
+        </aside>
+      </div>
+    </section>
+
+    <section class="improvement-section" aria-labelledby="improvement-heading">
+      <p class="section-kicker">WHAT IMPROVES / WHO DOES IT</p>
+      <h2 id="improvement-heading">Kaggle chỉ là nơi chạy; improvement đến từ dữ liệu lỗi và phép đo</h2>
+      <p class="improvement-lead">
+        Pull artifact từ Kaggle về chỉ là handoff. Một improvement hợp lệ phải chỉ ra tín hiệu đầu vào, job tạo thay đổi, artifact phiên bản mới và gate cho phép dùng nó.
+      </p>
+      <table class="improvement-table">
+        <thead>
+          <tr>
+            <th>Tín hiệu</th>
+            <th>Ai / job làm</th>
+            <th>Thay đổi tạo ra</th>
+            <th>Gate trước khi dùng</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Retrieval miss</td>
+            <td>Curriculum builder + Kaggle retriever training</td>
+            <td>Triplets, hard negatives, fine-tuned retriever hoặc dense index mới</td>
+            <td>Held-out Recall@5 và MRR@5 không thấp hơn baseline</td>
+          </tr>
+          <tr>
+            <td>Wrong ranking</td>
+            <td>Kaggle CrossEncoder training</td>
+            <td>Positive/hard-negative pairs → <code>reranker_finetuned</code></td>
+            <td>Pair accuracy/MRR + submission ablation</td>
+          </tr>
+          <tr>
+            <td>Proposal AST lỗi</td>
+            <td>QLoRA AST generator training</td>
+            <td>JSON/AST program mới; không huấn luyện để sinh số</td>
+            <td>JSON validity, AST exact match, execution/replay check</td>
+          </tr>
+          <tr>
+            <td>E2E failure</td>
+            <td>Reviewer/curator sau khi đọc receipt và source</td>
+            <td>Human-verified label, hard negative hoặc route repair; không tự động lấy ABSTAIN làm gold</td>
+            <td>Exact source grounding, provenance không conflict, version mới rồi chạy lại E2E</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>AI GURU · data/question → context prompt → RAG/fine-tune → proposal → E2E proof → policy → submission · static self-contained HTML</footer>
+  </main>
+</body>
+</html>

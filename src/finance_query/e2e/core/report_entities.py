@@ -30,6 +30,7 @@ REPORT_ENTITY_RESOLUTION_POLICY = "unique_source_title_entity_alias_question_mat
 FORMULA_ENTITY_RESOLUTION_POLICY = (
     "source_title_alias_then_exact_query_ticker_bundle_metadata_v1"
 )
+EXPLICIT_TICKER_RESOLUTION_POLICY = "unique_explicit_source_ticker_token_question_match_v1"
 MAX_SOURCE_TITLE_CHARS = 240
 
 # An issuer title must begin with an explicit organisation marker.  This keeps
@@ -206,6 +207,39 @@ def resolve_question_entity(
         "matched_canonical_entities": canonical_names,
         "matched_source_entities": sorted({str(row["source_entity"]) for row in rows}),
         "matched_document_ids": sorted({str(row["document_id"]) for row in rows}),
+        "scope_inferred": False,
+    }
+
+
+def resolve_explicit_question_ticker(
+    question: object, aliases: Iterable[Mapping[str, Any]]
+) -> dict[str, Any] | None:
+    """Resolve one uppercase ticker token already named in the question.
+
+    This is intentionally stricter than fuzzy entity matching: the token must
+    appear exactly as the source ticker, be delimited from other letters and
+    digits, and map to exactly one source-sidecar ticker.  It only completes a
+    planner entity field; it cannot infer scope or authorize numeric evidence.
+    """
+    text = str(question or "")
+    matches: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    by_ticker: defaultdict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for alias in aliases:
+        ticker = str(alias.get("ticker") or "").strip()
+        if ticker:
+            by_ticker[ticker].append(alias)
+    for ticker, rows in by_ticker.items():
+        if re.search(rf"(?<![A-Z0-9]){re.escape(ticker)}(?![A-Z0-9])", text):
+            matches[ticker].extend(rows)
+    if len(matches) != 1:
+        return None
+    ticker, rows = next(iter(matches.items()))
+    return {
+        "policy": EXPLICIT_TICKER_RESOLUTION_POLICY,
+        "ticker": ticker,
+        "matched_canonical_entities": [],
+        "matched_source_entities": [],
+        "matched_document_ids": sorted({str(row.get("document_id") or "") for row in rows}),
         "scope_inferred": False,
     }
 

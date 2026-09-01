@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_document_corpus_round2_freeze_v1",
+  "frozen_before_full_rebuild": true,
+  "seed": "vifinqa-document-round2-20260826-v1",
+  "source_contract": {
+    "research_only": true,
+    "may_materialize_answer": false,
+    "submission_eligible": false,
+    "production_index_replacement_allowed": false
+  },
+  "split": {
+    "basis": "reuse ticker split from document corpus study v1",
+    "numeric_fidelity_samples_per_stage": 1000,
+    "retrieval_queries_per_stage": 300
+  },
+  "round_2a_hypotheses": [
+    {
+      "id": "A01_FULL_BUILD_COVERAGE",
+      "question": "Một lần build mới có đọc đủ 1.973 tài liệu và tạo đủ 146.246 bảng không?",
+      "pass_rule": "reports=1973, tables=146246, failures=0"
+    },
+    {
+      "id": "A02_DETERMINISTIC_REPLAY",
+      "question": "Chạy lại từ cùng nguồn có tạo cùng số bảng và cùng digest không?",
+      "pass_rule": "replay count and canonical SHA-256 exactly match"
+    },
+    {
+      "id": "A03_STABLE_LOCATORS",
+      "question": "UID, source hash, table hash và vị trí có ổn định không?",
+      "pass_rule": "3000 held-out samples match source and table hashes"
+    },
+    {
+      "id": "A04_INTERRUPTION_SAFETY",
+      "question": "Nếu build bị ngắt, file chưa hoàn tất có bị nhận nhầm là index hợp lệ không?",
+      "pass_rule": "partial output must not appear at the final path and must lack a completion manifest"
+    },
+    {
+      "id": "A05_PREFIX_TRUNCATION_DETECTION",
+      "question": "Validator có phát hiện index chỉ là phần đầu theo thứ tự chữ cái không?",
+      "pass_rule": "known 624-document prefix is rejected"
+    },
+    {
+      "id": "A06_FULL_LEXICAL_PARITY",
+      "question": "Lexical index nghiên cứu có đúng một mục cho mỗi table asset không?",
+      "pass_rule": "asset count = lexical row count = FTS row count"
+    },
+    {
+      "id": "A07_DENSE_BUILD_FEASIBILITY",
+      "question": "Môi trường hiện tại có đủ điều kiện build dense index đầy đủ không?",
+      "pass_rule": "CUDA available or a measured CPU plan fits the frozen runtime budget"
+    },
+    {
+      "id": "A08_RESOURCE_BUDGET",
+      "question": "Full asset và lexical build có nằm trong giới hạn 10 GB và 30 phút không?",
+      "pass_rule": "combined size <=10 GiB and each completed step <=1800 seconds"
+    }
+  ],
+  "round_2b_hypotheses": [
+    {
+      "id": "B01_NUMERIC_TOKEN_FIDELITY",
+      "question": "Parser có giữ lại các token số nhìn thấy trong HTML nguồn không?",
+      "pass_rule": "set recall = 100% on 3000 frozen samples"
+    },
+    {
+      "id": "B02_HEADER_AND_SPAN_STRUCTURE",
+      "question": "Header, ô trống và ô gộp có được ghi nhận thay vì bị xóa âm thầm không?",
+      "pass_rule": "all assets carry structure metadata; rates are reported by holdout"
+    },
+    {
+      "id": "B03_SCOPE_CONTENT_CONSISTENCY",
+      "question": "Scope trong tên file có mâu thuẫn với tiêu đề bên trong không?",
+      "pass_rule": "conflict rate <=1% among documents with an explicit internal scope marker"
+    },
+    {
+      "id": "B04_SPECIAL_DOCUMENT_TAXONOMY",
+      "question": "Tài liệu aggregated, fragment và unknown có thể được giữ riêng mà không ép scope không?",
+      "pass_rule": "100% special documents remain explicitly non-binary"
+    },
+    {
+      "id": "B05_UNIT_CONTEXT_WINDOWS",
+      "question": "Cửa sổ context 200, 400, 800 hay 1600 ký tự tìm thấy đơn vị tốt nhất?",
+      "pass_rule": "report marginal coverage; retain the smallest window within 1 point of maximum"
+    },
+    {
+      "id": "B06_PERIOD_HEADER_EVIDENCE",
+      "question": "Có thể dựa vào header thực tế thay vì mặc định luôn có năm trước không?",
+      "pass_rule": "current/prior/exact-date evidence rates reported separately; no implicit fallback"
+    },
+    {
+      "id": "B07_MULTI_PAGE_CONTINUATION",
+      "question": "Có tín hiệu bảng tiếp nối qua trang cần được nối hoặc nhóm lại không?",
+      "pass_rule": "candidate continuation count and precision proxy are reported without auto-merge"
+    },
+    {
+      "id": "B08_TABLE_FUNCTION_COVERAGE",
+      "question": "Bộ nhận diện bảng cân đối, kết quả kinh doanh và lưu chuyển tiền bao phủ bao nhiêu?",
+      "pass_rule": "coverage and unknown rate reported by ticker holdout"
+    },
+    {
+      "id": "B09_NUMERIC_PREFILTER_SAFETY",
+      "question": "Bộ lọc bảng số có hạ nhầm bảng báo cáo chính không?",
+      "pass_rule": "false-exclusion proxy <=1% on recognized main-statement tables"
+    },
+    {
+      "id": "B10_EXACT_AND_TEMPLATE_DUPLICATES",
+      "question": "Ngoài bảng trùng hoàn toàn, mẫu bảng gần giống phổ biến đến đâu?",
+      "pass_rule": "exact and number-normalized template duplicate rates are reported"
+    },
+    {
+      "id": "B11_ADAPTIVE_TABLE_SIZE",
+      "question": "Chunk theo kích thước có cần thiết trên full corpus không?",
+      "pass_rule": "P95 row count / median >=3 on development and untouched"
+    },
+    {
+      "id": "B12_SOURCE_DERIVED_RETRIEVAL",
+      "question": "Lexical retrieval có tìm lại bảng nguồn từ row label chưa từng dùng không?",
+      "pass_rule": "Top-5 >=95% on development and untouched source-derived queries"
+    },
+    {
+      "id": "B13_METADATA_FILTER_ABLATION",
+      "question": "Lọc ticker, năm và scope trước retrieval giúp hay làm hại kết quả?",
+      "pass_rule": "filtered Top-1 must not regress and ambiguity must decrease"
+    },
+    {
+      "id": "B14_CONTEXT_RETRIEVAL_ABLATION",
+      "question": "Thêm context trước bảng có cải thiện retrieval so với table-only không?",
+      "pass_rule": "combined Top-5 must improve or remain equal with no Top-1 regression"
+    },
+    {
+      "id": "B15_DOCUMENT_ROUTE_LIMIT",
+      "question": "Document routing cấu trúc có thể thay thế table relevance gold không?",
+      "pass_rule": "must remain candidate-only; no accuracy claim without labels"
+    },
+    {
+      "id": "B16_SUBMISSION_LINE_LOCATOR",
+      "question": "Vị trí dòng bắt đầu của bảng có tái lập được từ raw source không?",
+      "pass_rule": "3000 samples reproduce start_line_0 and start_line_1 deterministically"
+    }
+  ]
+}

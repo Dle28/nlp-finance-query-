@@ -1,0 +1,638 @@
+{
+  "protocol": "vifinqa_multicol_semantic_diagnostic_v1",
+  "schema_version": 1,
+  "description": "Agent 3 value-blind semantic hypotheses for Q156, Q242 and Q263",
+  "targets": [
+    {
+      "question_id": 156,
+      "question": "Số dư tổng giá trị tài sản tài chính chịu rủi ro tín dụng của công ty mẹ Tập đoàn Bảo Việt (BVH) đến ngày 31 tháng 12 năm 2018 là bao nhiêu tỷ đồng?",
+      "entity": "BVH",
+      "entity_role": "parent",
+      "document_id": "BVH_financial_statements_2018_separate",
+      "internal_table_uid": "62afef781056139513680d7a69f30ad6faf8c14e1bf3e704e8727d788a4f4ab2",
+      "report_year": 2018,
+      "report_scope": "separate",
+      "local_ordinal": 58,
+      "requested_unit": "tỷ đồng",
+      "source_unit": "VND",
+      "raw_window_tail_chars": 7000,
+      "raw_header_row_indices": [0],
+      "raw_context_fragments": [
+        "Chi tiết về phân loại chất lượng",
+        "toàn bộ tài sản tài chính có liên quan đến rủi ro",
+        "tại ngày 31 tháng 12 năm 2018",
+        "Đơn vị tính: VND",
+        "Tổng cộng"
+      ],
+      "period": {
+        "end": "2018-12-31",
+        "header_role": "table_instant_context"
+      },
+      "period_context_fragments": [
+        "tại ngày 31 tháng 12 năm 2018",
+        "27.2.1 Rùi ro tín dụng"
+      ],
+      "target": {
+        "row_index": 8,
+        "row_label": "Tổng",
+        "row_role": "grand_total_all_credit_risk_exposed_financial_assets",
+        "column_index": 4,
+        "column_role": "total_across_credit_risk_buckets"
+      },
+      "parent_rows": [
+        {
+          "row_index": 2,
+          "label": "Đầu tư nấm giữ đến ngày đáo hạn"
+        },
+        {
+          "row_index": 5,
+          "label": "Các khoản phải thu"
+        }
+      ],
+      "columns": [
+        {
+          "column_index": 0,
+          "role": "row_label",
+          "semantic_label": "Nhãn dòng",
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 0
+            }
+          ],
+          "required_fragments": [],
+          "period_role": "row_dimension",
+          "unit_role": "none"
+        },
+        {
+          "column_index": 1,
+          "role": "credit_quality_not_past_due_not_impaired",
+          "semantic_label": "Chưa quá hạn và không giảm giá trị",
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 1
+            }
+          ],
+          "required_fragments": [
+            "Chưa quá hạn và không giảm giá trị"
+          ],
+          "period_role": "table_instant_context",
+          "unit_role": "VND"
+        },
+        {
+          "column_index": 2,
+          "role": "credit_quality_past_due_not_individually_impaired",
+          "semantic_label": "Quá hạn nhưng không giảm giá trị riêng lẻ",
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 2
+            }
+          ],
+          "required_fragments": [
+            "Quá hạn nhưng không giảm giá trị riêng lẻ"
+          ],
+          "period_role": "table_instant_context",
+          "unit_role": "VND"
+        },
+        {
+          "column_index": 3,
+          "role": "credit_quality_individually_impaired",
+          "semantic_label": "Bị giảm giá trị riêng lẻ (*)",
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 3
+            }
+          ],
+          "required_fragments": [
+            "Bị giảm giá trị riêng lẻ"
+          ],
+          "period_role": "table_instant_context",
+          "unit_role": "VND"
+        },
+        {
+          "column_index": 4,
+          "role": "total_across_credit_risk_buckets",
+          "semantic_label": "Tổng cộng",
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 4
+            }
+          ],
+          "required_fragments": [
+            "Tổng cộng",
+            "VND"
+          ],
+          "period_role": "table_instant_context",
+          "unit_role": "VND"
+        }
+      ],
+      "hypotheses": [
+        {
+          "hypothesis_id": "Q156-H1",
+          "claim": "Bảng phân loại chất lượng tín dụng, dòng Tổng, cột Tổng cộng",
+          "expected_status": "SUPPORTED",
+          "table_uid": "62afef781056139513680d7a69f30ad6faf8c14e1bf3e704e8727d788a4f4ab2",
+          "row_index": 8,
+          "row_label": "Tổng",
+          "column_index": 4,
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 4
+            }
+          ],
+          "column_fragments": [
+            "Tổng cộng"
+          ],
+          "evidence_fragments": [
+            "27.2.1 Rùi ro tín dụng",
+            "Chi tiết về phân loại chất lượng",
+            "Tổng cộng"
+          ],
+          "rejection_codes": []
+        },
+        {
+          "hypothesis_id": "Q156-H2",
+          "claim": "Bảng cùng mẫu năm 2017, dòng Tổng, cột Tổng cộng",
+          "expected_status": "REJECTED",
+          "table_uid": "03ed88993888e0f586bb8bfa21716158e7d541cfe90417368c9d4cea305139c3",
+          "row_index": 8,
+          "row_label": "Tổng",
+          "column_index": 4,
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 4
+            }
+          ],
+          "column_fragments": [
+            "Tổng cộng"
+          ],
+          "evidence_fragments": [
+            "tại ngày 31 tháng 12 năm 2017",
+            "27.2.1 Rùi ro tín dụng"
+          ],
+          "rejection_codes": [
+            "PERIOD_MISMATCH_2017_NOT_2018"
+          ]
+        },
+        {
+          "hypothesis_id": "Q156-H3",
+          "claim": "Bảng phân tích thời gian đáo hạn, dòng Tổng, cột Tổng cộng",
+          "expected_status": "REJECTED",
+          "table_uid": "9b934d780bee7dc255e76376fade86fec474e88f085acd68049f860115471202",
+          "row_index": 13,
+          "row_label": "Tổng",
+          "column_index": 8,
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 8
+            }
+          ],
+          "column_fragments": [
+            "Tổng cộng"
+          ],
+          "evidence_fragments": [
+            "tóm tắt thời gian đáo hạn",
+            "Đơn vị: triệu đồng",
+            "Tài sản tài chính"
+          ],
+          "rejection_codes": [
+            "WRONG_TABLE_PURPOSE_LIQUIDITY_MATURITY",
+            "SOURCE_UNIT_MISMATCH"
+          ]
+        }
+      ]
+    },
+    {
+      "question_id": 242,
+      "question": "Giá trị còn lại của tài sản vô hình của công ty mẹ MBB đến ngày 31 tháng 12 năm 2021 là bao nhiêu triệu đồng?",
+      "entity": "MBB",
+      "entity_role": "parent",
+      "document_id": "MBB_financial_statements_2021_separate",
+      "internal_table_uid": "5e38d87334bf01bef907cad4499fe0c243f2880660fc6d0486016680d6f3e9e3",
+      "report_year": 2021,
+      "report_scope": "separate",
+      "local_ordinal": 48,
+      "requested_unit": "triệu đồng",
+      "source_unit": "triệu đồng",
+      "raw_window_tail_chars": 7000,
+      "raw_header_row_indices": [0],
+      "raw_context_fragments": [
+        "16. TÀI SẢN CÓ ĐỊNH VÔ HÌNH",
+        "Biến động của tài sản cố định vô hình trong năm 2021 như sau",
+        "Giá trị còn lại",
+        "Tại ngày cuối năm",
+        "Tổng cộng triệu đồng"
+      ],
+      "period": {
+        "end": "2021-12-31",
+        "header_role": "table_instant_context"
+      },
+      "period_context_fragments": [
+        "vào ngày 31 tháng 12 năm 2021",
+        "trong năm 2021 như sau"
+      ],
+      "target": {
+        "row_index": 15,
+        "row_label": "Tại ngày cuối năm",
+        "row_role": "closing_net_book_value",
+        "column_index": 3,
+        "column_role": "total_across_intangible_asset_classes"
+      },
+      "parent_rows": [
+        {
+          "row_index": 13,
+          "label": "Giá trị còn lại"
+        }
+      ],
+      "columns": [
+        {
+          "column_index": 0,
+          "role": "row_label",
+          "semantic_label": "Nhãn dòng",
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 0
+            }
+          ],
+          "required_fragments": [],
+          "period_role": "row_dimension",
+          "unit_role": "none"
+        },
+        {
+          "column_index": 1,
+          "role": "intangible_class_land_use_rights",
+          "semantic_label": "Quyền sử dụng đất",
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 1
+            }
+          ],
+          "required_fragments": [
+            "Quyền sử dụng đất",
+            "triệu đồng"
+          ],
+          "period_role": "table_instant_context",
+          "unit_role": "triệu đồng"
+        },
+        {
+          "column_index": 2,
+          "role": "intangible_class_software",
+          "semantic_label": "Phần mềm máy vi tính",
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 2
+            }
+          ],
+          "required_fragments": [
+            "Phần mềm máy vi tính",
+            "triệu đồng"
+          ],
+          "period_role": "table_instant_context",
+          "unit_role": "triệu đồng"
+        },
+        {
+          "column_index": 3,
+          "role": "total_across_intangible_asset_classes",
+          "semantic_label": "Tổng cộng",
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 3
+            }
+          ],
+          "required_fragments": [
+            "Tổng cộng",
+            "triệu đồng"
+          ],
+          "period_role": "table_instant_context",
+          "unit_role": "triệu đồng"
+        }
+      ],
+      "hypotheses": [
+        {
+          "hypothesis_id": "Q242-H1",
+          "claim": "Bảng tài sản cố định vô hình năm 2021, nhóm Giá trị còn lại, dòng Tại ngày cuối năm, cột Tổng cộng",
+          "expected_status": "SUPPORTED",
+          "table_uid": "5e38d87334bf01bef907cad4499fe0c243f2880660fc6d0486016680d6f3e9e3",
+          "row_index": 15,
+          "row_label": "Tại ngày cuối năm",
+          "column_index": 3,
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 3
+            }
+          ],
+          "column_fragments": [
+            "Tổng cộng"
+          ],
+          "evidence_fragments": [
+            "16. TÀI SẢN CÓ ĐỊNH VÔ HÌNH",
+            "trong năm 2021 như sau",
+            "Giá trị còn lại"
+          ],
+          "rejection_codes": []
+        },
+        {
+          "hypothesis_id": "Q242-H2",
+          "claim": "Bảng cùng thuyết minh nhưng biến động năm 2020",
+          "expected_status": "REJECTED",
+          "table_uid": "df61e7ae34f2710602f21323bd6d89daf7a2d927370c5e71fc92930682ad7d6d",
+          "row_index": 14,
+          "row_label": "Tại ngày cuối năm",
+          "column_index": 3,
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 3
+            }
+          ],
+          "column_fragments": [
+            "Tổng cộng"
+          ],
+          "evidence_fragments": [
+            "trong năm 2020 như sau",
+            "Giá trị còn lại"
+          ],
+          "rejection_codes": [
+            "PERIOD_MISMATCH_2020_NOT_2021"
+          ]
+        },
+        {
+          "hypothesis_id": "Q242-H3",
+          "claim": "Dòng Số dư cuối năm trong nhóm Nguyên giá hoặc Hao mòn lũy kế",
+          "expected_status": "REJECTED",
+          "table_uid": "5e38d87334bf01bef907cad4499fe0c243f2880660fc6d0486016680d6f3e9e3",
+          "row_index": 6,
+          "row_label": "Số dư cuối năm",
+          "column_index": 3,
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 3
+            }
+          ],
+          "column_fragments": [
+            "Tổng cộng"
+          ],
+          "evidence_fragments": [
+            "Nguyên giá",
+            "Số dư cuối năm",
+            "Giá trị còn lại"
+          ],
+          "rejection_codes": [
+            "WRONG_PARENT_ROW_NET_BOOK_VALUE_NOT_COST_OR_DEPRECIATION"
+          ]
+        }
+      ]
+    },
+    {
+      "question_id": 263,
+      "question": "Giá trị hợp lý của tài sản tài chính loại FVTPL cuối năm 2019 của công ty mẹ SSI là bao nhiêu nghìn tỷ đồng?",
+      "entity": "SSI",
+      "entity_role": "parent",
+      "document_id": "SSI_financial_statements_2019_separate",
+      "internal_table_uid": "fb79b103686c9b347e3672bc740b0c3057bdb9e9f6830f0a00d80474de15fa94",
+      "report_year": 2019,
+      "report_scope": "separate",
+      "local_ordinal": 27,
+      "requested_unit": "nghìn tỷ đồng",
+      "source_unit": "VND",
+      "raw_window_tail_chars": 9000,
+      "raw_header_row_indices": [0, 1],
+      "raw_context_fragments": [
+        "7.1 Tài sản tài chính FVTPL",
+        "Đơn vị tính: VND",
+        "Số cuối năm",
+        "Giá trị hợp lý",
+        "Số đầu năm",
+        "Tổng cộng"
+      ],
+      "period": {
+        "end": "2019-12-31",
+        "header_role": "closing"
+      },
+      "period_context_fragments": [
+        "tại ngày 31 tháng 12 năm 2019",
+        "7.1 Tài sản tài chính FVTPL"
+      ],
+      "target": {
+        "row_index": 26,
+        "row_label": "Tổng cộng",
+        "row_role": "grand_total_fvtpl_assets",
+        "column_index": 2,
+        "column_role": "closing_fair_value"
+      },
+      "parent_rows": [],
+      "columns": [
+        {
+          "column_index": 0,
+          "role": "row_label",
+          "semantic_label": "Nhãn dòng",
+          "header_source_cells": [],
+          "required_fragments": [],
+          "period_role": "row_dimension",
+          "unit_role": "none"
+        },
+        {
+          "column_index": 1,
+          "role": "closing_book_cost",
+          "semantic_label": "Số cuối năm · Giá gốc",
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 1
+            },
+            {
+              "row_index": 1,
+              "column_index": 1
+            }
+          ],
+          "required_fragments": [
+            "Số cuối năm",
+            "Giá gốc"
+          ],
+          "period_role": "closing",
+          "unit_role": "VND"
+        },
+        {
+          "column_index": 2,
+          "role": "closing_fair_value",
+          "semantic_label": "Số cuối năm · Giá trị hợp lý",
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 1
+            },
+            {
+              "row_index": 1,
+              "column_index": 2
+            }
+          ],
+          "required_fragments": [
+            "Số cuối năm",
+            "Giá trị hợp lý"
+          ],
+          "period_role": "closing",
+          "unit_role": "VND"
+        },
+        {
+          "column_index": 3,
+          "role": "opening_book_cost",
+          "semantic_label": "Số đầu năm · Giá gốc",
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 3
+            },
+            {
+              "row_index": 1,
+              "column_index": 3
+            }
+          ],
+          "required_fragments": [
+            "Số đầu năm",
+            "Giá gốc"
+          ],
+          "period_role": "opening",
+          "unit_role": "VND"
+        },
+        {
+          "column_index": 4,
+          "role": "opening_fair_value",
+          "semantic_label": "Số đầu năm · Giá trị hợp lý",
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 3
+            },
+            {
+              "row_index": 1,
+              "column_index": 4
+            }
+          ],
+          "required_fragments": [
+            "Số đầu năm",
+            "Giá trị hợp lý"
+          ],
+          "period_role": "opening",
+          "unit_role": "VND"
+        }
+      ],
+      "hypotheses": [
+        {
+          "hypothesis_id": "Q263-H1",
+          "claim": "Bảng note 7.1 FVTPL, dòng Tổng cộng, cột Số cuối năm · Giá trị hợp lý",
+          "expected_status": "SUPPORTED",
+          "table_uid": "fb79b103686c9b347e3672bc740b0c3057bdb9e9f6830f0a00d80474de15fa94",
+          "row_index": 26,
+          "row_label": "Tổng cộng",
+          "column_index": 2,
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 1
+            },
+            {
+              "row_index": 1,
+              "column_index": 2
+            }
+          ],
+          "column_fragments": [
+            "Số cuối năm",
+            "Giá trị hợp lý"
+          ],
+          "evidence_fragments": [
+            "7.1 Tài sản tài chính FVTPL",
+            "Số cuối năm",
+            "Giá trị hợp lý"
+          ],
+          "rejection_codes": []
+        },
+        {
+          "hypothesis_id": "Q263-H2",
+          "claim": "Dòng Tổng cộng nhưng lấy Giá gốc cuối năm",
+          "expected_status": "REJECTED",
+          "table_uid": "fb79b103686c9b347e3672bc740b0c3057bdb9e9f6830f0a00d80474de15fa94",
+          "row_index": 26,
+          "row_label": "Tổng cộng",
+          "column_index": 1,
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 1
+            },
+            {
+              "row_index": 1,
+              "column_index": 1
+            }
+          ],
+          "column_fragments": [
+            "Số cuối năm",
+            "Giá gốc"
+          ],
+          "evidence_fragments": [
+            "7.1 Tài sản tài chính FVTPL",
+            "Giá gốc"
+          ],
+          "rejection_codes": [
+            "MEASUREMENT_BASIS_BOOK_COST_NOT_FAIR_VALUE"
+          ]
+        },
+        {
+          "hypothesis_id": "Q263-H3",
+          "claim": "Dòng Tổng cộng, giá trị hợp lý nhưng cột Số đầu năm",
+          "expected_status": "REJECTED",
+          "table_uid": "fb79b103686c9b347e3672bc740b0c3057bdb9e9f6830f0a00d80474de15fa94",
+          "row_index": 26,
+          "row_label": "Tổng cộng",
+          "column_index": 4,
+          "header_source_cells": [
+            {
+              "row_index": 0,
+              "column_index": 3
+            },
+            {
+              "row_index": 1,
+              "column_index": 4
+            }
+          ],
+          "column_fragments": [
+            "Số đầu năm",
+            "Giá trị hợp lý"
+          ],
+          "evidence_fragments": [
+            "7.1 Tài sản tài chính FVTPL",
+            "Số đầu năm",
+            "Giá trị hợp lý"
+          ],
+          "rejection_codes": [
+            "PERIOD_ROLE_OPENING_NOT_CLOSING"
+          ]
+        }
+      ]
+    }
+  ],
+  "source_contract": {
+    "research_only": true,
+    "candidate_only": true,
+    "evidence_eligible": false,
+    "may_authorize_evidence": false,
+    "may_materialize_answer": false,
+    "may_execute_formula": false,
+    "may_select_final_column": false,
+    "promotion_allowed": false,
+    "training_eligible": false,
+    "submission_eligible": false
+  }
+}

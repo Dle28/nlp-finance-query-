@@ -10,11 +10,21 @@ from typing import Any, Mapping
 
 import yaml
 
-from ..decimal_sandbox import DecimalSandboxPolicy, SandboxViolation, execute_decimal_ast
+from ..decimal_sandbox import (
+    DecimalSandboxPolicy,
+    SandboxViolation,
+    execute_decimal_ast,
+    execute_unique_period_extreme,
+)
 from .numeric_cell_tokens import (
     NumericCellTokenError,
     load_numeric_cell_tokens,
     verify_operand_token,
+)
+from .currency_units import (
+    CurrencyUnitContractError,
+    validate_output_divisor,
+    validate_source_multiplier,
 )
 
 
@@ -37,7 +47,7 @@ def rows(path: Path) -> list[dict[str, Any]]:
 
 def contract() -> dict[str, bool]:
     return {
-        "research_only": True,
+        "answer_output_allowed": False,
         "evidence_eligible": False,
         "training_eligible": False,
         "submission_eligible": False,
@@ -223,8 +233,11 @@ def run(
                         token_ids.append(str(token.get("token_id") or ""))
                     try:
                         raw = Decimal(decimal_literal)
-                        multiplier = Decimal(str(operand["source_to_vnd_multiplier"]))
-                    except (InvalidOperation, KeyError):
+                        multiplier = validate_source_multiplier(
+                            source_unit=operand.get("source_unit"),
+                            multiplier=operand["source_to_vnd_multiplier"],
+                        )
+                    except (CurrencyUnitContractError, InvalidOperation, KeyError):
                         bad.append("NUMERIC_OR_UNIT_INVALID")
                         continue
                     if kind != "currency":
@@ -321,14 +334,14 @@ def run(
                     )
                     continue
                 try:
-                    divisor = Decimal(str(request["vnd_to_output_divisor"]))
+                    divisor = validate_output_divisor(request)
                     conversion_result = execute_decimal_ast(
                         {"op": "divide", "args": ["base", "divisor"]},
                         {"base": base, "divisor": divisor},
                         policy=sandbox_policy,
                     )
                     converted = conversion_result.value
-                except (DivisionByZero, InvalidOperation, SandboxViolation):
+                except (CurrencyUnitContractError, DivisionByZero, InvalidOperation, SandboxViolation):
                     stage_status.append("execution_abstained")
                     traces.append(
                         {
@@ -412,17 +425,43 @@ def run(
                             expected_binding_args.append(
                                 f"q{record['question_id']}:stage:{stage_id}:role:{operands[0].get('role')}"
                             )
+                composition_operator = (
+                    str(operation_ast.get("op") or "")
+                    if isinstance(operation_ast, Mapping)
+                    else ""
+                )
+                composition_mode = str(controlled_graph.get("composition_mode") or "cross_entity_v1")
+                selector_mode = composition_mode == "same_entity_multi_period_argmax_v1"
+                valid_arity = (
+                    (composition_operator == "subtract" and len(stage_order or []) == 2)
+                    or (composition_operator == "mean" and 2 <= len(stage_order or []) <= sandbox_policy.max_operands)
+                    or (
+                        composition_operator == "arg_extreme_period"
+                        and selector_mode
+                        and 2 <= len(stage_order or []) <= sandbox_policy.max_operands
+                        and operation_ast.get("direction") == "max"
+                    )
+                )
                 graph_valid = (
                     graph_protocol == "vifinqa_controlled_composition_graph_v1"
                     and isinstance(stage_order, list)
-                    and len(stage_order) == 2
-                    and len(set(map(str, stage_order))) == 2
-                    and operation_ast == {"op": "subtract", "args": stage_order}
+                    and valid_arity
+                    and len(set(map(str, stage_order))) == len(stage_order)
+                    and operation_ast
+                    == (
+                        {"op": "arg_extreme_period", "direction": "max", "args": stage_order}
+                        if selector_mode
+                        else {"op": composition_operator, "args": stage_order}
+                    )
                     and set(map(str, stage_order)) == set(stage_base_values)
                     and isinstance(binding_operation_ast, Mapping)
-                    and binding_operation_ast.get("op") == "subtract"
+                    and binding_operation_ast.get("op") == composition_operator
                     and isinstance(binding_operation_ast.get("args"), list)
                     and binding_operation_ast.get("args") == expected_binding_args
+                    and (
+                        not selector_mode
+                        or binding_operation_ast.get("direction") == "max"
+                    )
                 )
                 if overall != "execution_replay_ready":
                     composition_trace = {
@@ -441,22 +480,41 @@ def run(
                 else:
                     request = record.get("requested_output_unit")
                     try:
-                        if not isinstance(request, Mapping) or request.get("kind") != "currency":
-                            raise ValueError("composition output kind is not currency")
-                        composition_result = execute_decimal_ast(
-                            operation_ast,
-                            stage_base_values,
-                            policy=sandbox_policy,
-                        )
-                        composition_conversion = execute_decimal_ast(
-                            {"op": "divide", "args": ["base", "divisor"]},
-                            {
-                                "base": composition_result.value,
-                                "divisor": Decimal(str(request["vnd_to_output_divisor"])),
-                            },
-                            policy=sandbox_policy,
-                        )
-                    except (DivisionByZero, InvalidOperation, KeyError, SandboxViolation, TypeError, ValueError):
+                        if selector_mode:
+                            if not isinstance(request, Mapping) or request.get("kind") != "period":
+                                raise ValueError("period selector output kind is invalid")
+                            stage_periods = controlled_graph.get("stage_periods")
+                            if not isinstance(stage_periods, Mapping):
+                                raise ValueError("period selector stage periods are missing")
+                            normalized_periods = {
+                                str(stage_id): int(stage_periods[str(stage_id)])
+                                for stage_id in stage_order
+                            }
+                            composition_result = execute_unique_period_extreme(
+                                stage_order=[str(stage_id) for stage_id in stage_order],
+                                stage_values=stage_base_values,
+                                stage_periods=normalized_periods,
+                                direction="max",
+                                policy=sandbox_policy,
+                            )
+                            composition_conversion = composition_result
+                        else:
+                            if not isinstance(request, Mapping) or request.get("kind") != "currency":
+                                raise ValueError("composition output kind is not currency")
+                            composition_result = execute_decimal_ast(
+                                operation_ast,
+                                stage_base_values,
+                                policy=sandbox_policy,
+                            )
+                            composition_conversion = execute_decimal_ast(
+                                {"op": "divide", "args": ["base", "divisor"]},
+                                {
+                                    "base": composition_result.value,
+                                    "divisor": validate_output_divisor(request),
+                                },
+                                policy=sandbox_policy,
+                            )
+                    except (CurrencyUnitContractError, DivisionByZero, InvalidOperation, KeyError, SandboxViolation, TypeError, ValueError):
                         composition_trace = {
                             "stage_id": controlled_graph.get("final_node_id"),
                             "status": "execution_abstained",
@@ -470,7 +528,11 @@ def run(
                             "execution_kind": "controlled_cross_stage_composition",
                             "operation_ast": binding_operation_ast,
                             "operation_ast_sha256": canonical_sha(binding_operation_ast),
-                            "raw_formula_base_vnd_decimal": format(composition_result.value, "f"),
+                            **(
+                                {"selected_period": int(composition_result.value)}
+                                if selector_mode
+                                else {"raw_formula_base_vnd_decimal": format(composition_result.value, "f")}
+                            ),
                             "converted_output_decimal": format(composition_conversion.value, "f"),
                             "requested_output_unit": request,
                             "stage_order": stage_order,

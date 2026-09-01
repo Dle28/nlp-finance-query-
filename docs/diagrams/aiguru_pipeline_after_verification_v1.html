@@ -1,0 +1,1004 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI GURU — pipeline từ discovery đến certificate</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper: #f5f5f5;
+      --paper-2: #ececec;
+      --white: #ffffff;
+      --ink: #2d3142;
+      --muted: #4f5d75;
+      --soft: #7a8399;
+      --rule: rgba(45, 49, 66, .12);
+      --rule-solid: #bfc0c0;
+      --accent: #eb6c36;
+      --accent-tint: rgba(235, 108, 54, .08);
+      --link: #2e5aa8;
+      --sans: "Geist", system-ui, sans-serif;
+      --serif: "Instrument Serif", Georgia, serif;
+      --mono: "Geist Mono", ui-monospace, monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+    }
+    main {
+      max-width: 2160px;
+      margin: 0 auto;
+      padding: 52px 40px 72px;
+    }
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--soft);
+      font: 500 8px/1.4 var(--mono);
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    h1 {
+      max-width: 1120px;
+      margin: 0;
+      font: 400 clamp(36px, 4vw, 56px)/1.02 var(--serif);
+      letter-spacing: -.02em;
+    }
+    .lead {
+      max-width: 1040px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.65;
+    }
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 24px 0 0;
+    }
+    .tag {
+      padding: 8px 12px;
+      border: 1px solid var(--rule-solid);
+      border-radius: 4px;
+      background: var(--white);
+      color: var(--muted);
+      font: 500 11px/1 var(--mono);
+    }
+    .tag.focal {
+      border-color: var(--accent);
+      background: var(--accent-tint);
+      color: var(--accent);
+    }
+    section { margin-top: 56px; }
+    .section-kicker {
+      margin: 0 0 8px;
+      color: var(--soft);
+      font: 500 8px/1.4 var(--mono);
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    h2 {
+      margin: 0;
+      font: 400 32px/1.08 var(--serif);
+    }
+    .section-note {
+      max-width: 1160px;
+      margin: 12px 0 20px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .diagram-shell {
+      overflow-x: auto;
+      padding: 0;
+    }
+    .diagram-shell svg {
+      display: block;
+      width: 100%;
+      min-width: 2048px;
+      height: auto;
+    }
+    .diagram-shell svg text {
+      font-family: var(--sans);
+      fill: var(--ink);
+    }
+    .diagram-shell svg .svg-mono { font-family: var(--mono); }
+    .diagram-shell svg .svg-micro {
+      fill: var(--soft);
+      font-size: 8px;
+      letter-spacing: .12em;
+    }
+    .diagram-shell svg .phase-claim {
+      fill: rgba(45, 49, 66, .035);
+      stroke: rgba(45, 49, 66, .24);
+      stroke-width: 1;
+      stroke-dasharray: 4 4;
+    }
+    .diagram-shell svg .phase-authority {
+      fill: rgba(45, 49, 66, .08);
+      stroke: var(--ink);
+      stroke-width: 1;
+    }
+    .diagram-shell svg .phase-label {
+      fill: var(--muted);
+      font-size: 8px;
+      font-weight: 500;
+      letter-spacing: .08em;
+    }
+    .diagram-shell svg .authority-boundary {
+      stroke: var(--accent);
+      stroke-width: 1;
+      stroke-dasharray: 4 4;
+    }
+    .diagram-shell svg .connector {
+      fill: none;
+      stroke: var(--muted);
+      stroke-width: 1;
+    }
+    .diagram-shell svg .connector.focal {
+      stroke: var(--accent);
+      stroke-width: 1.2;
+    }
+    .diagram-shell svg .node-frame {
+      fill: var(--white);
+      stroke: rgba(45, 49, 66, .28);
+      stroke-width: 1;
+    }
+    .diagram-shell svg .node.focal .node-frame {
+      fill: var(--accent-tint);
+      stroke: var(--accent);
+      stroke-width: 1.2;
+    }
+    .diagram-shell svg .node-step {
+      fill: rgba(45, 49, 66, .12);
+    }
+    .diagram-shell svg .node.focal .node-step {
+      fill: rgba(235, 108, 54, .20);
+    }
+    .diagram-shell svg .node-step-text {
+      fill: var(--ink);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .diagram-shell svg .node.focal .node-step-text { fill: var(--accent); }
+    .diagram-shell svg .node-title {
+      fill: var(--ink);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .diagram-shell svg .node-kicker {
+      fill: var(--soft);
+      font-size: 8px;
+      letter-spacing: .08em;
+    }
+    .diagram-shell svg .node-rule,
+    .diagram-shell svg .legend-rule {
+      stroke: var(--rule);
+      stroke-width: 1;
+    }
+    .diagram-shell svg .slot-label {
+      fill: var(--soft);
+      font-size: 8px;
+      font-weight: 500;
+      letter-spacing: .12em;
+    }
+    .diagram-shell svg .slot-text {
+      fill: var(--ink);
+      font-size: 12px;
+    }
+    .diagram-shell svg .node-chip {
+      fill: rgba(45, 49, 66, .06);
+      stroke: rgba(45, 49, 66, .14);
+      stroke-width: 1;
+    }
+    .diagram-shell svg .node-chip-text {
+      fill: var(--muted);
+      font-size: 8px;
+      font-weight: 500;
+      letter-spacing: .08em;
+    }
+    .diagram-shell svg .policy-row rect {
+      fill: rgba(45, 49, 66, .045);
+      stroke: rgba(45, 49, 66, .12);
+      stroke-width: 1;
+    }
+    .diagram-shell svg .policy-key {
+      fill: var(--ink);
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: .04em;
+    }
+    .diagram-shell svg .policy-desc {
+      fill: var(--muted);
+      font-size: 8px;
+    }
+    .diagram-shell svg .svg-note rect {
+      fill: var(--white);
+      stroke: rgba(45, 49, 66, .18);
+      stroke-width: 1;
+    }
+    .diagram-shell svg .svg-note-title {
+      fill: var(--accent);
+      font: 600 8px var(--mono);
+      letter-spacing: .10em;
+    }
+    .diagram-shell svg .svg-note-text {
+      fill: var(--muted);
+      font-size: 12px;
+    }
+    .diagram-shell svg .legend-key {
+      fill: var(--soft);
+      font-size: 8px;
+      font-weight: 500;
+      letter-spacing: .12em;
+    }
+    .diagram-shell svg .legend-text {
+      fill: var(--muted);
+      font-size: 12px;
+    }
+    .diagram-shell svg .legend-box {
+      fill: var(--white);
+      stroke: rgba(45, 49, 66, .28);
+      stroke-width: 1;
+    }
+    .diagram-shell svg .legend-box.focal-box {
+      fill: var(--accent-tint);
+      stroke: var(--accent);
+      stroke-width: 1.2;
+    }
+    .diagram-shell svg .legend-connector {
+      fill: none;
+      stroke: var(--muted);
+      stroke-width: 1;
+    }
+    .diagram-shell svg .legend-connector.focal-connector {
+      stroke: var(--accent);
+      stroke-width: 1.2;
+    }
+    .diagram-shell svg .legend-boundary {
+      stroke: var(--accent);
+      stroke-width: 1;
+      stroke-dasharray: 4 4;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr .85fr;
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .card {
+      min-height: 178px;
+      padding: 20px;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      background: var(--white);
+    }
+    .card.focal {
+      border-color: var(--accent);
+      background: var(--accent-tint);
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(45, 49, 66, .08);
+    }
+    .card-dot {
+      width: 7px;
+      height: 7px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+    .card-dot.coral { background: var(--accent); }
+    .card-dot.ink { background: var(--ink); }
+    .card-dot.link { background: var(--link); }
+    .card h3 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .card p, .card li {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .card p { margin: 0; }
+    .card ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+    .card li + li { margin-top: 6px; }
+    .card strong { color: var(--ink); }
+    .callout {
+      max-width: 1120px;
+      margin: 28px 0 0;
+      padding: 4px 0 4px 18px;
+      border-left: 3px solid var(--accent);
+      color: var(--ink);
+      font: italic 21px/1.45 var(--serif);
+    }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      background: var(--white);
+    }
+    table {
+      width: 100%;
+      min-width: 1040px;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--rule);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    th {
+      background: rgba(45, 49, 66, .025);
+      color: var(--muted);
+      font: 500 11px/1.4 var(--mono);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child {
+      width: 20%;
+      color: var(--ink);
+      font-weight: 600;
+    }
+    td code, pre code {
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .contract-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .contract {
+      padding: 20px;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      background: var(--white);
+    }
+    .contract h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+    .contract p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .contract p + p { margin-top: 10px; }
+    .status-table td:first-child { width: 18%; }
+    .status-table .strict { color: var(--accent); font-weight: 600; }
+    .status-table .neutral { color: var(--ink); font-weight: 600; }
+    details {
+      border-top: 1px solid var(--rule);
+    }
+    details:last-child { border-bottom: 1px solid var(--rule); }
+    summary {
+      cursor: pointer;
+      padding: 17px 0;
+      list-style: none;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::before {
+      display: inline-block;
+      width: 24px;
+      color: var(--accent);
+      content: "+";
+      font: 500 16px/1 var(--mono);
+    }
+    details[open] summary::before { content: "−"; }
+    .detail-body {
+      max-width: 1080px;
+      padding: 0 0 18px 24px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .detail-body p { margin: 0; }
+    .detail-body p + p { margin-top: 8px; }
+    pre {
+      overflow-x: auto;
+      margin: 16px 0 0;
+      padding: 16px;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      background: var(--white);
+      color: var(--ink);
+      line-height: 1.6;
+    }
+    a { color: var(--link); }
+    footer {
+      margin-top: 56px;
+      padding-top: 16px;
+      border-top: 1px solid var(--rule);
+      color: var(--soft);
+      font: 400 11px/1.6 var(--mono);
+    }
+    @media (max-width: 900px) {
+      main { padding: 32px 18px 52px; }
+      .cards, .contract-grid { grid-template-columns: 1fr; }
+      h1 { font-size: 38px; }
+      h2 { font-size: 28px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">AI GURU · Operating architecture · 2026-08-29</p>
+    <h1>Từ discovery đến một prediction có thể chứng minh được</h1>
+    <p class="lead">
+      Pipeline mới là một đường đi sản phẩm nối tiếp. Discovery và model được dùng để
+      tìm ứng viên, nhưng chỉ verification độc lập mới có quyền nâng một proposal thành
+      <strong>VERIFIED</strong>. Khi chưa đủ chứng cứ, competition vẫn giữ prediction
+      best-effort để bảo toàn coverage; strict/release vẫn fail-closed.
+    </p>
+    <div class="meta-row" aria-label="Các nguyên tắc chính">
+      <span class="tag focal">ONE PRODUCT PATH</span>
+      <span class="tag">CANDIDATE ≠ AUTHORITY</span>
+      <span class="tag">NO HARD FILTER ON COVERAGE</span>
+      <span class="tag">CERTIFICATE-BOUND VERIFIED</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="pipeline-heading">
+    <p class="section-kicker">Figure 01 · Process / stage framework</p>
+    <h2 id="pipeline-heading">Pipeline đầu-cuối sau phản biện</h2>
+    <p class="section-note">
+      Mỗi stage giữ cùng một grammar: <strong>INPUT → ACTION → OUTPUT</strong>.
+      Sáu stage bên trái chỉ tạo hoặc sắp xếp claim; ba stage bên phải chịu trách nhiệm
+      proof, policy và delivery. Mũi tên đi qua ranh giới authority là handoff dữ liệu,
+      không phải quyền cấp phép.
+    </p>
+
+    <div class="diagram-shell">
+      <svg viewBox="0 0 2048 780" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="aiguru_pipeline_after_verification_v1-title aiguru_pipeline_after_verification_v1-desc">
+        <title id="aiguru_pipeline_after_verification_v1-title">AI GURU pipeline từ discovery đến certificate</title>
+        <desc id="aiguru_pipeline_after_verification_v1-desc">Chín stage nối tiếp từ nguồn và câu hỏi qua typed plan, candidate discovery, answer proposal, kiểm chứng E2E độc lập, response policy và submission audit ledger; ranh giới authority nằm trước verifier.</desc>
+        <defs>
+          <marker id="aiguru-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="#4f5d75"/>
+          </marker>
+          <marker id="aiguru-arrow-focal" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="#eb6c36"/>
+          </marker>
+        </defs>
+
+        <rect x="0" y="0" width="2048" height="780" fill="#f5f5f5"/>
+        <text x="48" y="72" class="svg-mono svg-micro">LEFT → RIGHT · SAME SLOT GRAMMAR IN EVERY STAGE</text>
+        <text x="1960" y="72" text-anchor="end" class="svg-mono svg-micro">PROOF IS NOT IMPLIED BY RANK</text>
+
+        <rect x="48" y="104" width="1264" height="32" rx="8" class="phase phase-claim"/>
+        <text x="72" y="125" class="svg-mono phase-label">01—DISCOVERY + PROPOSAL · CANDIDATES, CLAIMS, BEST-EFFORT ANSWERS</text>
+        <rect x="1344" y="104" width="616" height="32" rx="8" class="phase phase-authority"/>
+        <text x="1368" y="125" class="svg-mono phase-label">02—AUTHORITY + DELIVERY · PROOF, POLICY, TRACE</text>
+        <line x1="1328" y1="96" x2="1328" y2="596" class="authority-boundary"/>
+
+        <!-- All connectors are intentionally emitted before every node box. -->
+        <g aria-label="Stage handoffs">
+          <line x1="232" y1="336" x2="264" y2="336" class="connector" marker-end="url(#aiguru-arrow)"/>
+          <line x1="448" y1="336" x2="480" y2="336" class="connector" marker-end="url(#aiguru-arrow)"/>
+          <line x1="664" y1="336" x2="696" y2="336" class="connector" marker-end="url(#aiguru-arrow)"/>
+          <line x1="880" y1="336" x2="912" y2="336" class="connector" marker-end="url(#aiguru-arrow)"/>
+          <line x1="1096" y1="336" x2="1128" y2="336" class="connector" marker-end="url(#aiguru-arrow)"/>
+          <line x1="1312" y1="336" x2="1344" y2="336" class="connector focal" marker-end="url(#aiguru-arrow-focal)"/>
+          <line x1="1528" y1="336" x2="1560" y2="336" class="connector focal" marker-end="url(#aiguru-arrow-focal)"/>
+          <line x1="1744" y1="336" x2="1776" y2="336" class="connector" marker-end="url(#aiguru-arrow)"/>
+        </g>
+
+        <!-- 01 -->
+        <g class="node" transform="translate(48 160)">
+          <rect width="184" height="416" rx="8" class="node-frame"/>
+          <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+          <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">1</text>
+          <text x="60" y="29" class="node-title">IMMUTABLE SOURCE</text>
+          <text x="60" y="45" class="node-title">+ QUESTION</text>
+          <text x="16" y="69" class="node-kicker svg-mono">INTAKE</text>
+          <line x1="16" y1="84" x2="168" y2="84" class="node-rule"/>
+          <text x="16" y="108" class="slot-label svg-mono">INPUT</text>
+          <text x="16" y="132" class="slot-text">V2 / V3 / raw</text>
+          <text x="16" y="148" class="slot-text">question text</text>
+          <line x1="16" y1="176" x2="168" y2="176" class="node-rule"/>
+          <text x="16" y="200" class="slot-label svg-mono">ACTION</text>
+          <text x="16" y="224" class="slot-text">freeze hashes</text>
+          <text x="16" y="240" class="slot-text">normalize request</text>
+          <line x1="16" y1="268" x2="168" y2="268" class="node-rule"/>
+          <text x="16" y="292" class="slot-label svg-mono">OUTPUT</text>
+          <text x="16" y="316" class="slot-text">source closure</text>
+          <text x="16" y="332" class="slot-text">+ question id</text>
+          <line x1="16" y1="352" x2="168" y2="352" class="node-rule"/>
+          <rect x="16" y="368" width="96" height="24" rx="8" class="node-chip"/>
+          <text x="28" y="384" class="node-chip-text svg-mono">TRUTH BASE</text>
+        </g>
+
+        <!-- 02 -->
+        <g class="node" transform="translate(264 160)">
+          <rect width="184" height="416" rx="8" class="node-frame"/>
+          <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+          <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">2</text>
+          <text x="60" y="29" class="node-title">TYPED QUESTION</text>
+          <text x="60" y="45" class="node-title">COMPILER</text>
+          <text x="16" y="69" class="node-kicker svg-mono">PLAN</text>
+          <line x1="16" y1="84" x2="168" y2="84" class="node-rule"/>
+          <text x="16" y="108" class="slot-label svg-mono">INPUT</text>
+          <text x="16" y="132" class="slot-text">frozen closure</text>
+          <text x="16" y="148" class="slot-text">request fields</text>
+          <line x1="16" y1="176" x2="168" y2="176" class="node-rule"/>
+          <text x="16" y="200" class="slot-label svg-mono">ACTION</text>
+          <text x="16" y="224" class="slot-text">entity · metric</text>
+          <text x="16" y="240" class="slot-text">period · scope · op</text>
+          <line x1="16" y1="268" x2="168" y2="268" class="node-rule"/>
+          <text x="16" y="292" class="slot-label svg-mono">OUTPUT</text>
+          <text x="16" y="316" class="slot-text">typed plan</text>
+          <text x="16" y="332" class="slot-text">+ operand groups</text>
+          <line x1="16" y1="352" x2="168" y2="352" class="node-rule"/>
+          <rect x="16" y="368" width="92" height="24" rx="8" class="node-chip"/>
+          <text x="28" y="384" class="node-chip-text svg-mono">PLAN ONLY</text>
+        </g>
+
+        <!-- 03 -->
+        <g class="node" transform="translate(480 160)">
+          <rect width="184" height="416" rx="8" class="node-frame"/>
+          <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+          <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">3</text>
+          <text x="60" y="29" class="node-title">DISCOVERY +</text>
+          <text x="60" y="45" class="node-title">RESEARCH FUSION</text>
+          <text x="16" y="69" class="node-kicker svg-mono">CANDIDATES</text>
+          <line x1="16" y1="84" x2="168" y2="84" class="node-rule"/>
+          <text x="16" y="108" class="slot-label svg-mono">INPUT</text>
+          <text x="16" y="132" class="slot-text">typed plan + indexes</text>
+          <text x="16" y="148" class="slot-text">research hints</text>
+          <line x1="16" y1="176" x2="168" y2="176" class="node-rule"/>
+          <text x="16" y="200" class="slot-label svg-mono">ACTION</text>
+          <text x="16" y="224" class="slot-text">retrieve · hydrate V2</text>
+          <text x="16" y="240" class="slot-text">fuse · dedupe · rank</text>
+          <line x1="16" y1="268" x2="168" y2="268" class="node-rule"/>
+          <text x="16" y="292" class="slot-label svg-mono">OUTPUT</text>
+          <text x="16" y="316" class="slot-text">coordinates</text>
+          <text x="16" y="332" class="slot-text">+ plan coverage</text>
+          <line x1="16" y1="352" x2="168" y2="352" class="node-rule"/>
+          <rect x="16" y="368" width="124" height="24" rx="8" class="node-chip"/>
+          <text x="28" y="384" class="node-chip-text svg-mono">RESEARCH ONLY</text>
+        </g>
+
+        <!-- 04 -->
+        <g class="node" transform="translate(696 160)">
+          <rect width="184" height="416" rx="8" class="node-frame"/>
+          <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+          <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">4</text>
+          <text x="60" y="29" class="node-title">VALIDITY +</text>
+          <text x="60" y="45" class="node-title">TOP-K RANKING</text>
+          <text x="16" y="69" class="node-kicker svg-mono">CANDIDATE GATE</text>
+          <line x1="16" y1="84" x2="168" y2="84" class="node-rule"/>
+          <text x="16" y="108" class="slot-label svg-mono">INPUT</text>
+          <text x="16" y="132" class="slot-text">candidate rows</text>
+          <text x="16" y="148" class="slot-text">+ plan / entity groups</text>
+          <line x1="16" y1="176" x2="168" y2="176" class="node-rule"/>
+          <text x="16" y="200" class="slot-label svg-mono">ACTION</text>
+          <text x="16" y="224" class="slot-text">score validity</text>
+          <text x="16" y="240" class="slot-text">keep coverage + top-k</text>
+          <line x1="16" y1="268" x2="168" y2="268" class="node-rule"/>
+          <text x="16" y="292" class="slot-label svg-mono">OUTPUT</text>
+          <text x="16" y="316" class="slot-text">ordered candidates</text>
+          <text x="16" y="332" class="slot-text">not evidence</text>
+          <line x1="16" y1="352" x2="168" y2="352" class="node-rule"/>
+          <rect x="16" y="368" width="96" height="24" rx="8" class="node-chip"/>
+          <text x="28" y="384" class="node-chip-text svg-mono">RANKING</text>
+        </g>
+
+        <!-- 05 -->
+        <g class="node" transform="translate(912 160)">
+          <rect width="184" height="416" rx="8" class="node-frame"/>
+          <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+          <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">5</text>
+          <text x="60" y="29" class="node-title">ANSWER</text>
+          <text x="60" y="45" class="node-title">PROPOSAL</text>
+          <text x="16" y="69" class="node-kicker svg-mono">BEST-EFFORT</text>
+          <line x1="16" y1="84" x2="168" y2="84" class="node-rule"/>
+          <text x="16" y="108" class="slot-label svg-mono">INPUT</text>
+          <text x="16" y="132" class="slot-text">top-k routes</text>
+          <text x="16" y="148" class="slot-text">replay / model signals</text>
+          <line x1="16" y1="176" x2="168" y2="176" class="node-rule"/>
+          <text x="16" y="200" class="slot-label svg-mono">ACTION</text>
+          <text x="16" y="224" class="slot-text">exact · staged · heuristic</text>
+          <text x="16" y="240" class="slot-text">fallback 0 allowed</text>
+          <line x1="16" y1="268" x2="168" y2="268" class="node-rule"/>
+          <text x="16" y="292" class="slot-label svg-mono">OUTPUT</text>
+          <text x="16" y="316" class="slot-text">answer proposal</text>
+          <text x="16" y="332" class="slot-text">+ route tier</text>
+          <line x1="16" y1="352" x2="168" y2="352" class="node-rule"/>
+          <rect x="16" y="368" width="92" height="24" rx="8" class="node-chip"/>
+          <text x="28" y="384" class="node-chip-text svg-mono">CLAIM</text>
+        </g>
+
+        <!-- 06 -->
+        <g class="node" transform="translate(1128 160)">
+          <rect width="184" height="416" rx="8" class="node-frame"/>
+          <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+          <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">6</text>
+          <text x="60" y="29" class="node-title">CLAIMS +</text>
+          <text x="60" y="45" class="node-title">EVIDENCE HINTS</text>
+          <text x="16" y="69" class="node-kicker svg-mono">PROPOSAL LEDGER</text>
+          <line x1="16" y1="84" x2="168" y2="84" class="node-rule"/>
+          <text x="16" y="108" class="slot-label svg-mono">INPUT</text>
+          <text x="16" y="132" class="slot-text">answer + operands</text>
+          <text x="16" y="148" class="slot-text">coordinate hints</text>
+          <line x1="16" y1="176" x2="168" y2="176" class="node-rule"/>
+          <text x="16" y="200" class="slot-label svg-mono">ACTION</text>
+          <text x="16" y="224" class="slot-text">record claims</text>
+          <text x="16" y="240" class="slot-text">preserve lineage</text>
+          <line x1="16" y1="268" x2="168" y2="268" class="node-rule"/>
+          <text x="16" y="292" class="slot-label svg-mono">OUTPUT</text>
+          <text x="16" y="316" class="slot-text">proposal record</text>
+          <text x="16" y="332" class="slot-text">→ verifier input</text>
+          <line x1="16" y1="352" x2="168" y2="352" class="node-rule"/>
+          <rect x="16" y="368" width="124" height="24" rx="8" class="node-chip"/>
+          <text x="28" y="384" class="node-chip-text svg-mono">CLAIM ONLY</text>
+        </g>
+
+        <!-- 07 focal -->
+        <g class="node focal" transform="translate(1344 160)">
+          <rect width="184" height="416" rx="8" class="node-frame"/>
+          <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+          <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">7</text>
+          <text x="60" y="29" class="node-title">INDEPENDENT</text>
+          <text x="60" y="45" class="node-title">E2E VERIFIER</text>
+          <text x="16" y="69" class="node-kicker svg-mono">AUTHORITY GATE</text>
+          <line x1="16" y1="84" x2="168" y2="84" class="node-rule"/>
+          <text x="16" y="108" class="slot-label svg-mono">INPUT</text>
+          <text x="16" y="132" class="slot-text">proposal + source</text>
+          <text x="16" y="148" class="slot-text">canonical certificate</text>
+          <line x1="16" y1="176" x2="168" y2="176" class="node-rule"/>
+          <text x="16" y="200" class="slot-label svg-mono">ACTION</text>
+          <text x="16" y="224" class="slot-text">bind → semantic</text>
+          <text x="16" y="240" class="slot-text">Decimal → certificate</text>
+          <line x1="16" y1="268" x2="168" y2="268" class="node-rule"/>
+          <text x="16" y="292" class="slot-label svg-mono">OUTPUT</text>
+          <text x="16" y="316" class="slot-text">proof status</text>
+          <text x="16" y="332" class="slot-text">+ check reasons</text>
+          <line x1="16" y1="352" x2="168" y2="352" class="node-rule"/>
+          <rect x="16" y="368" width="96" height="24" rx="8" class="node-chip"/>
+          <text x="28" y="384" class="node-chip-text svg-mono">PROOF</text>
+        </g>
+
+        <!-- 08 -->
+        <g class="node policy" transform="translate(1560 160)">
+          <rect width="184" height="416" rx="8" class="node-frame"/>
+          <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+          <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">8</text>
+          <text x="60" y="29" class="node-title">RESPONSE</text>
+          <text x="60" y="45" class="node-title">POLICY</text>
+          <text x="16" y="69" class="node-kicker svg-mono">CLASSIFY</text>
+          <line x1="16" y1="84" x2="168" y2="84" class="node-rule"/>
+          <text x="16" y="108" class="slot-label svg-mono">INPUT</text>
+          <text x="16" y="132" class="slot-text">check results</text>
+          <text x="16" y="148" class="slot-text">+ competition mode</text>
+          <line x1="16" y1="176" x2="168" y2="176" class="node-rule"/>
+          <text x="16" y="200" class="slot-label svg-mono">ACTION</text>
+          <text x="16" y="224" class="slot-text">map status</text>
+          <text x="16" y="240" class="slot-text">strict / competition</text>
+          <line x1="16" y1="268" x2="168" y2="268" class="node-rule"/>
+          <text x="16" y="292" class="slot-label svg-mono">OUTPUT</text>
+          <g class="policy-row">
+            <rect x="16" y="300" width="152" height="8" rx="4"/>
+            <text x="24" y="308" class="policy-key svg-mono">VERIFIED</text>
+            <text x="96" y="308" class="policy-desc">certificate</text>
+            <rect x="16" y="312" width="152" height="8" rx="4"/>
+            <text x="24" y="320" class="policy-key svg-mono">PARTIAL</text>
+            <text x="96" y="320" class="policy-desc">best-effort</text>
+            <rect x="16" y="324" width="152" height="8" rx="4"/>
+            <text x="24" y="332" class="policy-key svg-mono">UNRESOLVED</text>
+            <text x="112" y="332" class="policy-desc">missing</text>
+            <rect x="16" y="336" width="152" height="8" rx="4"/>
+            <text x="24" y="344" class="policy-key svg-mono">REJECTED</text>
+            <text x="104" y="344" class="policy-desc">discard claim</text>
+          </g>
+          <line x1="16" y1="352" x2="168" y2="352" class="node-rule"/>
+          <rect x="16" y="368" width="96" height="24" rx="8" class="node-chip"/>
+          <text x="28" y="384" class="node-chip-text svg-mono">POLICY</text>
+        </g>
+
+        <!-- 09 -->
+        <g class="node" transform="translate(1776 160)">
+          <rect width="184" height="416" rx="8" class="node-frame"/>
+          <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+          <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">9</text>
+          <text x="60" y="29" class="node-title">SUBMISSION +</text>
+          <text x="60" y="45" class="node-title">AUDIT LEDGER</text>
+          <text x="16" y="69" class="node-kicker svg-mono">DELIVERY</text>
+          <line x1="16" y1="84" x2="168" y2="84" class="node-rule"/>
+          <text x="16" y="108" class="slot-label svg-mono">INPUT</text>
+          <text x="16" y="132" class="slot-text">selected proposal</text>
+          <text x="16" y="148" class="slot-text">+ policy class</text>
+          <line x1="16" y1="176" x2="168" y2="176" class="node-rule"/>
+          <text x="16" y="200" class="slot-label svg-mono">ACTION</text>
+          <text x="16" y="224" class="slot-text">emit JSON + ZIP</text>
+          <text x="16" y="240" class="slot-text">replay + ledger</text>
+          <line x1="16" y1="268" x2="168" y2="268" class="node-rule"/>
+          <text x="16" y="292" class="slot-label svg-mono">OUTPUT</text>
+          <text x="16" y="316" class="slot-text">submission files</text>
+          <text x="16" y="332" class="slot-text">+ traceable audit</text>
+          <line x1="16" y1="352" x2="168" y2="352" class="node-rule"/>
+          <rect x="16" y="368" width="96" height="24" rx="8" class="node-chip"/>
+          <text x="28" y="384" class="node-chip-text svg-mono">TRACE</text>
+        </g>
+
+        <g class="svg-note">
+          <rect x="48" y="608" width="1912" height="44" rx="8"/>
+          <text x="72" y="636" class="svg-note-title">AUTHORITY BOUNDARY</text>
+          <text x="280" y="636" class="svg-note-text">Candidate coordinates, model output, numeric display and Decimal replay alone never authorize VERIFIED.</text>
+        </g>
+        <text x="48" y="684" class="svg-mono svg-micro">SIDECARS: proof_policy / llm / dense retrieval → discovery signal only · NON-PROMOTABLE</text>
+        <text x="1960" y="684" text-anchor="end" class="svg-mono svg-micro">COVERAGE: KEEP BEST-EFFORT · RELEASE: FAIL-CLOSED</text>
+
+        <g class="legend">
+          <line x1="0" y1="712" x2="2048" y2="712" class="legend-rule"/>
+          <text x="48" y="740" class="legend-key svg-mono">LEGEND</text>
+          <rect x="168" y="724" width="24" height="24" rx="8" class="legend-box"/>
+          <text x="208" y="740" class="legend-text">candidate / claim stage</text>
+          <rect x="468" y="724" width="24" height="24" rx="8" class="legend-box focal-box"/>
+          <text x="508" y="740" class="legend-text">independent authority gate</text>
+          <line x1="816" y1="736" x2="856" y2="736" class="legend-connector" marker-end="url(#aiguru-arrow)"/>
+          <text x="872" y="740" class="legend-text">ordinary handoff</text>
+          <line x1="1080" y1="736" x2="1120" y2="736" class="legend-connector focal-connector" marker-end="url(#aiguru-arrow-focal)"/>
+          <text x="1136" y="740" class="legend-text">handoff touching verifier</text>
+          <line x1="1368" y1="736" x2="1408" y2="736" class="legend-boundary"/>
+          <text x="1424" y="740" class="legend-text">authority boundary</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <article class="card focal">
+        <div class="card-header">
+          <span class="card-dot coral"></span>
+          <h3>Điểm thay đổi lớn nhất</h3>
+        </div>
+        <p>
+          Không còn hai hệ thống cùng “trả lời”. Một prediction orchestrator tạo
+          proposal; một verifier độc lập kiểm tra proposal đó. Verifier không sinh
+          câu trả lời cạnh tranh để rồi chọn theo điểm model.
+        </p>
+      </article>
+      <article class="card">
+        <div class="card-header">
+          <span class="card-dot ink"></span>
+          <h3>Quyền hạn được tách rõ</h3>
+        </div>
+        <ul>
+          <li>Retrieval, reranker và research chỉ giúp tìm đường.</li>
+          <li>Generator chỉ ghi claim, operand, formula và tọa độ gợi ý.</li>
+          <li>Canonical E2E certificate mới có thể cấp <strong>VERIFIED</strong>.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <div class="card-header">
+          <span class="card-dot link"></span>
+          <h3>Coverage không bị hy sinh</h3>
+        </div>
+        <p>
+          Competition giữ một best-effort prediction cho mọi câu hỏi. Thất bại
+          semantic làm giảm trust hoặc chuyển candidate; không làm mất dòng
+          submission. Release nghiêm ngặt vẫn từ chối nếu thiếu proof.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="stage-heading">
+    <p class="section-kicker">Reading guide · One row through the system</p>
+    <h2 id="stage-heading">Mỗi stage được phép làm gì?</h2>
+    <p class="section-note">
+      Bảng này là phần contract để tránh đọc sơ đồ theo kiểu “hễ có tọa độ là đã có
+      evidence”. Cột cuối quan trọng hơn cột giữa: nó ghi rõ quyền hạn bị cấm ở từng
+      điểm.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Stage</th>
+            <th>Artifact đi qua</th>
+            <th>Được phép làm</th>
+            <th>Không được phép làm</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1 · Immutable source + question</td>
+            <td><code>source closure + question id</code></td>
+            <td>Đóng băng hash, document/table/row/column và request gốc.</td>
+            <td>Không suy ra năm, entity hoặc đơn vị chỉ từ tên file.</td>
+          </tr>
+          <tr>
+            <td>2 · Typed question compiler</td>
+            <td><code>typed plan</code></td>
+            <td>Chuẩn hóa entity, metric, period, scope, operation và nhóm operand.</td>
+            <td>Không coi plan do model sinh là semantic proof.</td>
+          </tr>
+          <tr>
+            <td>3 · Discovery / research fusion</td>
+            <td><code>coordinates + coverage</code></td>
+            <td>Gộp retrieval, research packet, dense signal; hydrate lại từ V2; dedupe.</td>
+            <td>Không đọc số trực tiếp từ packet stale, OCR hoặc metadata candidate.</td>
+          </tr>
+          <tr>
+            <td>4 · Validity + top-k ranking</td>
+            <td><code>ordered candidate pool</code></td>
+            <td>Xếp hạng và giữ đủ entity/period/operand groups; mở rộng candidate khi cần.</td>
+            <td>Không biến validity probability thành answer authority.</td>
+          </tr>
+          <tr>
+            <td>5 · Answer proposal</td>
+            <td><code>answer proposal + route tier</code></td>
+            <td>Thử exact replay, staged result, raw recovery, formula-aware hoặc heuristic.</td>
+            <td>Không tự gắn nhãn VERIFIED; fallback 0 chỉ là prediction best-effort.</td>
+          </tr>
+          <tr>
+            <td>6 · Claims + evidence hints</td>
+            <td><code>proposal ledger</code></td>
+            <td>Lưu operand, formula, tọa độ, route, lineage và lý do chọn candidate.</td>
+            <td>Không nâng “hint” thành evidence chỉ vì nó có row/column.</td>
+          </tr>
+          <tr>
+            <td>7 · Independent E2E verifier</td>
+            <td><code>check results + certificate</code></td>
+            <td>Bind nguồn, kiểm semantic/period/scope/unit, replay AST allow-list bằng Decimal và đối chiếu certificate.</td>
+            <td>Không hỏi model để sinh answer thay thế; thiếu proof thì abstain.</td>
+          </tr>
+          <tr>
+            <td>8 · Response policy</td>
+            <td><code>VERIFIED / PARTIAL / UNRESOLVED / REJECTED</code></td>
+            <td>Ánh xạ check result theo mode competition hoặc strict/release.</td>
+            <td>Không dùng “ready”, score, routing metadata hoặc arithmetic replay để bypass gate.</td>
+          </tr>
+          <tr>
+            <td>9 · Submission + audit ledger</td>
+            <td><code>submission.json + ZIP + ledger</code></td>
+            <td>Xuất file, giữ coverage và ghi đầy đủ class, reasons, provenance, replay trace.</td>
+            <td>Không tuyên bố release/leaderboard success khi chưa có scorer hoặc proof tương ứng.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="status-heading">
+    <p class="section-kicker">Policy contract · Status is text, not color</p>
+    <h2 id="status-heading">Bốn lớp kết quả và cách đọc đúng</h2>
+    <p class="section-note">
+      Một proposal có thể hữu ích cho competition nhưng vẫn chưa đủ điều kiện phát hành.
+      Vì vậy status là một phần của artifact, không chỉ là màu trên dashboard.
+    </p>
+    <div class="table-wrap">
+      <table class="status-table">
+        <thead>
+          <tr>
+            <th>Class</th>
+            <th>Ý nghĩa</th>
+            <th>Competition</th>
+            <th>Strict / release</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="strict">VERIFIED</td>
+            <td>Proposal answer khớp cùng question với complete canonical E2E certificate.</td>
+            <td>Được dùng với mức tin cậy cao nhất.</td>
+            <td>Được phép đi tiếp nếu full-population gate cũng đạt.</td>
+          </tr>
+          <tr>
+            <td class="neutral">PARTIAL</td>
+            <td>Có một phần binding/replay/metadata hợp lệ nhưng chưa đủ semantic proof.</td>
+            <td>Giữ prediction best-effort và ghi rõ lý do.</td>
+            <td>Không authorize release.</td>
+          </tr>
+          <tr>
+            <td class="neutral">UNRESOLVED</td>
+            <td>Thiếu hoặc mâu thuẫn evidence: entity, period, unit, scope, formula hoặc source.</td>
+            <td>Giữ coverage; có thể thử candidate/route kế tiếp.</td>
+            <td>Fail-closed, không promote.</td>
+          </tr>
+          <tr>
+            <td class="neutral">REJECTED</td>
+            <td>Proposal không hợp lệ, stale, sai coordinate/value hoặc vi phạm contract.</td>
+            <td>Bỏ proposal đó; chọn candidate khác hoặc fallback policy.</td>
+            <td>Không được phát hành.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="callout">
+      “Đúng phép tính” chỉ nói rằng phép tính chạy được. “VERIFIED” phải nói thêm rằng
+      source, nghĩa semantic, period, scope, operand và lineage đều được chứng minh độc lập.
+    </p>
+  </section>
+
+  <section aria-labelledby="operations-heading">
+    <p class="section-kicker">Operations · Artifacts and commands</p>
+    <h2 id="operations-heading">Artifact thực tế của hai lệnh chính</h2>
+    <p class="section-note">
+      Hai lệnh không còn là hai pipeline trả lời cạnh tranh. Một lệnh xây proposal và
+      submission; lệnh còn lại tạo proof canonical. Certificate có thể được truyền
+      ngược vào response policy bằng một input được hash-bound.
+    </p>
+    <div class="contract-grid">
+      <article class="contract">
+        <h3><code>finance-query build-submission</code></h3>
+        <p><strong>Vai trò:</strong> prediction orchestrator / competition path.</p>
+        <p><strong>Tạo:</strong> proposal ledger, submission files, diagnostics, audit ledger.</p>
+        <p><strong>Nguyên tắc:</strong> luôn giữ một dòng prediction cho mỗi question; research và model chỉ là input để tăng recall hoặc chọn route.</p>
+        <pre><code>PYTHONPATH=.:src .venv/bin/python -m finance_query.cli build-submission \
+  --output submissions/vifinqa_primary_integrated_YYYYMMDD_rN</code></pre>
+      </article>
+      <article class="contract">
+        <h3><code>finance-query run-e2e</code></h3>
+        <p><strong>Vai trò:</strong> deterministic, hash-bound authority path.</p>
+        <p><strong>Tạo:</strong> binding, numeric-token view, Decimal execution, authorization và Answer Certificate.</p>
+        <p><strong>Nguyên tắc:</strong> thiếu semantics hoặc conflict thì <code>ABSTAIN</code>; không sinh answer thay thế cho proposal.</p>
+        <pre><code>PYTHONPATH=.:src .venv/bin/python -m finance_query.cli run-e2e \
+  --config configs/e2e/deterministic_replay_v1_locked.yaml \
+  --output-dir artifacts/runs/e2e_YYYYMMDD</code></pre>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="review-heading">
+    <p class="section-kicker">Review notes · What this architecture prevents</p>
+    <h2 id="review-heading">Phản biện còn lại</h2>
+    <div class="details-list">
+      <details open>
+        <summary>Không được nhầm “technical-ready” với “semantic-ready”</summary>
+        <div class="detail-body">
+          <p>Replay pandas/Decimal, có số ở đúng ô hoặc có route đầy đủ chỉ chứng minh một lớp kỹ thuật. Còn phải kiểm tra entity role, period, unit, scope, bảng và formula contract trước khi cấp authority.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Candidate research phải bị chặn bởi independent V2/V3 replay</summary>
+        <div class="detail-body">
+          <p>Packet research giữ UID, row, column và tín hiệu ngữ nghĩa để điều hướng. Builder hydrate lại giá trị từ bảng V2 hiện tại; packet stale, duplicate-provenance hoặc header conflict phải ở trạng thái quarantine/không promotable.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Coverage và release là hai mục tiêu khác nhau</summary>
+        <div class="detail-body">
+          <p>Competition muốn mọi question có prediction để đo khả năng trả lời. Release muốn mọi question có lineage và proof đầy đủ. Một policy class có thể thỏa coverage nhưng vẫn bị từ chối ở release gate.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Điểm yếu còn lại nằm ở semantic evidence, không phải thêm một model nữa</summary>
+        <div class="detail-body">
+          <p>Khi certificate còn ABSTAIN, hướng ưu tiên là bổ sung source/period/entity evidence và xử lý conflict có provenance. Thêm reranker hoặc calibration chỉ giúp ranking; nó không tạo ra quyền authority.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <footer>
+    AI GURU · pipeline reference · static self-contained HTML ·
+    <a href="../../ARCHITECTURE.md">ARCHITECTURE.md</a> ·
+    <a href="../PIPELINE.md">docs/PIPELINE.md</a> ·
+    generated for design review, not a release certificate
+  </footer>
+</main>
+</body>
+</html>

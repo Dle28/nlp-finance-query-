@@ -54,6 +54,34 @@ class ExecutionTests(unittest.TestCase):
             Decimal("10"),
         )
 
+    def test_typed_dimensionless_scalar_multiply(self) -> None:
+        named = {"kind": "dimensionless_scalar", "source": "named_constant", "token": "const_100"}
+        percent = {"kind": "dimensionless_scalar", "source": "percent_literal", "token": "7.5%"}
+        self.assertEqual(
+            execute_ast({"op": "scalar_multiply", "args": ["value", named]}, {"value": Decimal("2")}),
+            Decimal("200"),
+        )
+        self.assertEqual(
+            execute_ast({"op": "scalar_multiply", "args": ["value", percent]}, {"value": Decimal("200")}),
+            Decimal("15.000"),
+        )
+        self.assertEqual(validate_operation_ast({"op": "scalar_multiply", "args": ["value", named]}), [])
+
+    def test_scalar_multiply_rejects_untyped_or_malformed_literals(self) -> None:
+        self.assertIn(
+            "invalid_dimensionless_scalar:scalar_multiply",
+            validate_operation_ast({"op": "scalar_multiply", "args": ["a", "b"]}),
+        )
+        malformed = {
+            "kind": "dimensionless_scalar",
+            "source": "percent_literal",
+            "token": "7.5%",
+            "value": "0.075",
+        }
+        errors = validate_operation_ast({"op": "scalar_multiply", "args": ["a", malformed]})
+        self.assertIn("invalid_dimensionless_scalar:scalar_multiply", errors)
+        self.assertIn("ungrounded_literal_in_ast", errors)
+
     def test_unit_conversion(self) -> None:
         result = convert_unit(
             Decimal("2500"),
@@ -117,6 +145,23 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(result["result_value"], "1.2")
         self.assertEqual(result["output_unit"], "times")
         self.assertFalse(result["submission_eligible"])
+
+    def test_grounded_typed_scalar_multiply_preserves_source_unit(self) -> None:
+        tables, contexts = self.sources("120")
+        scalar = {
+            "kind": "dimensionless_scalar",
+            "source": "percent_literal",
+            "token": "7.5%",
+        }
+        result = execute_grounded_ast_shadow(
+            {"op": "scalar_multiply", "args": ["value", scalar]},
+            {"value": self.binding("120")},
+            source_tables=tables,
+            source_contexts=contexts,
+        )
+        self.assertEqual(result["status"], "shadow_complete")
+        self.assertEqual(result["result_value"], "9.000")
+        self.assertEqual(result["output_unit"], "million_vnd")
 
     def test_grounded_execution_blocks_unit_and_scope_mismatch(self) -> None:
         a = self.binding("120")

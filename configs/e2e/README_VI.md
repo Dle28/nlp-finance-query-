@@ -1,11 +1,16 @@
 # Cấu hình E2E
 
-`deterministic_replay_v1_locked.yaml` là **immutable baseline**, không phải
-candidate có coverage cao nhất. Nó trỏ đến input closure hiện hành, registry
-metric và bắt buộc các output chính byte-match baseline. Đây là config E2E
-duy nhất được version-control; historical manifests nằm trong Git history,
-không còn là config vận hành.
+deterministic_replay_v1_locked.yaml là profile vận hành canonical. Nó khai
+báo input closure, manifest và metric registry bằng path explicit; reviewer,
+LLM và research decision không nằm trong authority closure.
 
-Khi input hoặc source closure thay đổi, tạo receipt mới vào artifact directory
-mới và ghi nó vào hồ sơ audit. Không sửa manifest/receipt lịch sử để "làm cho
-chạy". Chỉ tạo config replay mới khi input lineage hoặc contract thay đổi.
+Khi input hoặc source closure thay đổi:
+
+1. cập nhật config có chủ đích hoặc tạo profile thử nghiệm ở namespace riêng;
+2. tạo một output directory mới;
+3. lưu receipt/hash để có thể replay;
+4. không sửa receipt lịch sử để làm run mới pass.
+
+Các config khác trong thư mục này chỉ được dùng khi có mục đích thử nghiệm và
+phải được ghi rõ lineage. Không thay profile canonical chỉ vì một artifact có
+tên hoặc timestamp mới hơn.

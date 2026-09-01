@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_exact_cell_human_review_forms_v1",
+  "expected_review_sample_count": 150,
+  "authorization": {
+    "review_forms_only": true,
+    "human_verified": false,
+    "may_authorize_evidence": false,
+    "may_authorize_answer": false,
+    "training_eligible": false,
+    "submission_eligible": false
+  }
+}

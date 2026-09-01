@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ViFinQA — legacy predictive pipeline (not canonical)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper:#f5f5f5; --paper-2:#ececec; --white:#fff; --ink:#2d3142;
+      --muted:#4f5d75; --soft:#7a8399; --rule:rgba(45,49,66,.12);
+      --rule-solid:#bfc0c0; --accent:#eb6c36; --accent-tint:rgba(235,108,54,.08);
+      --link:#2e5aa8; --olive:#7a8c47; --blue:#5a7d9a;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--paper);color:var(--ink);font-family:"Geist",sans-serif}
+    main{max-width:1520px;margin:0 auto;padding:48px 40px 64px}
+    .eyebrow{margin:0 0 8px;font:500 8px/1.4 "Geist Mono",monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--soft)}
+    h1{margin:0;font:400 40px/1.04 "Instrument Serif",serif;max-width:980px}
+    .lead{max-width:960px;margin:16px 0 0;color:var(--muted);font-size:16px;line-height:1.6}
+    .status{display:flex;gap:12px;flex-wrap:wrap;margin:24px 0 36px}
+    .tag{border:1px solid var(--rule-solid);border-radius:4px;padding:8px 12px;font:500 12px/1 "Geist Mono",monospace;background:var(--white)}
+    .tag.target{border-color:var(--accent);color:var(--accent);background:var(--accent-tint)}
+    section{margin-top:48px}
+    h2{font:400 28px/1.1 "Instrument Serif",serif;margin:0 0 8px}
+    .section-note{margin:0 0 20px;color:var(--muted);line-height:1.55;max-width:1080px}
+    .diagram{overflow-x:auto;border:1px solid var(--rule);border-radius:8px;background:var(--white);padding:20px}
+    svg{display:block;width:100%;min-width:1240px;height:auto}
+    .cards{display:grid;grid-template-columns:1.2fr 1fr .8fr;gap:16px;margin-top:20px}
+    .card{background:var(--white);border:1px solid var(--rule);border-radius:6px;padding:20px}
+    .card h3{font-size:16px;margin:0 0 10px}.card p,.card li{color:var(--muted);line-height:1.55;font-size:14px}
+    .card ul{padding-left:20px;margin:8px 0 0}.card strong{color:var(--ink)}
+    .card.focal{border-color:var(--accent);background:var(--accent-tint)}
+    .table-wrap{overflow-x:auto;border:1px solid var(--rule);border-radius:6px;background:var(--white)}
+    table{border-collapse:collapse;width:100%;min-width:980px}
+    th,td{padding:14px 16px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top;font-size:14px;line-height:1.5}
+    th{font:500 12px/1.4 "Geist Mono",monospace;letter-spacing:.06em;color:var(--muted);background:rgba(45,49,66,.025)}
+    tr:last-child td{border-bottom:0}.num{font-family:"Geist Mono",monospace;white-space:nowrap}
+    .callout{border-left:3px solid var(--accent);padding:4px 0 4px 16px;margin:24px 0;color:var(--ink);font:italic 20px/1.45 "Instrument Serif",serif;max-width:1080px}
+    footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--rule);font:400 12px/1.6 "Geist Mono",monospace;color:var(--soft)}
+    footer a{color:var(--link)}
+    @media(max-width:900px){main{padding:28px 18px 44px}.cards{grid-template-columns:1fr}h1{font-size:32px}}
+  </style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">ViFinQA · Legacy / exploration · 2026-08-28</p>
+  <h1>LEGACY — Pipeline luôn dự đoán — không phải operating contract</h1>
+  <p class="lead">Bản này được giữ để tham khảo ý tưởng repair loop. Kiến trúc đang vận hành là <a href="aiguru_pipeline_after_verification_v1.html">pipeline canonical từ discovery đến certificate</a>: proposal đi qua verification độc lập trước khi có thể được gọi là VERIFIED.</p>
+  <div class="status">
+    <span class="tag target">LEGACY · NOT CANONICAL</span>
+    <span class="tag">REFERENCE ONLY · repair loop</span>
+    <span class="tag">CURRENT MAP · discovery → certificate</span>
+  </div>
+
+  <section>
+    <p class="eyebrow">Figure 01 · Inference</p>
+    <h2>Luồng dự đoán đầu-cuối</h2>
+    <p class="section-note">Sáu stage dùng cùng ba ô: đầu vào, xử lý và đầu ra. Khi execution/ranking yếu, hệ thống quay lại retrieval với phạm vi rộng hơn thay vì trả “blocked”.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1440 480" role="img" aria-labelledby="predictive-title predictive-desc">
+        <title id="predictive-title">Pipeline ViFinQA luôn dự đoán cho mọi câu hỏi</title>
+        <desc id="predictive-desc">Sáu bước từ phân tích câu hỏi, truy hồi toàn corpus, chọn bảng và ô, sinh chương trình, thực thi xếp hạng đến đóng gói; một vòng sửa lỗi đưa kết quả yếu trở lại bước truy hồi.</desc>
+        <defs>
+          <marker id="p-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4f5d75"/></marker>
+          <marker id="p-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#eb6c36"/></marker>
+        </defs>
+        <rect width="1440" height="480" fill="#f5f5f5"/>
+
+        <!-- connectors first -->
+        <line x1="260" y1="216" x2="284" y2="216" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#p-arrow)"/>
+        <line x1="480" y1="216" x2="504" y2="216" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#p-arrow)"/>
+        <line x1="700" y1="216" x2="724" y2="216" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#p-arrow)"/>
+        <line x1="920" y1="216" x2="944" y2="216" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#p-arrow-accent)"/>
+        <line x1="1140" y1="216" x2="1164" y2="216" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#p-arrow-accent)"/>
+        <path d="M1040 364 V400 Q1040 408 1032 408 H388 Q380 408 380 400 V364" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5 4" marker-end="url(#p-arrow)"/>
+        <rect x="624" y="380" width="176" height="16" rx="2" fill="#f5f5f5"/>
+        <text x="712" y="392" text-anchor="middle" fill="#4f5d75" font-family="Geist Mono" font-size="8" letter-spacing=".06em">LOW SCORE → EXPAND CORPUS</text>
+
+        <!-- stage 1 -->
+        <g>
+          <rect x="64" y="64" width="196" height="300" rx="6" fill="#fff" stroke="#2d3142"/>
+          <rect x="76" y="76" width="24" height="24" rx="4" fill="rgba(45,49,66,.10)"/><text x="88" y="92" text-anchor="middle" font-family="Geist Mono" font-size="12" fill="#2d3142">1</text>
+          <text x="112" y="92" font-family="Geist" font-size="12" font-weight="600" fill="#2d3142">Hiểu câu hỏi</text>
+          <text x="76" y="112" font-family="Geist Mono" font-size="8" fill="#7a8399">QUERY PLANNER</text>
+          <line x1="64" y1="124" x2="260" y2="124" stroke="rgba(45,49,66,.12)"/>
+          <text x="76" y="144" font-family="Geist Mono" font-size="8" fill="#7a8399">INPUT</text><text x="76" y="164" font-family="Geist" font-size="12" fill="#2d3142">Câu hỏi tiếng Việt</text><text x="76" y="180" font-family="Geist Mono" font-size="8" fill="#4f5d75">id · text</text>
+          <line x1="76" y1="196" x2="248" y2="196" stroke="rgba(45,49,66,.12)"/>
+          <text x="76" y="216" font-family="Geist Mono" font-size="8" fill="#7a8399">MODEL / ACTION</text><text x="76" y="236" font-family="Geist" font-size="12" fill="#2d3142">Entity · năm · scope</text><text x="76" y="252" font-family="Geist" font-size="12" fill="#2d3142">metric · operation N-best</text>
+          <line x1="76" y1="276" x2="248" y2="276" stroke="rgba(45,49,66,.12)"/>
+          <text x="76" y="296" font-family="Geist Mono" font-size="8" fill="#7a8399">OUTPUT</text><text x="76" y="316" font-family="Geist" font-size="12" fill="#2d3142">3–5 kế hoạch có điểm</text><text x="76" y="336" font-family="Geist Mono" font-size="8" fill="#4f5d75">không loại plan yếu</text>
+        </g>
+
+        <!-- stage 2 -->
+        <g>
+          <rect x="284" y="64" width="196" height="300" rx="6" fill="#fff" stroke="#2d3142"/>
+          <rect x="296" y="76" width="24" height="24" rx="4" fill="rgba(45,49,66,.10)"/><text x="308" y="92" text-anchor="middle" font-family="Geist Mono" font-size="12" fill="#2d3142">2</text>
+          <text x="332" y="92" font-family="Geist" font-size="12" font-weight="600" fill="#2d3142">Truy hồi corpus</text>
+          <text x="296" y="112" font-family="Geist Mono" font-size="8" fill="#7a8399">HYBRID RAG</text>
+          <line x1="284" y1="124" x2="480" y2="124" stroke="rgba(45,49,66,.12)"/>
+          <text x="296" y="144" font-family="Geist Mono" font-size="8" fill="#7a8399">INPUT</text><text x="296" y="164" font-family="Geist" font-size="12" fill="#2d3142">1.973 báo cáo</text><text x="296" y="180" font-family="Geist Mono" font-size="8" fill="#4f5d75">section + table index</text>
+          <line x1="296" y1="196" x2="468" y2="196" stroke="rgba(45,49,66,.12)"/>
+          <text x="296" y="216" font-family="Geist Mono" font-size="8" fill="#7a8399">MODEL / ACTION</text><text x="296" y="236" font-family="Geist" font-size="12" fill="#2d3142">Lexical + E5 dense</text><text x="296" y="252" font-family="Geist" font-size="12" fill="#2d3142">năm y/y+1 · cả 2 scope</text>
+          <line x1="296" y1="276" x2="468" y2="276" stroke="rgba(45,49,66,.12)"/>
+          <text x="296" y="296" font-family="Geist Mono" font-size="8" fill="#7a8399">OUTPUT</text><text x="296" y="316" font-family="Geist" font-size="12" fill="#2d3142">Top-20 doc/section</text><text x="296" y="336" font-family="Geist Mono" font-size="8" fill="#4f5d75">RRF + parent diversity</text>
+        </g>
+
+        <!-- stage 3 -->
+        <g>
+          <rect x="504" y="64" width="196" height="300" rx="6" fill="#fff" stroke="#2d3142"/>
+          <rect x="516" y="76" width="24" height="24" rx="4" fill="rgba(45,49,66,.10)"/><text x="528" y="92" text-anchor="middle" font-family="Geist Mono" font-size="12" fill="#2d3142">3</text>
+          <text x="552" y="92" font-family="Geist" font-size="12" font-weight="600" fill="#2d3142">Bảng → dòng → ô</text>
+          <text x="516" y="112" font-family="Geist Mono" font-size="8" fill="#7a8399">CELL LINKER</text>
+          <line x1="504" y1="124" x2="700" y2="124" stroke="rgba(45,49,66,.12)"/>
+          <text x="516" y="144" font-family="Geist Mono" font-size="8" fill="#7a8399">INPUT</text><text x="516" y="164" font-family="Geist" font-size="12" fill="#2d3142">146.246 bảng đầy đủ</text><text x="516" y="180" font-family="Geist Mono" font-size="8" fill="#4f5d75">row path · header · context</text>
+          <line x1="516" y1="196" x2="688" y2="196" stroke="rgba(45,49,66,.12)"/>
+          <text x="516" y="216" font-family="Geist Mono" font-size="8" fill="#7a8399">MODEL / ACTION</text><text x="516" y="236" font-family="Geist" font-size="12" fill="#2d3142">Top-20 table · 10 row</text><text x="516" y="252" font-family="Geist" font-size="12" fill="#2d3142">3 cột · bảng kề/trang kề</text>
+          <line x1="516" y1="276" x2="688" y2="276" stroke="rgba(45,49,66,.12)"/>
+          <text x="516" y="296" font-family="Geist Mono" font-size="8" fill="#7a8399">OUTPUT</text><text x="516" y="316" font-family="Geist" font-size="12" fill="#2d3142">50–200 cell bindings</text><text x="516" y="336" font-family="Geist Mono" font-size="8" fill="#4f5d75">score + source locator</text>
+        </g>
+
+        <!-- stage 4 -->
+        <g>
+          <rect x="724" y="64" width="196" height="300" rx="6" fill="#fff" stroke="#2d3142"/>
+          <rect x="736" y="76" width="24" height="24" rx="4" fill="rgba(45,49,66,.10)"/><text x="748" y="92" text-anchor="middle" font-family="Geist Mono" font-size="12" fill="#2d3142">4</text>
+          <text x="772" y="92" font-family="Geist" font-size="12" font-weight="600" fill="#2d3142">Sinh chương trình</text>
+          <text x="736" y="112" font-family="Geist Mono" font-size="8" fill="#7a8399">QWEN ≤14B</text>
+          <line x1="724" y1="124" x2="920" y2="124" stroke="rgba(45,49,66,.12)"/>
+          <text x="736" y="144" font-family="Geist Mono" font-size="8" fill="#7a8399">INPUT</text><text x="736" y="164" font-family="Geist" font-size="12" fill="#2d3142">Plan + cell candidates</text><text x="736" y="180" font-family="Geist Mono" font-size="8" fill="#4f5d75">schema + unit + period</text>
+          <line x1="736" y1="196" x2="908" y2="196" stroke="rgba(45,49,66,.12)"/>
+          <text x="736" y="216" font-family="Geist Mono" font-size="8" fill="#7a8399">MODEL / ACTION</text><text x="736" y="236" font-family="Geist" font-size="12" fill="#2d3142">5–10 typed AST/Pandas</text><text x="736" y="252" font-family="Geist" font-size="12" fill="#2d3142">lookup · ratio · growth</text>
+          <line x1="736" y1="276" x2="908" y2="276" stroke="rgba(45,49,66,.12)"/>
+          <text x="736" y="296" font-family="Geist Mono" font-size="8" fill="#7a8399">OUTPUT</text><text x="736" y="316" font-family="Geist" font-size="12" fill="#2d3142">Executable beams</text><text x="736" y="336" font-family="Geist Mono" font-size="8" fill="#4f5d75">không dừng ở code lỗi</text>
+        </g>
+
+        <!-- stage 5 focal -->
+        <g>
+          <rect x="944" y="64" width="196" height="300" rx="6" fill="rgba(235,108,54,.08)" stroke="#eb6c36" stroke-width="1.2"/>
+          <rect x="956" y="76" width="24" height="24" rx="4" fill="rgba(235,108,54,.20)"/><text x="968" y="92" text-anchor="middle" font-family="Geist Mono" font-size="12" fill="#eb6c36">5</text>
+          <text x="992" y="92" font-family="Geist" font-size="12" font-weight="600" fill="#2d3142">Execute &amp; rank</text>
+          <text x="956" y="112" font-family="Geist Mono" font-size="8" fill="#eb6c36">DECISION PIVOT</text>
+          <line x1="944" y1="124" x2="1140" y2="124" stroke="rgba(235,108,54,.28)"/>
+          <text x="956" y="144" font-family="Geist Mono" font-size="8" fill="#7a8399">INPUT</text><text x="956" y="164" font-family="Geist" font-size="12" fill="#2d3142">N chương trình chạy được</text><text x="956" y="180" font-family="Geist Mono" font-size="8" fill="#4f5d75">candidate answer set</text>
+          <line x1="956" y1="196" x2="1128" y2="196" stroke="rgba(235,108,54,.28)"/>
+          <text x="956" y="216" font-family="Geist Mono" font-size="8" fill="#7a8399">MODEL / ACTION</text><text x="956" y="236" font-family="Geist" font-size="12" fill="#2d3142">Sandbox · unit · agreement</text><text x="956" y="252" font-family="Geist" font-size="12" fill="#2d3142">reranker + calibrated score</text>
+          <line x1="956" y1="276" x2="1128" y2="276" stroke="rgba(235,108,54,.28)"/>
+          <text x="956" y="296" font-family="Geist Mono" font-size="8" fill="#7a8399">OUTPUT</text><text x="956" y="316" font-family="Geist" font-size="12" fill="#2d3142">Best answer + evidence</text><text x="956" y="336" font-family="Geist Mono" font-size="8" fill="#4f5d75">risk flag ≠ blocker</text>
+        </g>
+
+        <!-- stage 6 -->
+        <g>
+          <rect x="1164" y="64" width="196" height="300" rx="6" fill="rgba(122,140,71,.06)" stroke="rgba(122,140,71,.48)"/>
+          <rect x="1176" y="76" width="24" height="24" rx="4" fill="rgba(122,140,71,.18)"/><text x="1188" y="92" text-anchor="middle" font-family="Geist Mono" font-size="12" fill="#7a8c47">6</text>
+          <text x="1212" y="92" font-family="Geist" font-size="12" font-weight="600" fill="#2d3142">Đóng gói</text>
+          <text x="1176" y="112" font-family="Geist Mono" font-size="8" fill="#7a8399">SUBMISSION</text>
+          <line x1="1164" y1="124" x2="1360" y2="124" stroke="rgba(45,49,66,.12)"/>
+          <text x="1176" y="144" font-family="Geist Mono" font-size="8" fill="#7a8399">INPUT</text><text x="1176" y="164" font-family="Geist" font-size="12" fill="#2d3142">Best candidate mỗi câu</text><text x="1176" y="180" font-family="Geist Mono" font-size="8" fill="#4f5d75">answer · docs · tables</text>
+          <line x1="1176" y1="196" x2="1348" y2="196" stroke="rgba(45,49,66,.12)"/>
+          <text x="1176" y="216" font-family="Geist Mono" font-size="8" fill="#7a8399">MODEL / ACTION</text><text x="1176" y="236" font-family="Geist" font-size="12" fill="#2d3142">CSV evidence + query</text><text x="1176" y="252" font-family="Geist" font-size="12" fill="#2d3142">schema/path/package check</text>
+          <line x1="1176" y1="276" x2="1348" y2="276" stroke="rgba(45,49,66,.12)"/>
+          <text x="1176" y="296" font-family="Geist Mono" font-size="8" fill="#7a8399">OUTPUT</text><text x="1176" y="316" font-family="Geist" font-size="12" fill="#2d3142">1.012/1.012 records</text><text x="1176" y="336" font-family="Geist Mono" font-size="8" fill="#4f5d75">JSON + data/ + ZIP</text>
+        </g>
+
+        <line x1="64" y1="444" x2="1360" y2="444" stroke="rgba(45,49,66,.12)"/>
+        <text x="64" y="464" font-family="Geist Mono" font-size="8" fill="#7a8399" letter-spacing=".14em">LEGEND</text>
+        <line x1="152" y1="460" x2="188" y2="460" stroke="#4f5d75" marker-end="url(#p-arrow)"/><text x="200" y="464" font-family="Geist Mono" font-size="8" fill="#4f5d75">handoff</text>
+        <line x1="300" y1="460" x2="336" y2="460" stroke="#4f5d75" stroke-dasharray="5 4" marker-end="url(#p-arrow)"/><text x="348" y="464" font-family="Geist Mono" font-size="8" fill="#4f5d75">repair loop</text>
+        <rect x="472" y="452" width="16" height="16" rx="4" fill="rgba(235,108,54,.08)" stroke="#eb6c36"/><text x="500" y="464" font-family="Geist Mono" font-size="8" fill="#4f5d75">decision pivot</text>
+      </svg>
+    </div>
+    <div class="cards">
+      <article class="card focal"><h3>Thay filter bằng repair policy</h3><p>Ticker/năm/scope không chắc chắn không làm câu dừng. Hệ thống thử đúng năm, năm kế tiếp, cả hợp nhất và riêng lẻ, mục lớn, bảng kề và nhiều chương trình; sau đó chọn candidate có điểm tổng hợp cao nhất.</p></article>
+      <article class="card"><h3>Hai thước đo tách biệt</h3><ul><li><strong>Prediction coverage:</strong> phải đạt 1.012/1.012.</li><li><strong>Measured accuracy:</strong> chỉ đo trên dev/test có gold.</li><li>Risk flag dùng để phân tích và ưu tiên training.</li></ul></article>
+      <article class="card"><h3>Không bịa corpus</h3><p>Mọi candidate vẫn phải trỏ đến document, table, row và column có thật. “Không chặn” không có nghĩa là cho phép tạo nguồn không tồn tại.</p></article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Figure 02 · Training factory</p>
+    <h2>Corpus và vòng huấn luyện cần xây</h2>
+    <p class="section-note">Không pretrain mô hình từ đầu. Ta dùng toàn bộ corpus để index, tạo gold tự động có thể thực thi, rồi fine-tune từng module bằng cùng một tập câu hỏi đã chia theo công ty/năm.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1440 500" role="img" aria-labelledby="training-title training-desc">
+        <title id="training-title">Vòng xây corpus và huấn luyện cho ViFinQA</title>
+        <desc id="training-desc">Năm bước từ hoàn thiện corpus, tạo gold tự động, chia dữ liệu chống rò rỉ, huấn luyện retrieval và sinh chương trình, đến đánh giá và khai thác lỗi khó.</desc>
+        <defs>
+          <marker id="t-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4f5d75"/></marker>
+          <marker id="t-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#eb6c36"/></marker>
+        </defs>
+        <rect width="1440" height="500" fill="#f5f5f5"/>
+        <line x1="296" y1="220" x2="328" y2="220" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#t-arrow)"/>
+        <line x1="552" y1="220" x2="584" y2="220" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#t-arrow)"/>
+        <line x1="808" y1="220" x2="840" y2="220" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#t-arrow-accent)"/>
+        <line x1="1064" y1="220" x2="1096" y2="220" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#t-arrow-accent)"/>
+        <path d="M1204 368 V404 Q1204 412 1196 412 H444 Q436 412 436 404 V368" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5 4" marker-end="url(#t-arrow)"/>
+        <rect x="704" y="384" width="224" height="16" rx="2" fill="#f5f5f5"/><text x="816" y="396" text-anchor="middle" font-family="Geist Mono" font-size="8" fill="#4f5d75">HARD ERRORS → NEW VERIFIED GOLD</text>
+
+        <g>
+          <rect x="72" y="72" width="224" height="296" rx="6" fill="#fff" stroke="#2d3142"/>
+          <rect x="84" y="84" width="24" height="24" rx="4" fill="rgba(45,49,66,.10)"/><text x="96" y="100" text-anchor="middle" font-family="Geist Mono" font-size="12">1</text>
+          <text x="120" y="100" font-family="Geist" font-size="12" font-weight="600">Corpus đầy đủ</text><text x="84" y="124" font-family="Geist Mono" font-size="8" fill="#7a8399">INDEX ALL · LABEL A SUBSET</text>
+          <line x1="84" y1="144" x2="284" y2="144" stroke="rgba(45,49,66,.12)"/>
+          <text x="84" y="172" font-family="Geist" font-size="16" font-weight="600">1.973 báo cáo</text><text x="84" y="196" font-family="Geist" font-size="12">146.246 bảng</text><text x="84" y="216" font-family="Geist" font-size="12">28.924 mục lớn</text><text x="84" y="236" font-family="Geist" font-size="12">≈1,68 triệu row paths</text>
+          <line x1="84" y1="260" x2="284" y2="260" stroke="rgba(45,49,66,.12)"/>
+          <text x="84" y="284" font-family="Geist Mono" font-size="8" fill="#7a8399">REQUIRED REBUILD</text><text x="84" y="308" font-family="Geist" font-size="12">Full V2/V3 exact corpus</text><text x="84" y="328" font-family="Geist Mono" font-size="8" fill="#4f5d75">current: 29.509 tables</text>
+        </g>
+
+        <g>
+          <rect x="328" y="72" width="224" height="296" rx="6" fill="#fff" stroke="#2d3142"/>
+          <rect x="340" y="84" width="24" height="24" rx="4" fill="rgba(45,49,66,.10)"/><text x="352" y="100" text-anchor="middle" font-family="Geist Mono" font-size="12">2</text>
+          <text x="376" y="100" font-family="Geist" font-size="12" font-weight="600">Tạo gold tự động</text><text x="340" y="124" font-family="Geist Mono" font-size="8" fill="#7a8399">SOURCE-DERIVED QA</text>
+          <line x1="340" y1="144" x2="540" y2="144" stroke="rgba(45,49,66,.12)"/>
+          <text x="340" y="172" font-family="Geist" font-size="12">Chọn bảng có header rõ</text><text x="340" y="192" font-family="Geist" font-size="12">Sinh câu hỏi tiếng Việt</text><text x="340" y="212" font-family="Geist" font-size="12">Sinh typed AST/Pandas</text><text x="340" y="232" font-family="Geist" font-size="12">Thực thi để lấy answer gold</text>
+          <line x1="340" y1="260" x2="540" y2="260" stroke="rgba(45,49,66,.12)"/>
+          <text x="340" y="284" font-family="Geist Mono" font-size="8" fill="#7a8399">KEEP ONLY</text><text x="340" y="308" font-family="Geist" font-size="12">Source tồn tại · query chạy</text><text x="340" y="328" font-family="Geist Mono" font-size="8" fill="#4f5d75">no closed-LLM labels</text>
+        </g>
+
+        <g>
+          <rect x="584" y="72" width="224" height="296" rx="6" fill="#fff" stroke="#2d3142"/>
+          <rect x="596" y="84" width="24" height="24" rx="4" fill="rgba(45,49,66,.10)"/><text x="608" y="100" text-anchor="middle" font-family="Geist Mono" font-size="12">3</text>
+          <text x="632" y="100" font-family="Geist" font-size="12" font-weight="600">Chia chống rò rỉ</text><text x="596" y="124" font-family="Geist Mono" font-size="8" fill="#7a8399">TICKER × YEAR HOLDOUT</text>
+          <line x1="596" y1="144" x2="796" y2="144" stroke="rgba(45,49,66,.12)"/>
+          <text x="596" y="172" font-family="Geist" font-size="16" font-weight="600">40k train</text><text x="596" y="196" font-family="Geist" font-size="12">3k development</text><text x="596" y="216" font-family="Geist" font-size="12">3k untouched test</text><text x="596" y="236" font-family="Geist" font-size="12">Không dùng 1.012 test để train</text>
+          <line x1="596" y1="260" x2="796" y2="260" stroke="rgba(45,49,66,.12)"/>
+          <text x="596" y="284" font-family="Geist Mono" font-size="8" fill="#7a8399">HOLD OUT</text><text x="596" y="308" font-family="Geist" font-size="12">company · year · wording</text><text x="596" y="328" font-family="Geist Mono" font-size="8" fill="#4f5d75">metric + composition</text>
+        </g>
+
+        <g>
+          <rect x="840" y="72" width="224" height="296" rx="6" fill="rgba(235,108,54,.08)" stroke="#eb6c36" stroke-width="1.2"/>
+          <rect x="852" y="84" width="24" height="24" rx="4" fill="rgba(235,108,54,.20)"/><text x="864" y="100" text-anchor="middle" font-family="Geist Mono" font-size="12" fill="#eb6c36">4</text>
+          <text x="888" y="100" font-family="Geist" font-size="12" font-weight="600">Huấn luyện module</text><text x="852" y="124" font-family="Geist Mono" font-size="8" fill="#eb6c36">DOMAIN ADAPTATION</text>
+          <line x1="852" y1="144" x2="1052" y2="144" stroke="rgba(235,108,54,.28)"/>
+          <text x="852" y="172" font-family="Geist" font-size="12">E5 bi-encoder</text><text x="852" y="192" font-family="Geist" font-size="12">Cross-encoder reranker</text><text x="852" y="212" font-family="Geist" font-size="12">Row/column linker</text><text x="852" y="232" font-family="Geist" font-size="12">Qwen 7B typed program SFT</text>
+          <line x1="852" y1="260" x2="1052" y2="260" stroke="rgba(235,108,54,.28)"/>
+          <text x="852" y="284" font-family="Geist Mono" font-size="8" fill="#7a8399">LEARNING CURVE</text><text x="852" y="308" font-family="Geist" font-size="12">5k → 10k → 20k → 40k</text><text x="852" y="328" font-family="Geist Mono" font-size="8" fill="#4f5d75">stop when gain &lt; 1 point</text>
+        </g>
+
+        <g>
+          <rect x="1096" y="72" width="224" height="296" rx="6" fill="rgba(90,125,154,.06)" stroke="rgba(90,125,154,.48)"/>
+          <rect x="1108" y="84" width="24" height="24" rx="4" fill="rgba(90,125,154,.18)"/><text x="1120" y="100" text-anchor="middle" font-family="Geist Mono" font-size="12" fill="#5a7d9a">5</text>
+          <text x="1144" y="100" font-family="Geist" font-size="12" font-weight="600">Đánh giá &amp; khai thác lỗi</text><text x="1108" y="124" font-family="Geist Mono" font-size="8" fill="#7a8399">METRICS + HARD MINING</text>
+          <line x1="1108" y1="144" x2="1308" y2="144" stroke="rgba(45,49,66,.12)"/>
+          <text x="1108" y="172" font-family="Geist" font-size="12">Docs/Tables MRR@5</text><text x="1108" y="192" font-family="Geist" font-size="12">Tables F2 / recall / precision</text><text x="1108" y="212" font-family="Geist" font-size="12">Execution accuracy</text><text x="1108" y="232" font-family="Geist" font-size="12">Answer accuracy</text>
+          <line x1="1108" y1="260" x2="1308" y2="260" stroke="rgba(45,49,66,.12)"/>
+          <text x="1108" y="284" font-family="Geist Mono" font-size="8" fill="#7a8399">NEXT DATA</text><text x="1108" y="308" font-family="Geist" font-size="12">False top-1 · wrong period</text><text x="1108" y="328" font-family="Geist Mono" font-size="8" fill="#4f5d75">wrong row · invalid program</text>
+        </g>
+
+        <line x1="72" y1="448" x2="1320" y2="448" stroke="rgba(45,49,66,.12)"/>
+        <text x="72" y="472" font-family="Geist Mono" font-size="8" fill="#7a8399" letter-spacing=".14em">LEGEND</text>
+        <rect x="164" y="460" width="16" height="16" rx="4" fill="rgba(235,108,54,.08)" stroke="#eb6c36"/><text x="192" y="472" font-family="Geist Mono" font-size="8" fill="#4f5d75">training pivot</text>
+        <line x1="324" y1="468" x2="360" y2="468" stroke="#4f5d75" stroke-dasharray="5 4" marker-end="url(#t-arrow)"/><text x="372" y="472" font-family="Geist Mono" font-size="8" fill="#4f5d75">hard-example loop</text>
+      </svg>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Training budget · Recommended</p>
+    <h2>Cần bao nhiêu dữ liệu?</h2>
+    <p class="section-note">Khuyến nghị là <strong>46.000 câu gold duy nhất</strong>: 40.000 train, 3.000 development và 3.000 untouched test. Cùng một câu có thể tạo nhiều negative pairs và phục vụ nhiều module, vì vậy không cộng các hàng dưới thành 150.000 câu khác nhau.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>MODULE</th><th>GOLD DUY NHẤT</th><th>DỮ LIỆU DẪN XUẤT</th><th>MỤC TIÊU</th></tr></thead>
+        <tbody>
+          <tr><td>Retriever section/table</td><td class="num">30k–40k query→positive</td><td class="num">4–8 hard negatives/query<br>≈150k–320k pairs</td><td>Docs/Tables recall, MRR@5 và giữ đủ mọi operand.</td></tr>
+          <tr><td>Row/column linker</td><td class="num">30k–40k exact cells</td><td class="num">2–5 sibling/subtotal negatives<br>≈90k–200k tuples</td><td>Phân biệt dòng cha/con, dự phòng, subtotal, năm và unit.</td></tr>
+          <tr><td>Typed Pandas/program generator</td><td class="num">20k–30k executable programs</td><td class="num">5–10 beams khi inference</td><td>Lookup, ratio, tăng trưởng, aggregation, comparison và argmax.</td></tr>
+          <tr><td>Reranker + repair policy</td><td class="num">10k–20k candidate sets</td><td class="num">wrong-year/scope/table/program</td><td>Chọn best candidate và quyết định khi nào phải mở rộng corpus.</td></tr>
+          <tr><td>Untouched evaluation</td><td class="num">3k dev + 3k test</td><td>Không augment vào train</td><td>Đo learning curve và tránh học thuộc công ty/năm/cách hỏi.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="callout">Ưu tiên số một không phải fine-tune ngay: phải đưa exact-cell corpus từ 29.509 lên đủ 146.246 bảng. Dense index đã đủ corpus, nhưng E2E hiện vẫn tính trên tập V2/V3 nhỏ hơn nhiều.</p>
+
+    <div class="cards">
+      <article class="card"><h3>MVP để kiểm tra hướng</h3><p><strong>12k train + 1k dev + 1k test.</strong> Đủ để so retrieval/reranker và xác nhận typed-program SFT có cải thiện, chưa đủ phủ tốt câu đa bảng và cách diễn đạt hiếm.</p></article>
+      <article class="card focal"><h3>Mức nên triển khai</h3><p><strong>40k train + 3k dev + 3k test.</strong> Phân bổ train: 18k lookup, 8k ratio/formula, 6k temporal/growth, 4k multi-table/entity và 4k hard repair.</p></article>
+      <article class="card"><h3>Mức mạnh hơn</h3><p><strong>80k train + 5k dev + 5k test.</strong> Chỉ mở rộng tới đây nếu learning curve 40k vẫn tăng rõ; không tăng dữ liệu chỉ để đạt một con số đẹp.</p></article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Evidence behind the estimate</p>
+    <h2>Cách sử dụng dữ liệu bên ngoài</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>NGUỒN</th><th>QUY MÔ CÔNG BỐ</th><th>CÁCH DÙNG</th></tr></thead>
+        <tbody>
+          <tr><td>FinQA · EMNLP 2021</td><td class="num">8.281 QA tài chính</td><td>Seed cho numerical program và công thức; chỉ dùng train split, chuyển schema/đơn vị sang pipeline Việt.</td></tr>
+          <tr><td>TAT-QA · ACL 2021</td><td class="num">16.552 câu · 2.757 contexts</td><td>Seed cho table+text, scale, multi-span và reasoning; giữ dev/test gốc để đánh giá ngoài.</td></tr>
+          <tr><td>Multilingual E5 · 2024</td><td class="num">pretrained trên 1B text pairs</td><td>Không train embedding từ đầu; chỉ domain fine-tune bằng 30k–40k query-positive của ViFinQA.</td></tr>
+          <tr><td>Qwen2.5 · 2024</td><td class="num">open-weight · multilingual/code</td><td>Dùng model ≤14B phát hành trước cutoff; LoRA/SFT bằng chương trình chạy được, không học từ answer test.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    TARGET DESIGN — không tuyên bố pipeline hiện đã đạt accuracy. Corpus count lấy từ artifact local: dense full-corpus 146.246 bảng / 1.973 báo cáo; V2 hiện hành 29.509 bảng / 1.620 báo cáo. Ước tính row paths suy ra từ mật độ 339.551 rows trên 29.509 bảng V2.
+  </footer>
+</main>
+</body>
+</html>

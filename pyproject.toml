@@ -11,6 +11,8 @@ requires-python = ">=3.11"
 dependencies = [
   "beautifulsoup4>=4.12",
   "lxml>=5.2",
+  "numpy>=1.26",
+  "pandas>=2.2",
   "pyyaml>=6.0",
   "tqdm>=4.66",
 ]
@@ -23,6 +25,9 @@ llm = [
   "huggingface_hub>=0.24",
   "accelerate>=1.0",
   "bitsandbytes>=0.45",
+]
+retrieval = [
+  "sentence-transformers>=3,<6",
 ]
 dev = [
   "ipywidgets>=8.1",
@@ -38,9 +43,15 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.data-files]
+"share/finance-query/scripts/e2e" = ["scripts/e2e/build_competition_submission_v1.py"]
+
 [tool.pytest.ini_options]
 # Downloaded research artifacts can contain historical test snapshots.
 testpaths = ["tests"]
+# Keep both source packages and repository-local script modules importable when
+# pytest is invoked as an executable (not only via ``python -m pytest``).
+pythonpath = [".", "src"]
 markers = [
   "e2e: deterministic end-to-end replay contract tests",
   "local_artifacts: requires provenance-bound research artifacts excluded from Git",

@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 660" role="img" aria-labelledby="pipeline-v2-title pipeline-v2-desc">
+  <title id="pipeline-v2-title">Pipeline AI GURU từ đầu đến cuối</title>
+  <desc id="pipeline-v2-desc">Sáu chặng lớn của pipeline AI GURU, từ tiếp nhận câu hỏi và khóa nguồn đến resolver, kiểm chứng và giao kết quả.</desc>
+  <defs>
+    <marker id="pipeline-v2-arrow" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#52657A"/>
+    </marker>
+    <marker id="pipeline-v2-arrow-accent" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#E88C55"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="660" fill="#FAF9F5"/>
+  <text x="48" y="52" fill="#1F8A89" font-size="12" font-weight="600" letter-spacing="0.18em" font-family="'Geist','Noto Sans',Arial,sans-serif">PIPELINE / END TO END</text>
+  <text x="48" y="92" fill="#0B2545" font-size="28" font-weight="600" font-family="'Instrument Serif','Noto Serif',Georgia,serif">Mỗi chặng có một câu hỏi kiểm tra riêng</text>
+  <text x="48" y="128" fill="#52657A" font-size="16" font-family="'Geist','Noto Sans',Arial,sans-serif">Pipeline không chỉ hỏi “đã chạy chưa?”, mà còn hỏi “đầu ra của chặng này có đủ cơ sở để đi tiếp không?”.</text>
+
+  <!-- connectors first -->
+  <line x1="264" y1="292" x2="304" y2="292" stroke="#52657A" stroke-width="2" marker-end="url(#pipeline-v2-arrow)"/>
+  <line x1="520" y1="292" x2="560" y2="292" stroke="#52657A" stroke-width="2" marker-end="url(#pipeline-v2-arrow)"/>
+  <line x1="776" y1="292" x2="816" y2="292" stroke="#52657A" stroke-width="2" marker-end="url(#pipeline-v2-arrow)"/>
+  <line x1="1032" y1="292" x2="1072" y2="292" stroke="#52657A" stroke-width="2" marker-end="url(#pipeline-v2-arrow)"/>
+  <line x1="1288" y1="292" x2="1328" y2="292" stroke="#E88C55" stroke-width="2.4" marker-end="url(#pipeline-v2-arrow-accent)"/>
+
+  <!-- labels are masked and kept above the connector -->
+  <rect x="268" y="256" width="32" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="284" y="268" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">01</text>
+  <rect x="524" y="256" width="32" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="540" y="268" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">02</text>
+  <rect x="780" y="256" width="32" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="796" y="268" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">03</text>
+  <rect x="1036" y="256" width="32" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="1052" y="268" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">04</text>
+  <rect x="1292" y="256" width="32" height="16" rx="4" fill="#FAF9F5"/>
+  <text x="1308" y="268" text-anchor="middle" fill="#E88C55" font-size="12" font-family="'Geist Mono',monospace">05</text>
+
+  <!-- cards -->
+  <rect x="48" y="184" width="216" height="216" rx="8" fill="#F0F3F5" stroke="#9AAABA" stroke-width="1.2"/>
+  <rect x="68" y="204" width="48" height="24" rx="4" fill="#D8E1E8"/>
+  <text x="92" y="221" text-anchor="middle" fill="#52657A" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">01–02</text>
+  <text x="156" y="268" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Tiếp nhận</text>
+  <text x="156" y="296" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Intake + Source Closure</text>
+  <text x="156" y="336" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Câu hỏi nào?</text>
+  <text x="156" y="360" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Được dùng nguồn nào?</text>
+
+  <rect x="304" y="184" width="216" height="216" rx="8" fill="#E5F2EF" stroke="#1F8A89" stroke-width="1.2"/>
+  <rect x="324" y="204" width="48" height="24" rx="4" fill="#C5E4DE"/>
+  <text x="348" y="221" text-anchor="middle" fill="#1F8A89" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">03</text>
+  <text x="412" y="268" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Hiểu câu hỏi</text>
+  <text x="412" y="296" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Typed Question</text>
+  <text x="412" y="336" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">metric · period</text>
+  <text x="412" y="360" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist Mono',monospace">scope · operation</text>
+
+  <rect x="560" y="184" width="216" height="216" rx="8" fill="#E5F2EF" stroke="#1F8A89" stroke-width="1.2"/>
+  <rect x="580" y="204" width="48" height="24" rx="4" fill="#C5E4DE"/>
+  <text x="604" y="221" text-anchor="middle" fill="#1F8A89" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">04</text>
+  <text x="668" y="268" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Tìm vùng dữ liệu</text>
+  <text x="668" y="296" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Retrieval + Rerank</text>
+  <text x="668" y="336" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Ứng viên nào đáng xem?</text>
+  <text x="668" y="360" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Chưa phải bằng chứng.</text>
+
+  <rect x="816" y="184" width="216" height="216" rx="8" fill="#FEF0E7" stroke="#E88C55" stroke-width="1.6"/>
+  <rect x="836" y="204" width="48" height="24" rx="4" fill="#F9D8C0"/>
+  <text x="860" y="221" text-anchor="middle" fill="#D46F3D" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">05</text>
+  <text x="924" y="268" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Đề xuất</text>
+  <text x="924" y="296" text-anchor="middle" fill="#9C5A36" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Proposal Model</text>
+  <text x="924" y="336" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">ứng viên ô dữ liệu</text>
+  <text x="924" y="360" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">+ công thức dự kiến</text>
+
+  <rect x="1072" y="184" width="216" height="216" rx="8" fill="#FFFFFF" stroke="#9AAABA" stroke-width="1.2"/>
+  <rect x="1092" y="204" width="48" height="24" rx="4" fill="#E7EBEF"/>
+  <text x="1116" y="221" text-anchor="middle" fill="#52657A" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">06–08</text>
+  <text x="1180" y="268" text-anchor="middle" fill="#0B2545" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Kiểm chứng</text>
+  <text x="1180" y="296" text-anchor="middle" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Resolve + E2E</text>
+  <text x="1180" y="336" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">exact cell + AST</text>
+  <text x="1180" y="360" text-anchor="middle" fill="#7A8A99" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">source + replay</text>
+
+  <rect x="1328" y="184" width="216" height="216" rx="8" fill="#0B2545" stroke="#0B2545" stroke-width="1.2"/>
+  <rect x="1348" y="204" width="48" height="24" rx="4" fill="#244A6D"/>
+  <text x="1372" y="221" text-anchor="middle" fill="#D9ECEA" font-size="12" font-weight="600" font-family="'Geist Mono',monospace">09–10</text>
+  <text x="1436" y="268" text-anchor="middle" fill="#FFFFFF" font-size="20" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Giao kết quả</text>
+  <text x="1436" y="296" text-anchor="middle" fill="#C6D5DF" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Compile + Deliver</text>
+  <text x="1436" y="336" text-anchor="middle" fill="#C6D5DF" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">answer + receipt</text>
+  <text x="1436" y="360" text-anchor="middle" fill="#C6D5DF" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">ledger + feedback</text>
+
+  <rect x="48" y="480" width="1496" height="72" rx="8" fill="#FFFFFF" stroke="#D6DFE2" stroke-width="1"/>
+  <circle cx="84" cy="516" r="12" fill="#E5F2EF" stroke="#1F8A89" stroke-width="1"/>
+  <text x="84" y="521" text-anchor="middle" fill="#1F8A89" font-size="16" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">?</text>
+  <text x="116" y="510" fill="#0B2545" font-size="16" font-weight="600" font-family="'Geist','Noto Sans',Arial,sans-serif">Câu hỏi kiểm tra xuyên suốt</text>
+  <text x="116" y="534" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">Đầu ra của mỗi chặng phải đủ rõ để chặng kế tiếp sử dụng, nhưng không được vượt quá bằng chứng mà nó thật sự có.</text>
+
+  <line x1="48" y1="600" x2="1544" y2="600" stroke="#D6DFE2" stroke-width="1"/>
+  <text x="48" y="628" fill="#7A8A99" font-size="12" font-weight="600" letter-spacing="0.14em" font-family="'Geist Mono',monospace">CÔNG THỨC KỂ CHUYỆN</text>
+  <text x="272" y="628" fill="#52657A" font-size="12" font-family="'Geist','Noto Sans',Arial,sans-serif">propose → resolve → verify → compile → deliver</text>
+</svg>

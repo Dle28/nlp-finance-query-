@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI GURU — target architecture từ proposal đến release gate</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper: #f5f5f5;
+      --paper-2: #ececec;
+      --white: #ffffff;
+      --ink: #2d3142;
+      --muted: #4f5d75;
+      --soft: #7a8399;
+      --rule: rgba(45, 49, 66, .12);
+      --rule-solid: #bfc0c0;
+      --accent: #eb6c36;
+      --accent-tint: rgba(235, 108, 54, .08);
+      --link: #2e5aa8;
+      --sans: "Geist", system-ui, sans-serif;
+      --serif: "Instrument Serif", Georgia, serif;
+      --mono: "Geist Mono", ui-monospace, monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+    }
+    main {
+      max-width: 1760px;
+      margin: 0 auto;
+      padding: 52px 40px 72px;
+    }
+    .eyebrow,
+    .section-kicker {
+      margin: 0 0 12px;
+      color: var(--soft);
+      font: 500 8px/1.4 var(--mono);
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    h1 {
+      max-width: 1100px;
+      margin: 0;
+      font: 400 clamp(40px, 5vw, 56px)/1.02 var(--serif);
+      letter-spacing: -.02em;
+    }
+    .lead {
+      max-width: 1060px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.65;
+    }
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 24px 0 0;
+    }
+    .tag {
+      padding: 8px 12px;
+      border: 1px solid var(--rule-solid);
+      border-radius: 4px;
+      background: var(--white);
+      color: var(--muted);
+      font: 500 8px/1 var(--mono);
+      letter-spacing: .05em;
+    }
+    .tag.focal {
+      border-color: var(--accent);
+      background: var(--accent-tint);
+      color: var(--accent);
+    }
+    section { margin-top: 56px; }
+    .section-note {
+      max-width: 1160px;
+      margin: 12px 0 20px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .diagram-shell {
+      overflow-x: auto;
+      padding: 0;
+    }
+    .diagram-shell svg {
+      display: block;
+      width: 100%;
+      min-width: 1600px;
+      height: auto;
+    }
+    .diagram-shell svg text {
+      font-family: var(--sans);
+      fill: var(--ink);
+    }
+    .diagram-shell svg .svg-mono { font-family: var(--mono); }
+    .diagram-shell svg .svg-micro {
+      fill: var(--soft);
+      font-size: 8px;
+      letter-spacing: .12em;
+    }
+    .zone-candidate {
+      fill: rgba(45, 49, 66, .025);
+      stroke: rgba(45, 49, 66, .22);
+      stroke-width: 1;
+      stroke-dasharray: 4 4;
+    }
+    .zone-authority {
+      fill: rgba(45, 49, 66, .06);
+      stroke: rgba(45, 49, 66, .32);
+      stroke-width: 1;
+    }
+    .zone-release {
+      fill: rgba(45, 49, 66, .025);
+      stroke: rgba(45, 49, 66, .22);
+      stroke-width: 1;
+      stroke-dasharray: 4 4;
+    }
+    .zone-label-mask,
+    .arrow-label-mask,
+    .boundary-label-mask {
+      fill: var(--paper);
+    }
+    .zone-label {
+      fill: var(--muted);
+      font-size: 8px;
+      font-weight: 500;
+      letter-spacing: .10em;
+    }
+    .authority-boundary {
+      stroke: var(--accent);
+      stroke-width: 1;
+      stroke-dasharray: 4 4;
+    }
+    .connector {
+      fill: none;
+      stroke: var(--muted);
+      stroke-width: 1.2;
+    }
+    .connector.focal {
+      stroke: var(--accent);
+      stroke-width: 1.2;
+    }
+    .connector.dashed {
+      stroke: var(--soft);
+      stroke-width: 1;
+      stroke-dasharray: 4 3;
+    }
+    .arrow-label {
+      fill: var(--soft);
+      font: 500 8px var(--mono);
+      letter-spacing: .06em;
+    }
+    .node-underlay { fill: var(--paper); }
+    .node-frame {
+      fill: var(--white);
+      stroke: rgba(45, 49, 66, .28);
+      stroke-width: 1;
+    }
+    .node.focal .node-frame {
+      fill: var(--accent-tint);
+      stroke: var(--accent);
+      stroke-width: 1.2;
+    }
+    .node-step { fill: rgba(45, 49, 66, .12); }
+    .node.focal .node-step { fill: rgba(235, 108, 54, .20); }
+    .node-step-text {
+      fill: var(--ink);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .node.focal .node-step-text { fill: var(--accent); }
+    .node-title {
+      fill: var(--ink);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .node-kicker {
+      fill: var(--soft);
+      font-size: 8px;
+      letter-spacing: .08em;
+    }
+    .node-rule { stroke: var(--rule); stroke-width: 1; }
+    .slot-label {
+      fill: var(--soft);
+      font-size: 8px;
+      font-weight: 500;
+      letter-spacing: .12em;
+    }
+    .slot-text {
+      fill: var(--ink);
+      font-size: 12px;
+    }
+    .node-chip {
+      fill: rgba(45, 49, 66, .06);
+      stroke: rgba(45, 49, 66, .14);
+      stroke-width: 1;
+    }
+    .node-chip-text {
+      fill: var(--muted);
+      font-size: 8px;
+      font-weight: 500;
+      letter-spacing: .08em;
+    }
+    .policy-row rect {
+      fill: rgba(45, 49, 66, .045);
+      stroke: rgba(45, 49, 66, .12);
+      stroke-width: 1;
+    }
+    .policy-row.focal rect {
+      fill: var(--accent-tint);
+      stroke: rgba(235, 108, 54, .42);
+    }
+    .policy-key {
+      fill: var(--ink);
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: .04em;
+    }
+    .policy-desc {
+      fill: var(--muted);
+      font-size: 8px;
+    }
+    .release-output {
+      fill: var(--accent);
+      font: 600 8px var(--mono);
+      letter-spacing: .08em;
+    }
+    .legend-rule { stroke: var(--rule); stroke-width: 1; }
+    .legend-key {
+      fill: var(--soft);
+      font-size: 8px;
+      font-weight: 500;
+      letter-spacing: .12em;
+    }
+    .legend-text {
+      fill: var(--muted);
+      font-size: 12px;
+    }
+    .legend-box {
+      fill: var(--white);
+      stroke: rgba(45, 49, 66, .28);
+      stroke-width: 1;
+    }
+    .legend-box.focal-box {
+      fill: var(--accent-tint);
+      stroke: var(--accent);
+      stroke-width: 1.2;
+    }
+    .legend-connector {
+      fill: none;
+      stroke: var(--muted);
+      stroke-width: 1.2;
+    }
+    .legend-boundary {
+      stroke: var(--accent);
+      stroke-width: 1;
+      stroke-dasharray: 4 4;
+    }
+    figcaption {
+      max-width: 1180px;
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .notes {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr .9fr;
+      gap: 14px;
+      margin-top: 28px;
+    }
+    .note {
+      min-height: 176px;
+      padding: 22px;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      background: var(--white);
+    }
+    .note.focal {
+      border-color: var(--accent);
+      background: var(--accent-tint);
+    }
+    .note .eyebrow { margin-bottom: 18px; }
+    .note h2 {
+      margin: 0 0 12px;
+      font: 400 24px/1.1 var(--serif);
+    }
+    .note p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .note code,
+    footer code {
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+    footer {
+      margin-top: 48px;
+      padding-top: 16px;
+      border-top: 1px solid var(--rule);
+      color: var(--soft);
+      font: 8px/1.6 var(--mono);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    @media (max-width: 760px) {
+      main { padding: 32px 20px 52px; }
+      .notes { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">AI GURU / ViFinQA · target architecture · v2</p>
+    <h1>Từ proposal đến proof, rồi mới đến release.</h1>
+    <p class="lead">
+      Bản vẽ mục tiêu này giữ một product path duy nhất: discovery và model chỉ tạo
+      candidate; verifier độc lập tạo claim-level proof; recovery quay lại bằng một
+      route có giới hạn; release là một gate riêng, không phải phần kéo dài tự nhiên
+      của phép tính.
+    </p>
+    <div class="meta-row" aria-label="Trạng thái và phạm vi sơ đồ">
+      <span class="tag focal">TARGET CONTRACT</span>
+      <span class="tag">9 NODES · 1 PRODUCT PATH</span>
+      <span class="tag">V13 · 0 / 1,012 CLAIM-COMPLETE</span>
+      <span class="tag">RELEASE: BLOCKED</span>
+      <span class="tag">PROPOSAL · NOT CANONICAL YET</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="diagram-heading">
+    <p class="section-kicker">Target operating model · static contract</p>
+    <h2 id="diagram-heading" style="font:400 32px/1.08 var(--serif); margin:0;">Một đường đi, hai loại đầu ra, một authority boundary.</h2>
+    <p class="section-note">
+      Đọc từ trái sang phải. Vùng candidate được phép tối ưu recall và coverage;
+      vùng authority chỉ nhận proposal có lineage. Mũi tên dashed là failure/recovery,
+      không phải một đường trả lời thứ hai.
+    </p>
+
+    <figure>
+      <div class="diagram-shell">
+        <svg viewBox="0 0 1600 1080" role="img" aria-labelledby="aiguru-target-architecture-title aiguru-target-architecture-desc">
+          <title id="aiguru-target-architecture-title">AI GURU target architecture từ proposal đến release gate</title>
+          <desc id="aiguru-target-architecture-desc">Sơ đồ kiến trúc gồm vùng candidate, vùng authority với claim-level proof và recovery router, cùng strict release gate tách biệt khỏi best-effort output.</desc>
+          <defs>
+            <marker id="aiguru-target-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+            </marker>
+            <marker id="aiguru-target-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+            </marker>
+          </defs>
+
+          <!-- Background and trust/operating zones. -->
+          <rect x="0" y="0" width="1600" height="1080" fill="var(--paper)"/>
+          <rect x="48" y="128" width="560" height="584" rx="8" class="zone-candidate"/>
+          <rect x="640" y="128" width="912" height="584" rx="8" class="zone-authority"/>
+          <rect x="48" y="752" width="1504" height="248" rx="8" class="zone-release"/>
+          <rect x="64" y="136" width="196" height="12" rx="2" class="zone-label-mask"/>
+          <text x="162" y="145" text-anchor="middle" class="zone-label svg-mono">CANDIDATE PLANE / BEST-EFFORT</text>
+          <rect x="656" y="136" width="180" height="12" rx="2" class="zone-label-mask"/>
+          <text x="746" y="145" text-anchor="middle" class="zone-label svg-mono">AUTHORITY PLANE / PROOF</text>
+          <rect x="64" y="760" width="196" height="12" rx="2" class="zone-label-mask"/>
+          <text x="162" y="769" text-anchor="middle" class="zone-label svg-mono">RELEASE CONTROL / COVERAGE</text>
+          <line x1="624" y1="188" x2="624" y2="716" class="authority-boundary"/>
+          <rect x="544" y="164" width="160" height="12" rx="2" class="boundary-label-mask"/>
+          <text x="624" y="173" text-anchor="middle" class="zone-label svg-mono">AUTHORITY BOUNDARY</text>
+
+          <!-- Connectors are painted before nodes. -->
+          <path d="M320 308 H352" class="connector" marker-end="url(#aiguru-target-arrow)"/>
+          <path d="M472 408 V432 Q472 440 464 440 H336 Q328 440 328 448 V464" class="connector" marker-end="url(#aiguru-target-arrow)"/>
+          <path d="M488 564 H600 Q608 564 608 556 V316 Q608 308 616 308 H660" class="connector focal" marker-end="url(#aiguru-target-arrow-accent)"/>
+          <path d="M900 308 H936" class="connector" marker-end="url(#aiguru-target-arrow)"/>
+          <path d="M1176 308 H1212" class="connector" marker-end="url(#aiguru-target-arrow)"/>
+          <path d="M1368 408 V432 Q1368 440 1360 440 H1068 Q1060 440 1060 448 V464" class="connector" marker-end="url(#aiguru-target-arrow)"/>
+          <path d="M1460 408 V432 Q1460 440 1452 440 H1408 Q1400 440 1400 448 V464" class="connector dashed" marker-end="url(#aiguru-target-arrow)"/>
+          <path d="M1120 664 V720 Q1120 728 1112 728 H808 Q800 728 800 736 V784" class="connector focal" marker-end="url(#aiguru-target-arrow-accent)"/>
+          <!-- Recovery is secondary; hop over the strict-release connector at x=1120. -->
+          <path d="M1260 564 H1256 Q1248 564 1248 572 V688 Q1248 696 1240 696 H1128 a 8 8 0 0 0 -16 0 H336 Q328 696 328 688 V664" class="connector dashed" marker-end="url(#aiguru-target-arrow)"/>
+
+          <!-- Connector labels sit on open segments with paper masks. -->
+          <rect x="528" y="416" width="64" height="12" rx="2" class="arrow-label-mask"/>
+          <text x="560" y="425" text-anchor="middle" class="arrow-label svg-mono">HANDOFF</text>
+          <rect x="1164" y="412" width="112" height="12" rx="2" class="arrow-label-mask"/>
+          <text x="1220" y="421" text-anchor="middle" class="arrow-label svg-mono">CLAIM LEDGER</text>
+          <rect x="1468" y="412" width="56" height="12" rx="2" class="arrow-label-mask"/>
+          <text x="1496" y="421" text-anchor="middle" class="arrow-label svg-mono">FAILURE</text>
+          <rect x="720" y="656" width="128" height="12" rx="2" class="arrow-label-mask"/>
+          <text x="784" y="665" text-anchor="middle" class="arrow-label svg-mono">RECOVER / RETRY</text>
+          <rect x="872" y="700" width="112" height="12" rx="2" class="arrow-label-mask"/>
+          <text x="928" y="709" text-anchor="middle" class="arrow-label svg-mono">STRICT RELEASE</text>
+
+          <!-- 01 -->
+          <g class="node" transform="translate(80 208)">
+            <rect width="240" height="200" rx="8" class="node-underlay"/>
+            <rect width="240" height="200" rx="8" class="node-frame"/>
+            <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+            <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">01</text>
+            <text x="60" y="31" class="node-title">TYPED QUESTION</text>
+            <text x="60" y="47" class="node-title">CONTRACT</text>
+            <text x="16" y="70" class="node-kicker svg-mono">INTAKE / IMMUTABLE</text>
+            <line x1="16" y1="84" x2="224" y2="84" class="node-rule"/>
+            <text x="16" y="108" class="slot-label svg-mono">INPUT</text>
+            <text x="16" y="132" class="slot-text">question + source closure</text>
+            <text x="16" y="148" class="slot-text">question identity / scope</text>
+            <line x1="16" y1="160" x2="224" y2="160" class="node-rule"/>
+            <text x="16" y="180" class="slot-label svg-mono">OUTPUT</text>
+            <text x="16" y="196" class="slot-text">typed contract</text>
+          </g>
+
+          <!-- 02 -->
+          <g class="node" transform="translate(352 208)">
+            <rect width="240" height="200" rx="8" class="node-underlay"/>
+            <rect width="240" height="200" rx="8" class="node-frame"/>
+            <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+            <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">02</text>
+            <text x="60" y="31" class="node-title">DISCOVERY +</text>
+            <text x="60" y="47" class="node-title">RESEARCH FUSION</text>
+            <text x="16" y="70" class="node-kicker svg-mono">CANDIDATE ONLY</text>
+            <line x1="16" y1="84" x2="224" y2="84" class="node-rule"/>
+            <text x="16" y="108" class="slot-label svg-mono">ACTION</text>
+            <text x="16" y="132" class="slot-text">retrieve / rerank / research</text>
+            <text x="16" y="148" class="slot-text">hydrate canonical V2/V3</text>
+            <line x1="16" y1="160" x2="224" y2="160" class="node-rule"/>
+            <text x="16" y="180" class="slot-label svg-mono">OUTPUT</text>
+            <text x="16" y="196" class="slot-text">bounded candidate pool</text>
+          </g>
+
+          <!-- 03 -->
+          <g class="node" transform="translate(168 464)">
+            <rect width="320" height="200" rx="8" class="node-underlay"/>
+            <rect width="320" height="200" rx="8" class="node-frame"/>
+            <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+            <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">03</text>
+            <text x="60" y="31" class="node-title">PROPOSAL / CLAIM</text>
+            <text x="60" y="47" class="node-title">LEDGER</text>
+            <text x="16" y="70" class="node-kicker svg-mono">PROPOSAL ONLY · NO AUTHORITY</text>
+            <line x1="16" y1="84" x2="304" y2="84" class="node-rule"/>
+            <text x="16" y="108" class="slot-label svg-mono">RECORD</text>
+            <text x="16" y="132" class="slot-text">claim + operand + formula hint</text>
+            <text x="16" y="148" class="slot-text">coordinate + route + lineage</text>
+            <line x1="16" y1="160" x2="304" y2="160" class="node-rule"/>
+            <text x="16" y="180" class="slot-label svg-mono">OUTPUT</text>
+            <text x="16" y="196" class="slot-text">proposal → verifier input</text>
+          </g>
+
+          <!-- 04 -->
+          <g class="node" transform="translate(660 208)">
+            <rect width="240" height="200" rx="8" class="node-underlay"/>
+            <rect width="240" height="200" rx="8" class="node-frame"/>
+            <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+            <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">04</text>
+            <text x="60" y="31" class="node-title">SOURCE +</text>
+            <text x="60" y="47" class="node-title">SEMANTIC BINDING</text>
+            <text x="16" y="70" class="node-kicker svg-mono">EVIDENCE BOUNDARY</text>
+            <line x1="16" y1="84" x2="224" y2="84" class="node-rule"/>
+            <text x="16" y="108" class="slot-label svg-mono">CHECK</text>
+            <text x="16" y="132" class="slot-text">exact V2 cell + source closure</text>
+            <text x="16" y="148" class="slot-text">entity / period / scope / unit</text>
+            <line x1="16" y1="160" x2="224" y2="160" class="node-rule"/>
+            <text x="16" y="180" class="slot-label svg-mono">OUTPUT</text>
+            <text x="16" y="196" class="slot-text">per-claim binding receipts</text>
+          </g>
+
+          <!-- 05 -->
+          <g class="node" transform="translate(936 208)">
+            <rect width="240" height="200" rx="8" class="node-underlay"/>
+            <rect width="240" height="200" rx="8" class="node-frame"/>
+            <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+            <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">05</text>
+            <text x="60" y="31" class="node-title">FORMULA + OPERAND</text>
+            <text x="60" y="47" class="node-title">PROOF</text>
+            <text x="16" y="70" class="node-kicker svg-mono">COMPATIBILITY CONTRACT</text>
+            <line x1="16" y1="84" x2="224" y2="84" class="node-rule"/>
+            <text x="16" y="108" class="slot-label svg-mono">CHECK</text>
+            <text x="16" y="132" class="slot-text">period / scope / unit rules</text>
+            <text x="16" y="148" class="slot-text">cross-operand compatibility</text>
+            <line x1="16" y1="160" x2="224" y2="160" class="node-rule"/>
+            <text x="16" y="180" class="slot-label svg-mono">OUTPUT</text>
+            <text x="16" y="196" class="slot-text">compat receipt + dependency hash</text>
+          </g>
+
+          <!-- 06 focal -->
+          <g class="node focal" transform="translate(1212 208)">
+            <rect width="320" height="200" rx="8" class="node-underlay"/>
+            <rect width="320" height="200" rx="8" class="node-frame"/>
+            <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+            <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">06</text>
+            <text x="60" y="31" class="node-title">DECIMAL EXECUTION +</text>
+            <text x="60" y="47" class="node-title">CANONICAL CERTIFICATE</text>
+            <text x="16" y="70" class="node-kicker svg-mono">FOCAL AUTHORITY HANDOFF</text>
+            <line x1="16" y1="84" x2="304" y2="84" class="node-rule"/>
+            <text x="16" y="108" class="slot-label svg-mono">ACTION</text>
+            <text x="16" y="132" class="slot-text">allow-list AST → Decimal replay</text>
+            <text x="16" y="148" class="slot-text">validate id / hashes / dependencies</text>
+            <line x1="16" y1="160" x2="304" y2="160" class="node-rule"/>
+            <text x="16" y="180" class="slot-label svg-mono">OUTPUT</text>
+            <text x="16" y="196" class="slot-text">complete certificate or ABSTAIN</text>
+          </g>
+
+          <!-- 07 -->
+          <g class="node" transform="translate(900 464)">
+            <rect width="320" height="200" rx="8" class="node-underlay"/>
+            <rect width="320" height="200" rx="8" class="node-frame"/>
+            <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+            <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">07</text>
+            <text x="60" y="31" class="node-title">CLAIM-LEVEL POLICY</text>
+            <text x="60" y="47" class="node-title">+ ANSWER STATUS</text>
+            <text x="16" y="70" class="node-kicker svg-mono">SEPARATE PROOF / POLICY / RELEASE</text>
+            <line x1="16" y1="84" x2="304" y2="84" class="node-rule"/>
+            <g class="policy-row focal">
+              <rect x="16" y="104" width="288" height="20" rx="4"/>
+              <text x="24" y="118" class="policy-key svg-mono">VERIFIED</text>
+              <text x="120" y="118" class="policy-desc">all required claims + certificate</text>
+            </g>
+            <g class="policy-row">
+              <rect x="16" y="128" width="288" height="20" rx="4"/>
+              <text x="24" y="142" class="policy-key svg-mono">PARTIAL</text>
+              <text x="120" y="142" class="policy-desc">optional gap · never authorize</text>
+            </g>
+            <g class="policy-row">
+              <rect x="16" y="152" width="288" height="20" rx="4"/>
+              <text x="24" y="166" class="policy-key svg-mono">UNRESOLVED</text>
+              <text x="120" y="166" class="policy-desc">required proof missing</text>
+            </g>
+            <g class="policy-row">
+              <rect x="16" y="176" width="288" height="20" rx="4"/>
+              <text x="24" y="190" class="policy-key svg-mono">REJECTED</text>
+              <text x="120" y="190" class="policy-desc">contradiction / provenance break</text>
+            </g>
+          </g>
+
+          <!-- 08 -->
+          <g class="node" transform="translate(1260 464)">
+            <rect width="240" height="200" rx="8" class="node-underlay"/>
+            <rect width="240" height="200" rx="8" class="node-frame"/>
+            <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+            <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">08</text>
+            <text x="60" y="31" class="node-title">BOUNDED FAILURE</text>
+            <text x="60" y="47" class="node-title">/ RECOVERY ROUTER</text>
+            <text x="16" y="70" class="node-kicker svg-mono">NO FREE-FORM RETRY</text>
+            <line x1="16" y1="84" x2="224" y2="84" class="node-rule"/>
+            <text x="16" y="108" class="slot-label svg-mono">INPUT</text>
+            <text x="16" y="132" class="slot-text">failure code + failed claims</text>
+            <text x="16" y="148" class="slot-text">invalidated dependencies</text>
+            <line x1="16" y1="160" x2="224" y2="160" class="node-rule"/>
+            <text x="16" y="180" class="slot-label svg-mono">NEXT ACTION</text>
+            <text x="16" y="196" class="slot-text">retry · rebind · replan · abstain</text>
+          </g>
+
+          <!-- 09 -->
+          <g class="node" transform="translate(640 784)">
+            <rect width="320" height="200" rx="8" class="node-underlay"/>
+            <rect width="320" height="200" rx="8" class="node-frame"/>
+            <rect x="16" y="16" width="32" height="32" rx="8" class="node-step"/>
+            <text x="32" y="37" text-anchor="middle" class="node-step-text svg-mono">09</text>
+            <text x="60" y="31" class="node-title">STRICT RELEASE GATE</text>
+            <text x="60" y="47" class="node-title">+ POPULATION LEDGER</text>
+            <text x="16" y="70" class="node-kicker svg-mono">DELIVERY AUTHORITY · SEPARATE AXIS</text>
+            <line x1="16" y1="84" x2="304" y2="84" class="node-rule"/>
+            <text x="16" y="108" class="slot-label svg-mono">REQUIRE</text>
+            <text x="16" y="132" class="slot-text">all required claims + full lineage</text>
+            <text x="16" y="148" class="slot-text">independent audit + coverage ledger</text>
+            <line x1="16" y1="160" x2="304" y2="160" class="node-rule"/>
+            <text x="16" y="180" class="slot-label svg-mono">OUTPUT</text>
+            <text x="16" y="196" class="release-output">AUTHORIZED · OTHERWISE BLOCKED</text>
+          </g>
+
+          <!-- Legend is a horizontal strip below the diagram. -->
+          <line x1="48" y1="1020" x2="1552" y2="1020" class="legend-rule"/>
+          <text x="48" y="1048" class="legend-key svg-mono">LEGEND</text>
+          <rect x="144" y="1032" width="24" height="24" rx="8" class="legend-box"/>
+          <text x="184" y="1048" class="legend-text">candidate / claim stage</text>
+          <rect x="432" y="1032" width="24" height="24" rx="8" class="legend-box focal-box"/>
+          <text x="472" y="1048" class="legend-text">certificate authority focal</text>
+          <line x1="760" y1="1044" x2="800" y2="1044" class="legend-connector" marker-end="url(#aiguru-target-arrow)"/>
+          <text x="816" y="1048" class="legend-text">ordinary handoff</text>
+          <line x1="1040" y1="1044" x2="1080" y2="1044" class="legend-connector" stroke-dasharray="4 3" marker-end="url(#aiguru-target-arrow)"/>
+          <text x="1096" y="1048" class="legend-text">failure / recovery route</text>
+          <line x1="1360" y1="1032" x2="1360" y2="1056" class="legend-boundary"/>
+          <text x="1380" y="1048" class="legend-text">authority boundary</text>
+        </svg>
+      </div>
+      <figcaption>
+        Tâm điểm của bản vẽ là handoff vào certificate: certificate phải tự bind với
+        question contract, source closure, binding plan, formula compatibility, AST
+        và execution receipt. Nếu một dependency đổi, kết quả quay về
+        <code>ABSTAIN</code>; không được nâng lại bằng score, coordinate hoặc answer match.
+      </figcaption>
+    </figure>
+
+    <div class="notes">
+      <article class="note focal">
+        <p class="eyebrow">01 · Authority boundary</p>
+        <h2>Certificate là proof object, không phải cờ trạng thái.</h2>
+        <p>
+          <code>VERIFIED</code> chỉ được suy ra sau khi certificate validator kiểm
+          identity, schema, dependency hashes, required claim receipts và
+          <code>answer_authorized</code>. <code>status + answer</code> không đủ.
+        </p>
+      </article>
+      <article class="note">
+        <p class="eyebrow">02 · Recovery</p>
+        <h2>Failure phải có địa chỉ quay lại.</h2>
+        <p>
+          Router nhận failure code, failed claim và dependency bị invalidate; sau đó
+          mới chọn retry, rebind, replan hoặc abstain với retry limit và lineage mới.
+          Rerank candidate một mình không phải recovery loop.
+        </p>
+      </article>
+      <article class="note">
+        <p class="eyebrow">03 · Release</p>
+        <h2>Coverage không mở khóa release.</h2>
+        <p>
+          Competition có thể giữ prediction best-effort. Strict release cần full
+          population ledger, independent audit và không còn required claim unresolved;
+          nếu chưa đủ thì output vẫn là <code>BLOCKED</code>.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <footer>
+    AI GURU · target architecture v2 · proposal artifact · static self-contained HTML · not a release certificate
+  </footer>
+</main>
+</body>
+</html>

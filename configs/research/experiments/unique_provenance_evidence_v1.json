@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_generalization_hypothesis_v1",
+  "experiment_id": "unique_provenance_evidence_v1",
+  "research_question": "Can exact ticker-year-form compatibility plus a unique-candidate abstention gate safely authorize one evidence passage for single-passage financial questions?",
+  "observation": {
+    "source_dataset": "FinRank",
+    "source_commit": "916dc27e77b90e294ea1b3a2cc5b0abcf07392d1",
+    "release_validation": "1185 records; 0 violations",
+    "company_split": {
+      "train_single_passage_records": 287,
+      "development_single_passage_records": 53,
+      "development_unique_exact_compatible": 47,
+      "held_out_development_tickers": 4,
+      "held_out_untouched_tickers": 8
+    },
+    "individual_untouched_questions_or_passages_seen_before_freeze": false,
+    "untouched_compatibility_aggregate_seen_before_freeze": false
+  },
+  "hypothesis": {
+    "observed_phenomenon": "Hard negatives frequently come from another company, period, or filing form, while the current fail-closed pipeline does not automatically authorize evidence.",
+    "possible_cause": "Candidate evidence lacks a narrow provenance compatibility selector with an explicit ambiguity abstention gate.",
+    "expected_improvement": "For single-passage plans, exact ticker, fiscal year, and document-form matching should leave one correct passage for many questions; the system should abstain whenever more than one compatible passage remains.",
+    "possible_side_effect": "Dropping any provenance dimension or choosing among multiple compatible passages could confidently select a hard negative.",
+    "questions_that_should_improve": "Single-passage questions whose candidate set has exactly one passage matching ticker, fiscal year, and document form.",
+    "questions_that_should_remain_unchanged": "Two/multi-passage plans, missing metadata, zero compatible passages, or two or more compatible passages."
+  },
+  "change_tested": {
+    "primary_change_count": 1,
+    "primary_change": "exact_provenance_compatibility_with_unique_candidate_abstention",
+    "forbidden_concurrent_changes": [
+      "candidate_retrieval",
+      "semantic_similarity",
+      "query_rewrite",
+      "reranking",
+      "answer_generation",
+      "arithmetic"
+    ]
+  },
+  "expected_result_frozen_before_run": true,
+  "split_design": {
+    "seed": "unique-provenance-evidence-v1-freeze-20260825",
+    "source_dataset": "FinRank",
+    "discovery_source_partition": "official ticker split train companies",
+    "development_source_partition": "official held_out_dev_tickers",
+    "untouched_evaluation_source_partition": "official held_out_test_tickers",
+    "discovery_size": 10,
+    "development_size": 30,
+    "untouched_evaluation_size": 30,
+    "selection_key": "sha256(seed + question text + canonical candidate passage hashes, exact provenance metadata, and gold/negative role); record ID excluded",
+    "question_id_role": "tracking_only",
+    "company_holdout": "Official FinRank ticker partitions are pairwise disjoint.",
+    "wording_holdout": "Development and untouched normalized wording templates are disjoint.",
+    "metric_holdout": "At least one FinRank topic has six or more untouched records and zero development records.",
+    "composition_holdout": "At least one reasoning-type plus difficulty signature has six or more untouched records and zero development records."
+  },
+  "ablation_arms": [
+    "A_current_no_automatic_evidence_authorization",
+    "B_A_plus_ticker_year_form_unique_gate",
+    "C_B_without_ticker_compatibility",
+    "D_B_without_year_compatibility",
+    "E_B_without_form_compatibility",
+    "F_B_without_unique_candidate_abstention"
+  ],
+  "decision_thresholds": {
+    "minimum_newly_correct_development": 5,
+    "minimum_newly_correct_untouched": 5,
+    "minimum_precision_on_predictions": 1.0,
+    "maximum_false_confident_candidate": 0,
+    "maximum_regressed_baseline_predictions": 0,
+    "minimum_metric_holdout_improved": 5,
+    "minimum_composition_holdout_improved": 5
+  },
+  "evaluator": {
+    "status": "HASH_BOUND_EXTERNAL_GOLD_AVAILABLE",
+    "kind": "FinRank gold passages and curated hard negatives with passage-level ticker/year/form metadata",
+    "release_validator": "baselines/validate_release.py",
+    "source_license": "CC BY-NC 4.0 research evaluation only",
+    "unavailable_to_vifinqa_prediction_pipeline": true,
+    "vifinqa_answer_authority": false
+  },
+  "human_role": {
+    "per_question_review": false,
+    "allowed_after_round_verdicts": [
+      "KEEP",
+      "REJECT",
+      "INVESTIGATE FURTHER"
+    ]
+  },
+  "source_contract": {
+    "research_only": true,
+    "evidence_eligible": false,
+    "may_materialize_answer": false,
+    "training_eligible": false,
+    "submission_eligible": false,
+    "promotion_allowed": false
+  }
+}

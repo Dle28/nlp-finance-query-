@@ -24,10 +24,10 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          from finance_query.cli import build_parser
+          from finance_query.cli import PUBLIC_COMMANDS, build_parser
 
           subcommands = next(action for action in build_parser()._actions if action.dest == "command")
-          assert set(subcommands.choices) == {"run-e2e"}
+          assert set(subcommands.choices) == set(PUBLIC_COMMANDS)
           policy = json.loads(Path("configs/research/proof_policy/open_source_model_policy_v1.json").read_text())
           assert len(policy["routes"]) == 1
           route = policy["routes"][0]

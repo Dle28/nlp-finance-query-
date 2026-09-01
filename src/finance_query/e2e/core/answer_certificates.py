@@ -1,9 +1,11 @@
-"""Typed financial binding and answer-certificate contracts.
+"""Typed financial binding and answer-or-best-candidate contracts.
 
-This module is intentionally independent of model output.  It converts an
-already-selected finite operand plan, exact source bindings, an executor trace,
-and counterfactual rejection receipts into either a review-only certificate or
-an explicit abstention.  It never promotes labels or a model checkpoint.
+This module converts an already-selected finite operand plan, exact source
+bindings, an executor trace, and counterfactual rejection receipts into an
+answer output or an explicit authorization abstention.  When authorization is
+incomplete but a separately selected candidate has survived its filters, the
+candidate is still exposed as a best-effort prediction.  It never promotes
+labels or a model checkpoint.
 """
 
 from __future__ import annotations
@@ -35,6 +37,89 @@ class AnswerCertificateError(ValueError):
 def _sha(value: object) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+_REJECTED_CANDIDATE_STATUSES = {
+    "ABSTAIN",
+    "FILTER_REJECTED",
+    "NO_CANDIDATE",
+    "QUARANTINED",
+    "REJECTED",
+}
+
+
+def _best_candidate_prediction(
+    candidate: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Normalize a selector-approved candidate without making it authoritative.
+
+    The selector must do the semantic ranking/filtering upstream.  This helper
+    only enforces the final safety boundary: a candidate must contain a finite
+    numeric answer and must not explicitly report that it failed its filter.
+    """
+    if candidate is None:
+        return None
+    raw_answer = candidate.get(
+        "answer",
+        candidate.get("answer_decimal", candidate.get("value")),
+    )
+    if raw_answer is None:
+        return None
+    try:
+        answer = Decimal(str(raw_answer))
+    except (InvalidOperation, ValueError):
+        return None
+    if not answer.is_finite():
+        return None
+    if candidate.get("filter_passed") is False or candidate.get("survived_filter") is False:
+        return None
+    candidate_status = str(
+        candidate.get("filter_status")
+        or candidate.get("candidate_status")
+        or "SURVIVED_FILTER"
+    ).strip().upper()
+    if candidate_status in _REJECTED_CANDIDATE_STATUSES:
+        return None
+    candidate_id = str(
+        candidate.get("candidate_id")
+        or candidate.get("binding_id")
+        or candidate.get("stage_id")
+        or ""
+    ).strip()
+    if not candidate_id:
+        candidate_id = _sha(
+            {
+                key: value
+                for key, value in candidate.items()
+                if key not in {"answer", "answer_decimal", "value"}
+            }
+        )
+    normalized: dict[str, Any] = {
+        "candidate_id": candidate_id,
+        "answer_decimal": format(answer, "f"),
+        "filter_status": candidate_status,
+        "selection_method": str(
+            candidate.get("selection_method") or "best_surviving_candidate"
+        ),
+    }
+    for source_key in ("filter_score", "score", "rank", "candidate_rank"):
+        if candidate.get(source_key) is not None:
+            normalized["filter_score" if source_key in {"filter_score", "score"} else source_key] = candidate.get(source_key)
+            if source_key in {"filter_score", "score"}:
+                break
+    source = candidate.get("source", candidate.get("sources"))
+    if source is not None:
+        normalized["source"] = source
+    for key in (
+        "internal_table_uid",
+        "document_id",
+        "row_index",
+        "column_index",
+        "tier",
+    ):
+        if candidate.get(key) is not None:
+            normalized[key] = candidate.get(key)
+    return normalized
 
 
 def temporal_contract_for_operand(
@@ -212,12 +297,15 @@ def compile_answer_certificate(
     operand_bindings: object,
     execution: Mapping[str, Any],
     alternative_checks: object,
+    best_candidate: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Compile an answer certificate or a granular fail-closed abstention.
+    """Compile an answer certificate or an authorization abstention.
 
     This only verifies a *bounded candidate universe*.  It therefore records
     counterfactual rejection receipt IDs but does not claim that no alternative
-    could exist elsewhere in the corpus.
+    could exist elsewhere in the corpus.  If the certificate is incomplete,
+    ``best_candidate`` can keep a selector-approved numeric prediction in the
+    answer channel while the top-level ``status`` remains ``ABSTAIN``.
     """
     if question_id is None or str(question_id) == "":
         raise AnswerCertificateError("question_id is required")
@@ -276,17 +364,41 @@ def compile_answer_certificate(
         alternative_checks=alternative_checks,
         required_dimensions=required_dimensions,
     ))
+    candidate_prediction = _best_candidate_prediction(best_candidate)
     status = "ANSWER_CERTIFICATE_COMPLETE_CAMPAIGN_ONLY" if not errors else "ABSTAIN"
+    answer_available = not errors or candidate_prediction is not None
+    answer_status = "ANSWER" if not errors else (
+        "PREDICTED_CANDIDATE" if candidate_prediction is not None else "ABSTAIN"
+    )
     payload = {
         "schema_version": ANSWER_CERTIFICATE_SCHEMA_VERSION,
         "protocol": ANSWER_CERTIFICATE_PROTOCOL,
         "question_id": question_id,
         "binding_plan_sha256": _sha(dict(binding_plan)),
         "operation_ast_sha256": _sha(binding_plan.get("operation_ast") or {}),
+        "answer": (
+            str(execution.get("answer_decimal"))
+            if not errors
+            else candidate_prediction["answer_decimal"]
+            if candidate_prediction is not None
+            else None
+        ),
+        "answer_status": answer_status,
+        "prediction_status": "AUTHORIZED_ANSWER" if not errors else (
+            "UNCERTAIN_CANDIDATE" if candidate_prediction is not None else "NO_PREDICTION"
+        ),
+        "answer_available": answer_available,
+        "answer_authorized": not errors,
+        "candidate_prediction": candidate_prediction,
         "binding_receipts": binding_receipts,
         "execution_receipt": {
             "status": execution.get("status"),
             "answer_decimal": str(execution.get("answer_decimal")) if not errors else None,
+            "candidate_answer_decimal": (
+                candidate_prediction["answer_decimal"]
+                if errors and candidate_prediction is not None
+                else None
+            ),
             "operation_ast_sha256": execution.get("operation_ast_sha256"),
         },
         "counterfactual_checks": alternative_checks if isinstance(alternative_checks, list) else [],
@@ -296,7 +408,7 @@ def compile_answer_certificate(
         "abstain_reason_codes": sorted(set(errors)),
         "training_eligible": False,
         "promotion_allowed": False,
-        "serving_eligible": False,
+        "serving_eligible": answer_available,
         "next_gate": "campaign_review_and_release_policy" if not errors else "repair_or_expand_candidate_set",
     }
     return {"answer_certificate_id": _sha(payload), **payload}
@@ -308,13 +420,14 @@ def compile_abstention_certificate(
     reason_codes: object,
     binding_plan: Mapping[str, Any] | None = None,
     execution: Mapping[str, Any] | None = None,
+    best_candidate: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Emit a schema-valid certificate when no executable plan is justified.
+    """Emit a certificate when authorization is incomplete.
 
     This is deliberately separate from :func:`compile_answer_certificate`:
-    an empty candidate set is a reason to abstain, not a malformed attempt to
-    compile an answer.  The receipt remains review-only and cannot release a
-    model or submission.
+    an empty candidate set is still a reason to abstain, but a selector-approved
+    best candidate is retained as a best-effort prediction.  Thus ``answer`` is
+    ``None`` only when no finite candidate survives the filter.
     """
     if question_id is None or str(question_id) == "":
         raise AnswerCertificateError("question_id is required")
@@ -329,16 +442,27 @@ def compile_abstention_certificate(
         raise AnswerCertificateError("reason_codes are required for an abstention")
     plan = dict(binding_plan or {})
     execution_receipt = dict(execution or {})
+    candidate_prediction = _best_candidate_prediction(best_candidate)
+    answer_available = candidate_prediction is not None
     payload = {
         "schema_version": ANSWER_CERTIFICATE_SCHEMA_VERSION,
         "protocol": ANSWER_CERTIFICATE_PROTOCOL,
         "question_id": question_id,
         "binding_plan_sha256": _sha(plan),
         "operation_ast_sha256": _sha(plan.get("operation_ast") or {}),
+        "answer": candidate_prediction["answer_decimal"] if candidate_prediction else None,
+        "answer_status": "PREDICTED_CANDIDATE" if answer_available else "ABSTAIN",
+        "prediction_status": "UNCERTAIN_CANDIDATE" if answer_available else "NO_PREDICTION",
+        "answer_available": answer_available,
+        "answer_authorized": False,
+        "candidate_prediction": candidate_prediction,
         "binding_receipts": [],
         "execution_receipt": {
             "status": execution_receipt.get("status"),
             "answer_decimal": None,
+            "candidate_answer_decimal": (
+                candidate_prediction["answer_decimal"] if candidate_prediction else None
+            ),
             "operation_ast_sha256": execution_receipt.get("operation_ast_sha256"),
         },
         "counterfactual_checks": [],
@@ -348,7 +472,7 @@ def compile_abstention_certificate(
         "abstain_reason_codes": codes,
         "training_eligible": False,
         "promotion_allowed": False,
-        "serving_eligible": False,
+        "serving_eligible": answer_available,
         "next_gate": "repair_or_expand_candidate_set",
     }
     return {"answer_certificate_id": _sha(payload), **payload}

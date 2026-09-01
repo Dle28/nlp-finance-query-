@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from finance_query.e2e.candidate_handoff import (
-    BLOCKER_PROTOCOL,
-    PLAN_PROTOCOL,
+    BLOCKER_PROTOCOL,  # noqa: F401 - compatibility surface used by queue manifests
+    PLAN_PROTOCOL,  # noqa: F401 - compatibility surface used by queue manifests
     SOURCE_CONTRACT,
     canonical_sha256,
     load_blocker_rows,

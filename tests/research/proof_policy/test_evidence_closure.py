@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from finance_query.research.proof_policy.evidence_closure import build_workbench, load_jsonl, sha256_file
+from finance_query.research.proof_policy.evidence_closure import build_workbench, load_jsonl
 
 
 def _write_json(path: Path, value: object) -> None:

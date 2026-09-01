@@ -84,6 +84,14 @@ results/
 predictions/
 artifacts/
 experiments/
+!/configs/research/experiments/
+/configs/research/experiments/*
+!/configs/research/experiments/dimensionless_scalar_multiply_v1.json
+!/configs/research/experiments/temporal_header_semantics_v1.json
+!/configs/research/experiments/exact_row_metric_linking_v1.json
+!/configs/research/experiments/unique_provenance_evidence_v1.json
+!/configs/research/experiments/vietnamese_percent_change_semantics_v1.json
+!/configs/research/experiments/explicit_advisory_intent_abstention_v1.json
 wandb/
 mlruns/
 lightning_logs/
@@ -99,6 +107,7 @@ lightning_logs/
 
 # Kaggle transfer bundles generated locally
 kaggle_upload/
+/notebooks/
 
 # Search indexes
 indexes/
@@ -126,6 +135,7 @@ submission/
 submissions/
 submission.zip
 submission_*.zip
+/submission_ready/
 *.tar
 *.tar.gz
 *.tgz

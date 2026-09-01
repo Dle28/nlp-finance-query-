@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_hybrid_retrieval_analysis_v1",
+  "expected_question_count": 1012,
+  "expected_route_count": 75,
+  "eligible_decomposition_statuses": ["typed_non_executable"],
+  "retrieval": {
+    "top_k_per_route": 10,
+    "rrf_constant": 60,
+    "encode_batch_size": 128,
+    "required_filters": ["ticker", "report_year"],
+    "scope_policy": "explicit_first_then_tagged_unscoped_supplement"
+  },
+  "authorization": {
+    "navigation_metadata_only": true,
+    "may_authorize_answer": false,
+    "may_authorize_evidence": false,
+    "training_eligible": false,
+    "submission_eligible": false
+  }
+}

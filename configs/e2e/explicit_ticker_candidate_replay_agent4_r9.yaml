@@ -1,0 +1,17 @@
+schema_version: 1
+protocol: vifinqa_grounded_e2e_v1
+run_name: vifinqa-explicit-ticker-agent4-r9
+# Research replay only. Human semantic decisions remain empty; no answer,
+# evidence, release, training, or submission is authorized.
+paths:
+  period_packets: ../../artifacts/research/agent4_candidate_union_v1_20260827_r2/period_column_candidate_packets_v1.jsonl
+  period_manifest: ../../artifacts/research/agent4_candidate_union_v1_20260827_r2/period_column_candidate_packets_v1.manifest.json
+  route_overlay: ../../artifacts/main_inputs/route_overlay_v1/route_completeness_overlay_v3.jsonl
+  route_overlay_manifest: ../../artifacts/main_inputs/route_overlay_v1/route_completeness_overlay_v3.manifest.json
+  structured_tables: ../../artifacts/kaggle_runs/notebook5554bd790d_v10_20260811/vifinqa_review_bundle/tables_structured_v2.jsonl
+  evidence_context: ../../artifacts/kaggle_runs/notebook5554bd790d_v10_20260811/vifinqa_review_bundle/tables_evidence_context_v3.jsonl
+  evidence_context_manifest: ../../artifacts/kaggle_runs/notebook5554bd790d_v10_20260811/vifinqa_review_bundle/table_evidence_context_v3.manifest.json
+  semantic_review_queue: ../../artifacts/research/agent4_semantic_queue_v1_20260827_r1/semantic_binding_review_queue_v1.jsonl
+  semantic_review_manifest: ../../artifacts/research/agent4_semantic_queue_v1_20260827_r1/semantic_binding_review_queue_v1.manifest.json
+  semantic_human_decisions: ../../artifacts/research/agent4_semantic_queue_v1_20260827_r1/semantic_binding_human_decisions_v1.jsonl
+  metric_registry: financial_metric_registry_v1.yaml

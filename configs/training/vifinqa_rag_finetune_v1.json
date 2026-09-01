@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "protocol": "vifinqa_self_supervised_rag_finetune_v1",
+  "source": {
+    "tables_filename": "tables_structured_v2.jsonl",
+    "expected_sha256": "583e18bbeac02b484d666eb45f45170b45b92d127ccc4934c213d16c7db4c749",
+    "expected_table_count": 29509,
+    "forbid_question_test_set": true
+  },
+  "split": {
+    "group_key": "ticker",
+    "train_percent": 80,
+    "validation_percent": 10,
+    "test_percent": 10,
+    "seed": 20260828
+  },
+  "curriculum": {
+    "max_rows_per_table": 3,
+    "max_row_labels_in_passage": 24,
+    "hard_negative_scope": "same_document_then_same_ticker_year",
+    "operations": [
+      "lookup",
+      "subtract",
+      "percentage_change"
+    ]
+  },
+  "models": {
+    "retriever_baseline": "intfloat/multilingual-e5-small",
+    "retriever_baseline_revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+    "retriever_teacher_optional": "BAAI/bge-m3",
+    "retriever_teacher_optional_revision": "5617a9f61b028005a4858fdac845db406aefb181",
+    "reranker": "BAAI/bge-reranker-v2-m3",
+    "reranker_revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+    "generator": "Qwen/Qwen2.5-Coder-7B-Instruct",
+    "generator_revision": "c03e6d358207e414f1eca0bb1891e29f1db0e242"
+  },
+  "training": {
+    "retriever_epochs": 1,
+    "retriever_batch_size": 64,
+    "reranker_epochs": 1,
+    "reranker_batch_size": 16,
+    "generator_epochs": 1,
+    "generator_batch_size": 1,
+    "generator_gradient_accumulation": 16,
+    "generator_lora_rank": 16,
+    "generator_max_length": 1536
+  },
+  "evaluation": {
+    "retrieval_metrics": [
+      "recall_at_1",
+      "recall_at_5",
+      "recall_at_10",
+      "mrr_at_5"
+    ],
+    "program_metrics": [
+      "json_validity",
+      "ast_exact_match",
+      "execution_accuracy"
+    ],
+    "promotion_rule": "candidate_must_beat_unfinetuned_baseline_on_held_out_tickers"
+  }
+}
